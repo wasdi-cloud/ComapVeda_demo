@@ -10,9 +10,9 @@ async def root():
 async def get_three_points():
     return {
         "points": [
-            {"lat": 1, "lng": 2},
-            {"lat": 3, "lng": 4},
-            {"lat": 5, "lng": 6}
+            {"lat": 10, "lng": 20},
+            {"lat": -30, "lng": 40},
+            {"lat": 20, "lng": -7}
         ]
     }
 
