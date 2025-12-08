@@ -1,0 +1,4 @@
+To install TiTile, we will need fist to install gdal by following the wasdi docs: https://wasdi.readthedocs.io/en/latest/PythonCookbook/InstallGDAL.html
+
+For a preview of a file, the addres is:
+http://127.0.0.1:8000/preview?url=path_to_your_raster.tif
