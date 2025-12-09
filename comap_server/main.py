@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from titiler.core.factory import TilerFactory
 from starlette.middleware.cors import CORSMiddleware
 from rio_tiler.io import Reader
+from rio_tiler.types import BBox
 import morecantile
 
 oApp = FastAPI()
@@ -37,18 +38,59 @@ async def get_three_points():
         ]
     }
 
-@oApp.get("/read_geotiff")
-async def read_geotiff():
-    """Reads a GeoTIFF file and returns its bounds."""
+@oApp.get("/geotiff_coordinates")
+async def geotiff_coordinates():
+    """Returns the geographic coordinates of the corners of a GeoTIFF file."""
+    try:
+        with Reader("TCI.tif") as oScr:
+            oBBox = oScr.get_geographic_bounds("epsg:4326")
+            oWasdiBBox = getWasdiBoundingBox(oBBox)
+
+            if oWasdiBBox is None:
+                return {"error": "Could not convert bounding box to WASDI format"}
+            return oWasdiBBox
+    except Exception as oE:
+        return {"error": str(oE)}
+
+def getWasdiBoundingBox(oBBox: BBox) -> dict | None:
+    """Convert a bounding box to WASDI format."""
+    try:
+        return {
+            "bbox": {
+                "northEast": {
+                    "lat": oBBox[3],
+                    "lng": oBBox[2]
+                },
+                "southWest": {
+                    "lat": oBBox[1],
+                    "lng": oBBox[0]
+                }
+            }
+        }
+    except Exception as oE:
+        return None
+
+@oApp.get("/list_tiles")
+async def listTiles(zoom: int = 1):
+    """List the tiles covering the GeoTIFF at a given zoom level."""
     with Reader("TCI.tif") as oScr:
         oBBox = oScr.get_geographic_bounds("epsg:4326")
-        print(oBBox)
-        iZoom = 5
+        iZoom = zoom
         # find all the tiles that cover the bounding box
         aoTiles = list(oScr.tms.tiles(oBBox[0], oBBox[1], oBBox[2], oBBox[3], iZoom))
+        aoRes = []
         for oTile in aoTiles:
-            print(oTile)
-    return {"bounds": oBBox, "tiles_count": len(aoTiles)}
+            aoRes.append({
+                "column_x": oTile.x,
+                "row_y": oTile.y,
+                "zoom_z": oTile.z
+            })      
+    return {
+        "tiles": aoRes, 
+        "tiles_count": len(aoTiles),
+        "bbox": getWasdiBoundingBox(oBBox)
+    }
+
 
 if __name__ == "__main__":
     """
