@@ -1,11 +1,23 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from rio_tiler.errors import TileOutsideBounds
 from titiler.core.factory import TilerFactory
+from fastapi.responses import Response
 from starlette.middleware.cors import CORSMiddleware
 from rio_tiler.io import Reader
 from rio_tiler.types import BBox
 import morecantile
 
 oApp = FastAPI()
+
+
+@oApp.exception_handler(TileOutsideBounds)
+async def tile_out_of_bounds_handler(request: Request, exc: TileOutsideBounds):
+    """
+    If the map asks for a tile outside the image, return 404
+    instead of crashing with a 500 error.
+    """
+    return Response(content=None, status_code=404)
+
 
 # add CORS middleware
 oApp.add_middleware(

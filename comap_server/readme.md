@@ -13,7 +13,7 @@ http://127.0.0.1:8000/
 To see the available endpoints, you can check the docs at:
 http://127.0.0.1:8000/docs
 
-For a preview of a file, the addres to check is:
+For a preview of a file, the address to check is:
 http://127.0.0.1:8000/preview?url=TCI.tif
 
 An example of a call with:

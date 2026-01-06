@@ -4,7 +4,11 @@ import './index.css';
 import './assets/styles.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
-
+// This prevents the 'fs' and 'path' errors in Webpack 5
+window.global = window;
+window.process = {
+    env: { DEBUG: undefined },
+};
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
