@@ -1,11 +1,14 @@
-from fastapi import FastAPI, Request
-from rio_tiler.errors import TileOutsideBounds
+import json
+import aiofiles
+from fastapi import FastAPI, Request, HTTPException, Body
 from titiler.core.factory import TilerFactory
+from rio_tiler.errors import TileOutsideBounds
 from fastapi.responses import Response
 from starlette.middleware.cors import CORSMiddleware
 from rio_tiler.io import Reader
 from rio_tiler.types import BBox
 import morecantile
+from GeoJsonRequest import GeoJsonRequest
 
 oApp = FastAPI()
 
@@ -22,7 +25,7 @@ async def tile_out_of_bounds_handler(request: Request, exc: TileOutsideBounds):
 # add CORS middleware
 oApp.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # allowss all origins - need to be more restrictive in production
+    allow_origins=["*"], # allows all origins - need to be more restrictive in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -103,6 +106,47 @@ async def listTiles(zoom: int = 1):
         "bbox": getWasdiBoundingBox(oBBox)
     }
 
+@oApp.post("/store_label")
+async def store_label(oPayload: GeoJsonRequest):
+    """Accept a raw GeoJSON object (validated by `GeoJsonRequest`) and save it.
+    The `GeoJsonRequest` model validates the raw body and stores it in `.root` or `.data`.
+    """
+    oFilename = "storage.json"
+
+    try:
+        async with aiofiles.open(oFilename, mode='w') as oFile:
+            await oFile.write(json.dumps(oPayload.root, indent=2))
+
+        return {"status": "success", "message": "GeoJSON validated and saved."}
+
+    except Exception as oE:
+        raise HTTPException(status_code=500, detail=str(oE))
+
+
+@oApp.get("/read_label")
+async def read_label():
+    """Read `storage.json` and return the stored GeoJSON object.
+    Returns 404 if the file doesn't exist or 500 if JSON parsing fails.
+    """
+
+    oFilename = "./storage.json"
+    try:
+        async with aiofiles.open(oFilename, mode='r') as oFile:
+            sContent = await oFile.read()
+            if not sContent:
+                raise HTTPException(status_code=404, detail="storage.json is empty")
+            oData = json.loads(sContent)
+
+        return oData
+
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="storage.json not found")
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Invalid JSON in storage.json: {e}")
+    except HTTPException:
+        raise
+    except Exception as oE:
+        raise HTTPException(status_code=500, detail=str(oE))
 
 if __name__ == "__main__":
     """
