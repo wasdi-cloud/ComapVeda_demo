@@ -11,6 +11,7 @@
     "@testing-library/user-event": "^13.5.0",
     "@turf/turf": "^7.3.1",
     "leaflet": "^1.9.4",
+    "leaflet-geosearch": "^4.2.2",
     "mapbox-gl": "^3.16.0",
     "mapbox-gl-draw-circle": "^1.1.2",
     "path-browserify": "^1.0.1",
@@ -18,6 +19,7 @@
     "react-dom": "^19.2.0",
     "react-leaflet": "^5.0.0",
     "react-map-gl": "^8.1.0",
+    "react-router-dom": "^7.11.0",
     "react-scripts": "5.0.1",
     "web-vitals": "^2.1.4"
   },

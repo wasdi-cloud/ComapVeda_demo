@@ -1,15 +1,17 @@
-import React, {useEffect} from 'react';
-import {MapContainer, TileLayer, Marker, Popup, useMap} from 'react-leaflet';
-// You must also include the Leaflet CSS file in your project, e.g., in App.css:
-// @import '~leaflet/dist/leaflet.css';
-// Import Geoman
-
-
-
+import React, { useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap, LayersControl } from 'react-leaflet';
 import L from 'leaflet';
+
+// --- STYLES ---
 import 'leaflet/dist/leaflet.css';
 import '@geoman-io/leaflet-geoman-free';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
+// NEW: Import Geosearch CSS
+import 'leaflet-geosearch/dist/geosearch.css';
+
+// --- IMPORTS FOR SEARCH ---
+import { GeoSearchControl, OpenStreetMapProvider } from 'leaflet-geosearch';
+
 import * as turf from '@turf/turf';
 
 delete L.Icon.Default.prototype._getIconUrl;
@@ -27,6 +29,47 @@ L.Icon.Default.mergeOptions({
     iconUrl: require('leaflet/dist/images/marker-icon.png'),
     shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
 });
+
+const BASE_LAYERS = {
+    osm: {
+        url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        attribution: '&copy; OpenStreetMap contributors'
+    },
+    esri: {
+        url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+    },
+    dark: {
+        url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+        attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
+    }
+};
+const SearchControl = () => {
+    const oMap = useMap();
+
+    useEffect(() => {
+        const provider = new OpenStreetMapProvider();
+
+        const searchControl = new GeoSearchControl({
+            provider: provider,
+            style: 'button',
+            position:'topright',
+            showMarker: true, // Show a marker at the result
+            showPopup: true, // Show a popup at the result
+            autoClose: true, // Close list after selection
+            retainZoomLevel: false, // Zoom to the result
+            animateZoom: true,
+            keepResult: true, // Keep the marker on the oMap
+            searchLabel: 'Enter address...',
+        });
+
+        oMap.addControl(searchControl);
+
+        return () => oMap.removeControl(searchControl);
+    }, [oMap]);
+
+    return null;
+};
 
 // A sub-component to initialize Geoman controls
 const GeomanControls = () => {
@@ -60,7 +103,7 @@ const GeomanControls = () => {
         // 2. Listen for when a shape is created
         oMap.on('pm:create', (e) => {
             // FIX: Geoman uses 'layer' and 'shape', not 'oLayer' and 'oShape'
-            const { layer, shape } = e;
+            const {layer, shape} = e;
 
             // You can rename them here to match your naming convention if you prefer:
             const oLayer = layer;
@@ -137,24 +180,60 @@ const GeomanControls = () => {
     return null;
 };
 
-const LeafletMap = ({ markers, initialView }) => {
+const LeafletMap = ({markers, initialView}) => {
     const center = [initialView.latitude, initialView.longitude];
 
     return (
         <MapContainer
             center={center}
             zoom={initialView.zoom}
-            style={{ height: '100%', width: '100%' }}
+            style={{height: '100%', width: '100%', outline: 'none'}}
         >
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            {/* 1. THE LAYERS CONTROL (The "Button") */}
+            <LayersControl position="topright">
 
-            <TileLayer
-                url="http://127.0.0.1:8000/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=TCI.tif"
-                opacity={0.7}
-            />
+                {/* Base Layer 1: OpenStreetMap (Default) */}
+                <LayersControl.BaseLayer checked name="OpenStreetMap">
+                    <TileLayer
+                        attribution='&copy; OpenStreetMap contributors'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+                </LayersControl.BaseLayer>
 
-            {/* NEW: Geoman Drawing Tools */}
-            <GeomanControls />
+                {/* Base Layer 2: ESRI Satellite */}
+                <LayersControl.BaseLayer name="ESRI Satellite">
+                    <TileLayer
+                        attribution='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+                        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                    />
+                </LayersControl.BaseLayer>
+
+                {/* Base Layer 3: Dark Mode */}
+                <LayersControl.BaseLayer name="Dark Mode">
+                    <TileLayer
+                        attribution='Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
+                        url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+                    />
+                </LayersControl.BaseLayer>
+
+                {/*/!* Optional: You can also make your GeoTIFF toggle-able!*/}
+                {/*    Use LayersControl.Overlay for layers that sit ON TOP.*/}
+                {/**!/*/}
+                {/*<LayersControl.Overlay checked name="My GeoTIFF Overlay">*/}
+                {/*    <TileLayer*/}
+                {/*        url="http://127.0.0.1:8000/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=TCI.tif"*/}
+                {/*        opacity={0.7}*/}
+                {/*    />*/}
+                {/*</LayersControl.Overlay>*/}
+
+            </LayersControl>
+
+            {/* If you want the GeoTIFF to NEVER be hidden, remove the
+                LayersControl.Overlay wrapper above and just place the TileLayer here directly. */}
+
+            <SearchControl />
+
+            <GeomanControls/>
 
             {markers.map((marker, index) => (
                 <Marker key={index} position={marker.position}>
