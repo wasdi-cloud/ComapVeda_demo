@@ -2,3 +2,7 @@ fastapi
 uvicorn
 titiler.core
 morecantile
+geojson
+aiofiles
+pyshp
+shapely
