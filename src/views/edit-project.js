@@ -2,126 +2,165 @@ import { useState } from "react";
 import LeafletMap from "../components/LeafletMap";
 
 const EditProject = () => {
+    // 1. DATA: We just keep the filename for the map
     const [images] = useState([
-        { id: 1, name: "Sentinel-2 - 2023-10-01", date: "2023-10-01",annotator:"Jihed" },
-        { id: 2, name: "Landsat-8 - 2023-09-15", date: "2023-09-15",annotator:"Jihed" },
-        { id: 3, name: "Sentinel-2 - 2023-08-20", date: "2023-08-20",annotator:"Jihed" },
+        {
+            id: 1,
+            name: "Sentinel-2 - 2023-10-01",
+            date: "2023-10-01",
+            annotator: "Jihed",
+            filename: "baresoil-flood.tif"
+        },
+        {
+            id: 2,
+            name: "Landsat-8 - 2023-09-15",
+            date: "2023-09-15",
+            annotator: "Jihed",
+            filename: "TCI.tif"
+        },
+        {
+            id: 3,
+            name: "Sentinel-2 - 2023-08-20",
+            date: "2023-08-20",
+            annotator: "Jihed",
+            filename: "TCI.tif"
+        },
     ]);
 
+    const [selectedImageId, setSelectedImageId] = useState(null);
     const [labelOpacity, setLabelOpacity] = useState(70);
+
+    // Helper to find the currently active image object for the map
+    const selectedImage = images.find(img => img.id === selectedImageId);
+
+    // 2. QUICK REACT FIX: A nice placeholder icon
+    const renderThumbnail = (name) => {
+        // We generate a "Fake" thumbnail using CSS
+        return (
+            <div style={{
+                width: '60px',
+                height: '60px',
+                borderRadius: '6px',
+                background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)', // Satellite Blue Gradient
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+                fontSize: '10px',
+                border: '1px solid #ccc'
+            }}>
+                {/* Simple SVG Icon for "Map/Satellite" */}
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+                    <line x1="8" y1="2" x2="8" y2="18"></line>
+                    <line x1="16" y1="6" x2="16" y2="22"></line>
+                </svg>
+                <span style={{ marginTop: '4px', fontSize: '8px', textTransform: 'uppercase' }}>TIFF</span>
+            </div>
+        );
+    };
 
     return (
         <div style={{
-            position: 'fixed',   // Locks it to the viewport
-            top: '80px',              // CHANGE THIS if you have a top menu (e.g. '50px')
-            bottom: 0,           // Anchors to bottom (prevents vertical scroll)
-            left: 0,
-            right: 0,
-            display: 'flex',     // Internal layout is flex
-            overflow: 'hidden',  // Safety lock
-            fontFamily: 'sans-serif',
-            background: '#fff'
+            position: 'fixed', top: '80px', bottom: 0, left: 0, right: 0,
+            display: 'flex', overflow: 'hidden', fontFamily: 'sans-serif', background: '#fff'
         }}>
 
             {/* PART 1: SIDEBAR (25%) */}
             <div style={{
-                width: '25%',
-                height: '100%',
-                borderRight: '1px solid #ccc',
-                display: 'flex',
-                flexDirection: 'column',
-                background: '#f9f9f9',
-                flexShrink: 0
+                width: '25%', height: '100%', borderRight: '1px solid #ccc',
+                display: 'flex', flexDirection: 'column', background: '#f9f9f9', flexShrink: 0
             }}>
                 <div style={{ padding: '15px', borderBottom: '1px solid #ddd' }}>
                     <h3>Images ({images.length})</h3>
                     <div style={{ display: 'flex', gap: '10px' }}>
-                        <button>Add Image</button>
-                        <button>Styles</button>
+                        <button style={{ padding: '6px 12px', cursor: 'pointer' }}>Add Image</button>
                     </div>
                 </div>
+
                 <div style={{ flex: 1, overflowY: 'auto', padding: '15px' }}>
-                    {images.map(img => (
-                        <div key={img.id} style={{ padding: '10px', background: '#fff', border: '1px solid #ddd', marginBottom: '10px' }}>
-                            {img.name}
-                        </div>
-                    ))}
+                    {images.map(img => {
+                        const isSelected = selectedImageId === img.id;
+                        return (
+                            <div
+                                key={img.id}
+                                onClick={() => setSelectedImageId(img.id)}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    padding: '10px',
+                                    marginBottom: '10px',
+                                    background: isSelected ? '#e6f7ff' : '#fff',
+                                    border: isSelected ? '1px solid #1890ff' : '1px solid #ddd',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    transition: '0.2s'
+                                }}
+                            >
+                                {/* LEFT: The CSS Thumbnail */}
+                                <div style={{ marginRight: '15px' }}>
+                                    {renderThumbnail(img.name)}
+                                </div>
+
+                                {/* RIGHT: Info */}
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#333', marginBottom:'3px' }}>
+                                        {img.name}
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: '#666' }}>
+                                        {img.date} • {img.annotator}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
 
             {/* PART 2: MAIN CONTENT (75%) */}
-            <div style={{
-                flex: 1,
-                height: '100%',         // 3. Ensure this column is also strictly 100vh
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden'      // 4. Ensure nothing escapes this column
-            }}>
+            <div style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-                {/* HEADER: FIXED HEIGHT */}
-                <div style={{
-                    padding: '15px',
-                    borderBottom: '1px solid #ddd',
-                    background: '#fff',
-                    flexShrink: 0       // 5. Never shrink the header
-                }}>
+                {/* HEADER */}
+                <div style={{ padding: '15px', borderBottom: '1px solid #ddd', background: '#fff', flexShrink: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div><strong>Project:</strong> High-Res | <strong>Owner:</strong> Jihed | <strong>Labels:</strong> 12</div>
+                        <div><strong>Project:</strong> High-Res | <strong>Owner:</strong> Jihed</div>
                         <div>
-
-                            <button style={{ marginLeft: '10px' }}>Properties</button>
-                            <button style={{ marginLeft: '10px' }}>Collaborators</button>
-                            <button style={{ marginLeft: '10px' }}>Export</button>
+                            <button>Export</button>
                         </div>
                     </div>
+                    {/* ... controls ... */}
                     <div style={{ display: 'flex', gap: '20px', marginTop: '15px', alignItems: 'center', fontSize: '14px' }}>
                         <div>Opacity: <input type="range" value={labelOpacity} onChange={(e) => setLabelOpacity(e.target.value)} /></div>
-                        <div>Styles: <input type="checkbox" /> Label</div>
-                        <label><input type="checkbox" /> Validated</label>
                     </div>
                 </div>
 
-                {/* MAP WRAPPER: FILL REMAINING SPACE */}
-                <div style={{
-                    flex: 1,                // 6. Grow to fill space
-                    position: 'relative',
-                    width: '100%',
-                    minHeight: 0            // 7. CRITICAL: Allow shrinking if table needs room
-                }}>
-                    <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}>
+                {/* MAP WRAPPER */}
+                <div style={{ flex: 1, position: 'relative', width: '100%', minHeight: 0 }}>
+                    <div style={{ position: 'absolute', inset: 0 }}>
+
+                        {/* THE MAP: Receives the selected filename */}
                         <LeafletMap
                             markers={[]}
                             initialView={{ latitude: 48.8566, longitude: 2.3522, zoom: 12 }}
+                            activeGeoTIFF={selectedImage ? selectedImage.filename : null}
                         />
+
                     </div>
                 </div>
 
-                {/* TABLE: FIXED HEIGHT AT BOTTOM */}
-                <div style={{
-                    height: '200px',        // 8. Fixed height for table area
-                    borderTop: '2px solid #333',
-                    padding: '10px',
-                    background: '#fff',
-                    flexShrink: 0,          // 9. Never shrink the table
-                    overflowY: 'auto',      // 10. Scroll INSIDE table, not the page
-                    zIndex: 20
-                }}>
+                {/* TABLE */}
+                <div style={{ height: '150px', borderTop: '2px solid #333', padding: '10px', background: '#fff', flexShrink: 0, overflowY: 'auto', zIndex: 20 }}>
                     <strong>Attributes</strong>
-                    <table style={{ width: '100%', marginTop: '10px', borderCollapse: 'collapse' }}>
+                    <table style={{ width: '100%', marginTop: '5px', borderCollapse: 'collapse' }}>
                         <thead style={{ position: 'sticky', top: 0, background: 'white' }}>
                         <tr style={{ background: '#eee', textAlign: 'left' }}>
-                            <th style={{ border: '1px solid #ddd', padding: '8px' }}>Name</th>
-                            <th style={{ border: '1px solid #ddd', padding: '8px' }}>Type</th>
+                            <th style={{ border: '1px solid #ddd', padding: '5px' }}>Name</th>
+                            <th style={{ border: '1px solid #ddd', padding: '5px' }}>Type</th>
                         </tr>
                         </thead>
                         <tbody>
-                        {/* Dummy rows to test internal scrolling */}
-                        {[...Array(10)].map((_, i) => (
-                            <tr key={i}>
-                                <td style={{ border: '1px solid #ddd', padding: '8px' }}>Land_Use_{i}</td>
-                                <td style={{ border: '1px solid #ddd', padding: '8px' }}>String</td>
-                            </tr>
-                        ))}
+                        <tr><td style={{ border: '1px solid #ddd', padding: '5px' }}>Example_Row</td><td style={{ border: '1px solid #ddd', padding: '5px' }}>String</td></tr>
                         </tbody>
                     </table>
                 </div>

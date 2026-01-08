@@ -1,6 +1,6 @@
 import json
 import aiofiles
-from fastapi import FastAPI, Request, HTTPException, Body
+from fastapi import FastAPI, Request, HTTPException, Body, Query
 from titiler.core.factory import TilerFactory
 from rio_tiler.errors import TileOutsideBounds
 from fastapi.responses import Response
@@ -54,10 +54,11 @@ async def get_three_points():
     }
 
 @oApp.get("/geotiff_coordinates")
-async def geotiff_coordinates():
+async def geotiff_coordinates(url: str = Query("TCI.tif", description="Filename of the GeoTIFF")):
     """Returns the geographic coordinates of the corners of a GeoTIFF file."""
     try:
-        with Reader("TCI.tif") as oScr:
+        # We use the 'url' param passed from React (or default)
+        with Reader(url) as oScr:
             oBBox = oScr.get_geographic_bounds("epsg:4326")
             oWasdiBBox = getWasdiBoundingBox(oBBox)
 
@@ -65,7 +66,8 @@ async def geotiff_coordinates():
                 return {"error": "Could not convert bounding box to WASDI format"}
             return oWasdiBBox
     except Exception as oE:
-        return {"error": str(oE)}
+        return {"error": f"Could not read {url}: {str(oE)}"}
+
 
 def getWasdiBoundingBox(oBBox: BBox) -> dict | None:
     """Convert a bounding box to WASDI format."""
@@ -86,25 +88,28 @@ def getWasdiBoundingBox(oBBox: BBox) -> dict | None:
         return None
 
 @oApp.get("/list_tiles")
-async def listTiles(zoom: int = 1):
+async def listTiles(zoom: int = 1, url: str = "baresoil-flood.tif"):
     """List the tiles covering the GeoTIFF at a given zoom level."""
-    with Reader("TCI.tif") as oScr:
-        oBBox = oScr.get_geographic_bounds("epsg:4326")
-        iZoom = zoom
-        # find all the tiles that cover the bounding box
-        aoTiles = list(oScr.tms.tiles(oBBox[0], oBBox[1], oBBox[2], oBBox[3], iZoom))
-        aoRes = []
-        for oTile in aoTiles:
-            aoRes.append({
-                "column_x": oTile.x,
-                "row_y": oTile.y,
-                "zoom_z": oTile.z
-            })      
-    return {
-        "tiles": aoRes, 
-        "tiles_count": len(aoTiles),
-        "bbox": getWasdiBoundingBox(oBBox)
-    }
+    try:
+        with Reader(url) as oScr:
+            oBBox = oScr.get_geographic_bounds("epsg:4326")
+            iZoom = zoom
+            # find all the tiles that cover the bounding box
+            aoTiles = list(oScr.tms.tiles(oBBox[0], oBBox[1], oBBox[2], oBBox[3], iZoom))
+            aoRes = []
+            for oTile in aoTiles:
+                aoRes.append({
+                    "column_x": oTile.x,
+                    "row_y": oTile.y,
+                    "zoom_z": oTile.z
+                })
+        return {
+            "tiles": aoRes,
+            "tiles_count": len(aoTiles),
+            "bbox": getWasdiBoundingBox(oBBox)
+        }
+    except Exception as oE:
+        return {"error": str(oE)}
 
 @oApp.post("/store_label")
 async def store_label(oPayload: GeoJsonRequest):
