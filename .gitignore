@@ -25,3 +25,6 @@ yarn-error.log*
 # pythom env
 comap_server/.venv/
 comap_server/__pycache__/
+
+
+.env

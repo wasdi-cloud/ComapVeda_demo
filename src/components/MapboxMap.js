@@ -9,8 +9,12 @@ import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import * as turf from '@turf/turf';
 
 
+
 // Replace 'YOUR_MAPBOX_ACCESS_TOKEN' with your actual token
-const MAPBOX_TOKEN = 'pk.eyJ1IjoidGhlb25seWppaGVkIiwiYSI6ImNtaXE1YnAwbjAxb2Y0d3M5bmh3c2ttankifQ.Cknxaxa3HQaI-_8pfqFz6w';
+
+const MAPBOX_TOKEN = process.env.REACT_APP_MAPBOX_TOKEN;
+// const MAPBOX_TOKEN = "pk.eyJ1IjoidGhlb25seWppaGVkIiwiYSI6ImNta2NodWltZzAxN3MzZnF5b3p2cXA0YWIifQ.bJ1_TMcx1ZdOajc43UQ2EQ";
+
 const MapboxMap = ({ markers, initialView }) => {
     const [selectedMarker, setselectedMarker] = useState(null);
     const [measurements, setMeasurements] = useState(""); // To show area/distance
