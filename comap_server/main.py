@@ -9,6 +9,7 @@ from rio_tiler.io import Reader
 from rio_tiler.types import BBox
 import morecantile
 from GeoJsonRequest import GeoJsonRequest
+from api.ProjectResource import oRouter as oProjectRouter
 
 oApp = FastAPI()
 
@@ -36,6 +37,9 @@ oCog = TilerFactory()
 
 # Register all the COG endpoints automatically
 oApp.include_router(oCog.router, tags=["Cloud Optimized GeoTIFF"])
+
+# Register project management endpoints
+oApp.include_router(oProjectRouter, tags=["Project Management"])
 
 s_WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
 
@@ -161,3 +165,4 @@ if __name__ == "__main__":
 
     import uvicorn
     uvicorn.run("main:oApp", host="127.0.0.1", port=8000, reload=True)
+    

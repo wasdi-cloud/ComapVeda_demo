@@ -5,3 +5,4 @@ morecantile
 geojson
 aiofiles
 pyshp
+email-validator
