@@ -5,4 +5,3 @@ morecantile
 geojson
 aiofiles
 pyshp
-shapely
