@@ -1,45 +1,84 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 
+// Import reusable components
+import AppCard from '../components/app-card';
+import AppInput from '../components/app-text-input';
+import AppButton from '../components/app-button';
+
 const ForgotPassword = () => {
-    const [submitted, setSubmitted] = useState(false);
+    // Standardizing variable name (Boolean -> bSubmitted)
+    const [bSubmitted, setBSubmitted] = useState(false);
 
     const handleSubmit = (e) => {
         e.preventDefault();
         // Simulate API call
-        setSubmitted(true);
+        setBSubmitted(true);
     };
 
     return (
-        <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f9f9f9' }}>
-            <div style={{ width: '350px', padding: '30px', background: 'white', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                <h2 style={{ textAlign: 'center', color: '#333' }}>Reset Password</h2>
+        <div style={{
+            height: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: '#f9f9f9'
+        }}>
 
-                {!submitted ? (
-                    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                        <p style={{ fontSize: '14px', color: '#666', textAlign: 'center' }}>
+            {/* Reusing AppCard with fixed width */}
+            <AppCard oStyle={{ width: '350px', padding: '40px' }}>
+
+                <h2 style={{ textAlign: 'center', marginTop: 0, color: '#333' }}>Reset Password</h2>
+
+                {!bSubmitted ? (
+                    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                        <p style={{ fontSize: '14px', color: '#666', textAlign: 'center', margin: 0 }}>
                             Enter your email address and we'll send you a link to reset your password.
                         </p>
 
-                        <input type="email" placeholder="Enter your email" required style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }} />
+                        {/* Reusable Input */}
+                        <AppInput
+                            type="email"
+                            sPlaceholder="Enter your email"
+                            required
+                        />
 
-                        <button type="submit" style={{ padding: '10px', background: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                        {/* Reusable Button - Primary Variant */}
+                        <AppButton
+                            type="submit"
+                            sVariant="primary"
+                            oStyle={{ width: '100%' }}
+                        >
                             Send Reset Link
-                        </button>
+                        </AppButton>
 
                         <div style={{ textAlign: 'center', marginTop: '10px' }}>
-                            <Link to="/login" style={{ fontSize: '14px', color: '#007bff', textDecoration: 'none' }}>Back to Login</Link>
+                            <Link to="/login" style={{ fontSize: '14px', color: '#007bff', textDecoration: 'none' }}>
+                                ← Back to Login
+                            </Link>
                         </div>
                     </form>
                 ) : (
+                    /* Success State */
                     <div style={{ textAlign: 'center' }}>
                         <div style={{ fontSize: '40px', marginBottom: '10px' }}>📧</div>
-                        <h3 style={{ color: '#28a745' }}>Check your inbox!</h3>
-                        <p style={{ fontSize: '14px', color: '#666' }}>We have sent a password reset link to your email.</p>
-                        <Link to="/login" style={{ display: 'block', marginTop: '20px', color: '#007bff', textDecoration: 'none' }}>Back to Login</Link>
+                        <h3 style={{ color: '#28a745', margin: '10px 0' }}>Check your inbox!</h3>
+                        <p style={{ fontSize: '14px', color: '#666' }}>
+                            We have sent a password reset link to your email.
+                        </p>
+
+                        {/* Reusing AppButton for the "Back" action instead of a plain link makes it clearer */}
+                        <div style={{ marginTop: '20px' }}>
+                            <Link to="/login" style={{ textDecoration: 'none' }}>
+                                <AppButton sVariant="outline" oStyle={{ width: '100%' }}>
+                                    Back to Login
+                                </AppButton>
+                            </Link>
+                        </div>
                     </div>
                 )}
-            </div>
+            </AppCard>
         </div>
     );
 };

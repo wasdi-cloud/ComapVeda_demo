@@ -76,7 +76,7 @@ function TestPage() {
                 <div style={{flex: 1, height: '500px'}}>
                     <h2>Mapbox Map</h2>
                     {viewState ? (
-                        <MapboxMap markers={markers} initialView={viewState}/>
+                        <MapboxMap aoMarkers={markers} oInitialView={viewState}/>
                     ) : <p>Loading Map Data...</p>}
                 </div>
             </div>

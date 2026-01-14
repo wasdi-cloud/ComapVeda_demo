@@ -7,6 +7,7 @@ import HomePage from "./views/homepage";
 import TestPage from "./views/test-page";
 import ConfirmRegister from "./views/confirm-register";
 import ForgotPassword from "./views/forget-password";
+import NewProjectRequest from "./views/new-project-request";
 
 function App() {
     return (
@@ -26,6 +27,7 @@ function App() {
                 <Route path="/test" element={<TestPage/>}/>
                 <Route path="/forgot-password" element={<ForgotPassword/>}/>
                 <Route path="/confirm-register" element={<ConfirmRegister/>}/>
+                <Route path="/new-project" element={<NewProjectRequest />} />
 
             </Routes>
         </BrowserRouter>

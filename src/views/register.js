@@ -1,14 +1,35 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import {Link, useNavigate} from 'react-router-dom';
+
+// Import Reusable Components
+import AppCard from '../components/app-card';
+import AppTextInput from '../components/app-text-input'; // <--- Using your specific name
+import AppButton from '../components/app-button';
+import AppCheckbox from '../components/app-checkbox';
 
 const Register = () => {
     const navigate = useNavigate();
 
     const handleRegister = (e) => {
         e.preventDefault();
-        // The 'required' attribute on the checkbox handles the validation automatically
+        // The 'required' prop in AppCheckbox handles validation automatically
         navigate('/confirm-register');
     };
+
+    // We define the label for the checkbox as a variable so we can include the link
+    const termsLabel = (
+        <span>
+            I accept the{' '}
+            <a
+                href="https://google.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{color: '#007bff', textDecoration: 'none'}}
+            >
+                Terms and Conditions
+            </a>
+        </span>
+    );
 
     return (
         <div style={{
@@ -16,83 +37,67 @@ const Register = () => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: '#f4f6f8'
+            backgroundColor: '#f0f2f5'
         }}>
-            <form onSubmit={handleRegister} style={{
-                display: 'flex',
-                flexDirection: 'column',
-                width: '800px',
-                padding: '40px',
-                background: 'white',
-                borderRadius: '8px',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                gap: '20px'
-            }}>
-                <h2 style={{ textAlign: 'center', marginBottom: '10px', color: '#333' }}>Create Account</h2>
 
-                {/* --- THE GRID CONTAINER --- */}
-                <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: '15px'
-                }}>
-                    {/* Row 1 */}
-                    <input type="text" placeholder="Name" required style={oInputStyle} />
-                    <input type="text" placeholder="Surname" required style={oInputStyle} />
+            {/* 1. AppCard with custom width for the grid layout */}
+            <AppCard oStyle={{width: '800px', padding: '40px'}}>
 
-                    {/* Row 2 */}
-                    <input type="email" placeholder="Email" required style={oInputStyle} />
-                    <input type="email" placeholder="Confirm Email" required style={oInputStyle} />
+                <h2 style={{textAlign: 'center', marginBottom: '25px', marginTop: 0, color: '#333'}}>
+                    Create Account
+                </h2>
 
-                    {/* Row 3 */}
-                    <input type="password" placeholder="Password" required style={oInputStyle} />
-                    <input type="password" placeholder="Confirm Password" required style={oInputStyle} />
-                </div>
+                <form onSubmit={handleRegister} style={{display: 'flex', flexDirection: 'column', gap: '20px'}}>
 
-                {/* --- NEW: Terms and Conditions Checkbox --- */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
-                    <input
-                        id="terms"
-                        type="checkbox"
-                        required // <--- This forces the user to check it
-                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                    />
-                    <label htmlFor="terms" style={{ fontSize: '14px', color: '#555', cursor: 'pointer' }}>
-                        I accept the <a href="https://google.com" target="_blank" rel="noopener noreferrer" style={{ color: '#007bff', textDecoration: 'none' }}>Terms and Conditions</a>
-                    </label>
-                </div>
+                    {/* --- THE GRID CONTAINER --- */}
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr', // 2 Equal Columns
+                        gap: '20px'
+                    }}>
+                        {/* Row 1 */}
+                        <AppTextInput sPlaceholder="Name" required/>
+                        <AppTextInput sPlaceholder="Surname" required/>
 
-                {/* Submit Button */}
-                <button type="submit" style={{
-                    marginTop: '5px',
-                    padding: '12px',
-                    background: '#28a745',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '16px',
-                    fontWeight: 'bold'
-                }}>
-                    Sign Up
-                </button>
+                        {/* Row 2 */}
+                        <AppTextInput type="email" sPlaceholder="Email" required/>
+                        <AppTextInput type="email" sPlaceholder="Confirm Email" required/>
 
-                <p style={{ textAlign: 'center', fontSize: '14px', color: '#666' }}>
-                    Already have an account? <Link to="/login" style={{ color: '#007bff' }}>Login</Link>
+                        {/* Row 3 */}
+                        <AppTextInput type="password" sPlaceholder="Password" required/>
+                        <AppTextInput type="password" sPlaceholder="Confirm Password" required/>
+                    </div>
+
+                    {/* --- Terms and Conditions Checkbox --- */}
+                    {/* We use AppCheckbox, passing the JSX element as the sLabel */}
+                    <div style={{marginTop: '5px'}}>
+                        <AppCheckbox
+                            sName="terms"
+                            bRequired={true}
+                            sLabel={termsLabel} // Passing the JSX logic here works perfectly
+                        />
+                    </div>
+
+                    {/* --- Submit Button --- */}
+                    <AppButton
+                        type="submit"
+                        sVariant="success"
+                        oStyle={{width: '100%', marginTop: '10px'}}
+                    >
+                        Sign Up
+                    </AppButton>
+
+                </form>
+
+                {/* --- Footer Link --- */}
+                <p style={{textAlign: 'center', fontSize: '14px', color: '#666', marginTop: '20px'}}>
+                    Already have an account?{' '}
+                    <Link to="/login" style={{color: '#007bff', textDecoration: 'none'}}>Login</Link>
                 </p>
-            </form>
+
+            </AppCard>
         </div>
     );
-};
-
-// Helper style object
-const oInputStyle = {
-    padding: '12px',
-    borderRadius: '4px',
-    border: '1px solid #ddd',
-    fontSize: '14px',
-    width: '100%',
-    boxSizing: 'border-box'
 };
 
 export default Register;
