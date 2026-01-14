@@ -1,25 +1,34 @@
 import React from 'react';
-import {BrowserRouter as Router, Link, Route, Routes} from 'react-router-dom';
-import TestPage from './views/test-page';
+import {BrowserRouter, Route, Routes} from 'react-router-dom';
 import EditProject from './views/edit-project';
+import Login from "./views/login";
+import Register from "./views/register";
+import HomePage from "./views/homepage";
+import TestPage from "./views/test-page";
+import ConfirmRegister from "./views/confirm-register";
+import ForgotPassword from "./views/forget-password";
 
 function App() {
     return (
-        <Router>
-            <div className="App">
-                {/* Simple Navigation Bar */}
-                <nav style={{padding: '20px', background: '#f4f4f4', marginBottom: '20px'}}>
-                    <Link to="/" style={{marginRight: '20px'}}>Edit Project</Link>
-                    <Link to="/solo">Test Maps</Link>
-                </nav>
+        <BrowserRouter>
+            <Routes>
+                {/* 1. The Landing Page */}
+                <Route path="/" element={<HomePage/>}/>
 
-                {/* Route Definitions */}
-                <Routes>
-                    <Route path="/" element={<EditProject/>}/>
-                    <Route path="/solo" element={<TestPage/>}/>
-                </Routes>
-            </div>
-        </Router>
+                {/* 2. Authentication Pages */}
+                <Route path="/login" element={<Login/>}/>
+                <Route path="/register" element={<Register/>}/>
+
+                {/* 3. The Main App (Dashboard) */}
+                <Route path="/edit-project" element={<EditProject/>}/>
+
+                {/* Optional: Test Page */}
+                <Route path="/test" element={<TestPage/>}/>
+                <Route path="/forgot-password" element={<ForgotPassword/>}/>
+                <Route path="/confirm-register" element={<ConfirmRegister/>}/>
+
+            </Routes>
+        </BrowserRouter>
     );
 }
 
