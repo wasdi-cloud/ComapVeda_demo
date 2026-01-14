@@ -8,6 +8,9 @@ import TestPage from "./views/test-page";
 import ConfirmRegister from "./views/confirm-register";
 import ForgotPassword from "./views/forget-password";
 import NewProjectRequest from "./views/new-project-request";
+import ApproveProject from "./views/approve-project";
+import LabelTemplateLibrary from "./views/label-template-library";
+import NewLabelTemplate from "./views/create-label-template";
 
 function App() {
     return (
@@ -27,7 +30,10 @@ function App() {
                 <Route path="/test" element={<TestPage/>}/>
                 <Route path="/forgot-password" element={<ForgotPassword/>}/>
                 <Route path="/confirm-register" element={<ConfirmRegister/>}/>
-                <Route path="/new-project" element={<NewProjectRequest />} />
+                <Route path="/new-project" element={<NewProjectRequest/>}/>
+                <Route path="/approve-project" element={<ApproveProject/>}/>
+                <Route path="/label-templates" element={<LabelTemplateLibrary/>}/>
+                <Route path="/create-label-template" element={<NewLabelTemplate/>}/>
 
             </Routes>
         </BrowserRouter>
