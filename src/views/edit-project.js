@@ -62,7 +62,7 @@ const EditProject = () => {
 
     return (
         <div style={{
-            position: 'fixed', top: '70px', // Adjusted to account for main navbar if you have one
+            position: 'fixed', top: '0', // Adjusted to account for main navbar if you have one
             bottom: 0, left: 0, right: 0,
             display: 'flex', overflow: 'hidden', fontFamily: 'sans-serif', background: '#fff'
         }}>
