@@ -11,6 +11,7 @@ import morecantile
 from GeoJsonRequest import GeoJsonRequest
 from api.ProjectResource import oRouter as oProjectRouter
 from api.TemplateResource import oRouter as oTemplateRouter
+from api.ImageResource import oRouter as oImageRouter
 
 
 oApp = FastAPI()
@@ -40,11 +41,10 @@ oCog = TilerFactory()
 # Register all the COG endpoints automatically
 oApp.include_router(oCog.router, tags=["Cloud Optimized GeoTIFF"])
 
-# Register project management endpoints
+# Register endpoints for business logic
 oApp.include_router(oProjectRouter, tags=["Project Management"])
-
-# Register template management endpoints
 oApp.include_router(oTemplateRouter, tags=["Template Management"])
+oApp.include_router(oImageRouter, tags=["Image Management"])
 
 s_WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
 
