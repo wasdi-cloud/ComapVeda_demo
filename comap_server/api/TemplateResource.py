@@ -75,3 +75,41 @@ async def update(template_id: str = Query(..., description="Unique identifier fo
         }
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error updating template: {str(oE)}');
+
+@oRouter.delete("/delete")
+async def delete(template_id: str = Query(..., description="Unique identifier for the template to delete")):
+    """
+    Delete an existing template.
+
+    :param template_id: Unique identifier for the template to delete
+    :return: dict indicating success or failure of the delete operation
+    """
+    try:
+        # TODO: Add database logic to delete the template  
+        return {
+            "templateId": template_id
+        }
+    except Exception as oE:
+        raise HTTPException(status_code=500, detail=f'Error deleting template: {str(oE)}')
+    
+
+@oRouter.get("/getByProject", response_model=TemplateListItem)
+async def getByProject(project_id: str = Query(..., description="Unique identifier for the project")):
+    """
+    Retrieve the template associated with a specific project.
+
+    :param project_id: Unique identifier for the project
+    :return: TemplateListItem object containing template information
+    """
+    try:
+        # TODO: Add database logic to retrieve the template associated with the project
+        return TemplateListItem(
+            templateId="template-1111-2222",
+            name="Template 1",
+            user="user-1234",
+            creationDate=1678886400000  # Unix timestamp in milliseconds
+        )
+    except Exception as oE:
+        raise HTTPException(status_code=500, detail=f'Error retrieving template: {str(oE)}')
+    
+
