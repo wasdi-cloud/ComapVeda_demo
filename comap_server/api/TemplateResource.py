@@ -55,3 +55,23 @@ async def getList():
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error retrieving templates: {str(oE)}')
     
+
+@oRouter.put("/update")
+async def update(template_id: str = Query(..., description="Unique identifier for the template to update"), oTemplateData: TemplateCreate = ...):
+    """
+    Update an existing template with validated data.
+
+    :param template_id: Unique identifier for the template to update
+    :param oTemplateData: TemplateCreate validator containing updated fields
+    :return: dict indicating success or failure of the update operation
+    """
+    try:
+        # The TemplateCreate validator has already validated the input
+        # Convert to dict for storage/processing
+        dTemplateDict = oTemplateData.model_dump()
+
+        return {
+            "templateId": "template-1111-2222"
+        }
+    except Exception as oE:
+        raise HTTPException(status_code=500, detail=f'Error updating template: {str(oE)}');

@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List
 
-def TemplateListItem(BaseModel):
+class TemplateListItem(BaseModel):
     """Represents a template item in a list."""
     
     templateId: str = Field(..., description="Unique identifier for the template")

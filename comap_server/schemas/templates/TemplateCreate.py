@@ -1,6 +1,4 @@
-from datetime import datetime, timezone
 from pydantic import BaseModel, Field, field_validator, model_validator
-from shapely import wkt, errors
 from typing import Optional, List
 
 class CategoryValue(BaseModel):
