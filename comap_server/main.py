@@ -10,6 +10,8 @@ from rio_tiler.types import BBox
 import morecantile
 from GeoJsonRequest import GeoJsonRequest
 from api.ProjectResource import oRouter as oProjectRouter
+from api.TemplateResource import oRouter as oTemplateRouter
+
 
 oApp = FastAPI()
 
@@ -40,6 +42,9 @@ oApp.include_router(oCog.router, tags=["Cloud Optimized GeoTIFF"])
 
 # Register project management endpoints
 oApp.include_router(oProjectRouter, tags=["Project Management"])
+
+# Register template management endpoints
+oApp.include_router(oTemplateRouter, tags=["Template Management"])
 
 s_WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
 
