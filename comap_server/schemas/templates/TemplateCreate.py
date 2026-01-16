@@ -27,7 +27,7 @@ class Attribute(BaseModel):
 
     categoryValues: Optional[List[CategoryValue]] = Field(None, description="Optional list of category values with colors")
     
-    isOptional: bool = Field(..., description="Whether this attribute is optional")
+    isOptional: Optional[bool] = Field(False, description="Whether this attribute is optional")
 
 
 
