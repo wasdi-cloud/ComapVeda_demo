@@ -12,6 +12,7 @@ from GeoJsonRequest import GeoJsonRequest
 from api.ProjectResource import oRouter as oProjectRouter
 from api.TemplateResource import oRouter as oTemplateRouter
 from api.ImageResource import oRouter as oImageRouter
+from api.LabelsResource import oRouter as oLabelsRouter 
 
 
 oApp = FastAPI()
@@ -45,6 +46,7 @@ oApp.include_router(oCog.router, tags=["Cloud Optimized GeoTIFF"])
 oApp.include_router(oProjectRouter, tags=["Project Management"])
 oApp.include_router(oTemplateRouter, tags=["Template Management"])
 oApp.include_router(oImageRouter, tags=["Image Management"])
+oApp.include_router(oLabelsRouter, tags=["Label Management"])
 
 s_WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
 

@@ -113,3 +113,32 @@ async def getByProject(project_id: str = Query(..., description="Unique identifi
         raise HTTPException(status_code=500, detail=f'Error retrieving template: {str(oE)}')
     
 
+@oRouter.get("/getAttributes")
+async def getAttributes(template_id: str = Query(..., description="Unique identifier for the template")):
+    """
+    Retrieve all attributes associated with a specific template.
+
+    :param template_id: Unique identifier for the template
+    :return: list of dicts containing attribute information
+    """
+    try:
+        # TODO: Add database logic to retrieve attributes associated with the template
+        return [
+            {
+                "name": "Attribute 1",
+                "type": "string",
+                "isOptional": False
+            },
+            {
+                "name": "Attribute 2",
+                "type": "category",
+                "categoryValues": [
+                    {"value": "Category A", "color": "#FF0000"},
+                    {"value": "Category B", "color": "#00FF00"}
+                ],
+                "isOptional": True
+            }
+        ]
+    except Exception as oE:
+        raise HTTPException(status_code=500, detail=f'Error retrieving attributes: {str(oE)}')
+    
