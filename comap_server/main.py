@@ -13,6 +13,7 @@ from api.ProjectResource import oRouter as oProjectRouter
 from api.TemplateResource import oRouter as oTemplateRouter
 from api.ImageResource import oRouter as oImageRouter
 from api.LabelsResource import oRouter as oLabelsRouter 
+from api.AuthResource import oRouter as oAuthRouter
 
 
 oApp = FastAPI()
@@ -47,6 +48,7 @@ oApp.include_router(oProjectRouter, tags=["Project Management"])
 oApp.include_router(oTemplateRouter, tags=["Template Management"])
 oApp.include_router(oImageRouter, tags=["Image Management"])
 oApp.include_router(oLabelsRouter, tags=["Label Management"])
+oApp.include_router(oAuthRouter, tags=["Authentication"])
 
 s_WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
 
