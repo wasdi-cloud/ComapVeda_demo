@@ -1,6 +1,6 @@
 import {getToken} from "./session";
 
-const BASE_URL = "http://localhost:8080/api"; // Your Backend URL
+const BASE_URL = "http://localhost:8000/"; // Your Backend URL
 
 // Helper function to handle Headers and Errors
 const request = async (endpoint, options = {}) => {

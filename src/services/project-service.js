@@ -4,7 +4,7 @@ import request from './api';
 
 // 1. GET PUBLIC PROJECTS
 export const getPublicProjects = async () => {
-    return await request('/projects', { method: 'GET' });
+    return await request('projects/getPublic', { method: 'GET' });
 };
 
 // 2. GET PROJECTS BY USER
