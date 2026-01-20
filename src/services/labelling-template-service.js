@@ -5,8 +5,8 @@ import request from './api';
 /**
  * Get a list of all labelling templates
  */
-export const getList = async () => {
-    return await request('/label-templates', {
+export const getLabelTemplates = async () => {
+    return await request('templates/getList', {
         method: 'GET'
     });
 };

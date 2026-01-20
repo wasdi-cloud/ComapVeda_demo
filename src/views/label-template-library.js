@@ -1,37 +1,69 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 
 // REUSABLE COMPONENTS
 import AppCard from '../components/app-card';
 import AppButton from '../components/app-button';
 import AppTextInput from '../components/app-text-input';
+import {getLabelTemplates} from "../services/labelling-template-service";
 
 const LabelTemplatesLibrary = () => {
     const navigate = useNavigate();
-    const sCurrentUserId = "jihed_123"; // Simulate logged-in user
+    const sCurrentUserId = "jihed_123";
 
-    // 1. DUMMY DATA
-    const [aoTemplates, setAoTemplates] = useState([
-        {id: 1, name: "Building Footprints", createdAt: "2023-10-10", creator: "jihed_123", geometry: "Polygon"},
-        {id: 2, name: "Road Network", createdAt: "2023-09-15", creator: "sarah_99", geometry: "Polyline"},
-        {id: 3, name: "Points of Interest", createdAt: "2023-08-20", creator: "mike_007", geometry: "Point"},
-    ]);
+    // 1. STATE MANAGEMENT
+    const [aoLabelTemplates, setLabelTemplates] = useState([]);
+    const [bIsLoading, setBIsLoading] = useState(true);
+    const [sError, setSError] = useState(null);
+    const [sSearchText, setSSearchText] = useState("");
 
+    // 2. FETCH DATA
+    useEffect(() => {
+        const loadLabelTemplates = async () => {
+            try {
+                setBIsLoading(true);
+                const data = await getLabelTemplates();
+                setLabelTemplates(data || []);
+            } catch (error) {
+                console.error("Failed to load templates:", error);
+                setSError("Could not load templates. Please try again.");
+            } finally {
+                setBIsLoading(false);
+            }
+        };
+        loadLabelTemplates();
+    }, []);
+
+    // 3. HANDLERS
     const handleDelete = (id) => {
         if (window.confirm("Are you sure you want to delete this template?")) {
-            setAoTemplates(aoTemplates.filter(t => t.id !== id));
+            const updatedList = aoLabelTemplates.filter(t => t.templateId !== id);
+            setLabelTemplates(updatedList);
         }
     };
 
-    return (
-        <div style={{padding: '30px', background: '#f4f6f8', minHeight: '100vh'}}>
+    const formatDate = (timestamp) => {
+        if (!timestamp) return "N/A";
+        return new Date(Number(timestamp)).toLocaleDateString("en-GB", {
+            day: '2-digit', month: '2-digit', year: 'numeric'
+        });
+    };
 
+    const filteredTemplates = aoLabelTemplates.filter(item =>
+        item.name.toLowerCase().includes(sSearchText.toLowerCase())
+    );
+
+    // --- RENDER ---
+    // Note: No background color or minHeight here. Layout handles it.
+    return (
+        <div style={{padding: '10px'}}>
             {/* HEADER */}
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px'}}>
                 <div>
                     <h2 style={{margin: 0, color: '#333'}}>📚 Label Templates Library</h2>
-                    <p style={{margin: '5px 0 0 0', color: '#666', fontSize: '14px'}}>Manage standard schemas for your
-                        projects.</p>
+                    <p style={{margin: '5px 0 0 0', color: '#666', fontSize: '14px'}}>
+                        Manage standard schemas for your projects.
+                    </p>
                 </div>
                 <AppButton sVariant="success" fnOnClick={() => navigate('/create-label-template')}>
                     + Create New Template
@@ -40,7 +72,6 @@ const LabelTemplatesLibrary = () => {
 
             {/* MAIN CARD */}
             <AppCard oStyle={{padding: 0, overflow: 'hidden'}}>
-
                 {/* TOOLBAR */}
                 <div style={{
                     padding: '20px',
@@ -49,74 +80,89 @@ const LabelTemplatesLibrary = () => {
                     justifyContent: 'space-between'
                 }}>
                     <div style={{width: '300px'}}>
-                        <AppTextInput sPlaceholder="Search templates..."/>
+                        <AppTextInput
+                            value={sSearchText}
+                            onChange={(e) => setSSearchText(e.target.value)}
+                            sPlaceholder="Search templates..."
+                        />
                     </div>
                 </div>
 
-                {/* TABLE */}
-                <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '14px'}}>
-                    <thead style={{background: '#f9f9f9', borderBottom: '2px solid #eee'}}>
-                    <tr style={{textAlign: 'left', color: '#555'}}>
-                        <th style={thStyle}>Template Name</th>
-                        <th style={thStyle}>Geometry</th>
-                        <th style={thStyle}>Created At</th>
-                        <th style={thStyle}>Creator</th>
-                        <th style={{...thStyle, textAlign: 'right'}}>Actions</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    {aoTemplates.map((item, index) => (
-                        <tr key={item.id} style={{borderBottom: '1px solid #eee', background: 'white'}}>
-                            <td style={tdStyle}>
-                                <strong>{item.name}</strong>
-                            </td>
-                            <td style={tdStyle}>
-                                    <span style={{
-                                        padding: '4px 8px',
-                                        background: '#e6f7ff',
-                                        color: '#1890ff',
-                                        borderRadius: '4px',
-                                        fontSize: '12px'
-                                    }}>
-                                        {item.geometry}
-                                    </span>
-                            </td>
-                            <td style={tdStyle}>{item.createdAt}</td>
-                            <td style={tdStyle}>{item.creator}</td>
-                            <td style={{...tdStyle, textAlign: 'right'}}>
-                                <div style={{display: 'flex', justifyContent: 'flex-end', gap: '10px'}}>
-                                    <AppButton sVariant="outline" oStyle={{padding: '6px 12px', fontSize: '12px'}}>
-                                        View
-                                    </AppButton>
+                {/* --- STATES (Loading, Error, Table) --- */}
+                {bIsLoading && (
+                    <div style={{padding: '40px', textAlign: 'center', color: '#666'}}>
+                        ⏳ Loading templates...
+                    </div>
+                )}
 
-                                    {/* Logic: Only Creator can Edit/Delete */}
-                                    {item.creator === sCurrentUserId && (
-                                        <>
-                                            <AppButton sVariant="primary"
-                                                       oStyle={{padding: '6px 12px', fontSize: '12px'}}>
-                                                Edit
-                                            </AppButton>
-                                            <AppButton
-                                                sVariant="danger"
-                                                oStyle={{padding: '6px 12px', fontSize: '12px'}}
-                                                fnOnClick={() => handleDelete(item.id)}
-                                            >
-                                                Delete
-                                            </AppButton>
-                                        </>
-                                    )}
-                                </div>
-                            </td>
-                        </tr>
-                    ))}
-                    </tbody>
-                </table>
+                {sError && (
+                    <div style={{padding: '40px', textAlign: 'center', color: '#dc3545'}}>
+                        ⚠️ {sError}
+                    </div>
+                )}
+
+                {!bIsLoading && !sError && (
+                    <>
+                        <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '14px'}}>
+                            <thead style={{background: '#f9f9f9', borderBottom: '2px solid #eee'}}>
+                            <tr style={{textAlign: 'left', color: '#555'}}>
+                                <th style={thStyle}>Template Name</th>
+                                <th style={thStyle}>Geometry</th>
+                                <th style={thStyle}>Created At</th>
+                                <th style={thStyle}>Creator</th>
+                                <th style={{...thStyle, textAlign: 'right'}}>Actions</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {filteredTemplates.map((item) => (
+                                <tr key={item.templateId} style={{borderBottom: '1px solid #eee', background: 'white'}}>
+                                    <td style={tdStyle}><strong>{item.name}</strong></td>
+                                    <td style={tdStyle}>
+                                        <span style={{
+                                            padding: '4px 8px',
+                                            background: '#e6f7ff',
+                                            color: '#1890ff',
+                                            borderRadius: '4px',
+                                            fontSize: '12px'
+                                        }}>
+                                            {item.geometry}
+                                        </span>
+                                    </td>
+                                    <td style={tdStyle}>{formatDate(item.creationDate)}</td>
+                                    <td style={tdStyle}>{item.user}</td>
+                                    <td style={{...tdStyle, textAlign: 'right'}}>
+                                        <div style={{display: 'flex', justifyContent: 'flex-end', gap: '10px'}}>
+                                            <AppButton sVariant="outline"
+                                                       oStyle={{padding: '6px 12px', fontSize: '12px'}}>View</AppButton>
+                                            {item.user === sCurrentUserId && (
+                                                <>
+                                                    <AppButton sVariant="primary" oStyle={{
+                                                        padding: '6px 12px',
+                                                        fontSize: '12px'
+                                                    }}>Edit</AppButton>
+                                                    <AppButton sVariant="danger"
+                                                               oStyle={{padding: '6px 12px', fontSize: '12px'}}
+                                                               fnOnClick={() => handleDelete(item.templateId)}>Delete</AppButton>
+                                                </>
+                                            )}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                        {filteredTemplates.length === 0 && (
+                            <div style={{padding: '40px', textAlign: 'center', color: '#999'}}>
+                                No templates found.
+                            </div>
+                        )}
+                    </>
+                )}
             </AppCard>
         </div>
     );
 };
 
-// Styles
 const thStyle = {padding: '15px 20px', fontWeight: 'bold'};
 const tdStyle = {padding: '15px 20px', color: '#333'};
 
