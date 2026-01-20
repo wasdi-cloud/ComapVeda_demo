@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List
 
-from Attribute import Attribute
+from .Attribute import Attribute
 
 
 class TemplateCreate(BaseModel):

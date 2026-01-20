@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 
-class OtpModel(BaseModel):
+class LoginModel(BaseModel):
 
     username: str = Field(..., description="Username of the user requesting OTP")
 
