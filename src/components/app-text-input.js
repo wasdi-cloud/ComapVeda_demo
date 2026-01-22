@@ -1,15 +1,17 @@
 import React from 'react';
 
 const AppTextInput = ({
-                      sPlaceholder,
-                      sValue,
-                      fnOnChange,
-                      oStyle = {},
-                      ...props
-                  }) => {
+                          sPlaceholder,
+                          sValue,
+                          fnOnChange,
+                          sName,
+                          oStyle = {},
+                          ...props
+                      }) => {
     return (
         <input
             type="text"
+            name={sName}
             placeholder={sPlaceholder}
             value={sValue}
             onChange={fnOnChange}

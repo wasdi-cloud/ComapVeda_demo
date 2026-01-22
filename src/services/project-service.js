@@ -14,7 +14,7 @@ export const getProjectsByUser = async (userId) => {
 
 // 3. CREATE PROJECT
 export const createProject = async (projectData) => {
-    return await request('/projects', {
+    return await request('projects/create', {
         method: 'POST',
         body: JSON.stringify(projectData)
     });

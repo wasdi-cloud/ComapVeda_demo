@@ -6,14 +6,20 @@ import MapboxMap from '../components/MapboxMap';
 import AppCard from '../components/app-card';
 import AppTextInput from '../components/app-text-input'; // <--- Your renamed component
 import AppTextArea from '../components/app-text-area';
-import AppSelect from '../components/app-dropdown-input';
 import AppCheckbox from '../components/app-checkbox';
-import AppRadioButton from '../components/app-radiobutton';
 import AppButton from '../components/app-button';
 import AppDateInput from "../components/app-date-input";
+import {createProject} from "../services/project-service";
+import AppRadioButton from "../components/app-radiobutton";
+import AppDropdown from "../components/app-dropdown-input";
 
 const NewProjectRequest = () => {
     const navigate = useNavigate();
+
+    // --- UI STATES (NEW) ---
+    const [bIsSubmitting, setIsSubmitting] = useState(false);
+    const [sErrorMessage, setErrorMessage] = useState(null);
+    const [bShowSuccessModal, setShowSuccessModal] = useState(false); // Controls the popup
 
     // --- FORM STATE ---
     const [formData, setFormData] = useState({
@@ -32,7 +38,9 @@ const NewProjectRequest = () => {
     const handleInputChange = (e) => {
         const {name, value, type, checked} = e.target;
 
-        // Handle Tasks Object
+        // Clear errors when user starts typing again
+        if (sErrorMessage) setErrorMessage(null);
+
         if (name.startsWith('task_')) {
             const taskName = name.split('_')[1];
             setFormData(prev => ({
@@ -52,11 +60,105 @@ const NewProjectRequest = () => {
         setFormData(prev => ({...prev, aoiGeometry: drawData}));
     };
 
-    const handleSave = (e) => {
+    // --- HELPER: Convert Date String (YYYY-MM-DD) to Epoch Milliseconds ---
+    const toEpochMillis = (dateString) => {
+        if (!dateString) return null;
+        return new Date(dateString).getTime();
+    };
+
+    // --- HELPER: Convert GeoJSON/Draw Data to WKT (Simplified) ---
+    // Note: In a real app, use a library like @terraformer/wkt or wellknown
+    const toWKT = (geometry) => {
+        if (!geometry || !geometry.coordinates) return null;
+
+        // Assuming geometry is a simple Polygon from Mapbox Draw
+        // Structure: [[[lon, lat], [lon, lat], ...]]
+        const ring = geometry.coordinates[0];
+        const coordString = ring.map(pt => `${pt[0]} ${pt[1]}`).join(", ");
+
+        return `POLYGON((${coordString}))`;
+    };
+
+    // --- MAIN SAVE HANDLER ---
+    const handleSave = async (e) => {
         e.preventDefault();
-        console.log("Saving:", formData);
-        alert("Project Created!");
-        navigate('/');
+        setErrorMessage(null);
+
+        // 1. VALIDATION (Client Side)
+        if (!formData.name.trim()) return setErrorMessage("Project Name is required.");
+        if (!formData.startDate) return setErrorMessage("Start Date is required.");
+        if (formData.isOwnerHosting && (!formData.s3User || !formData.s3Password || !formData.s3Url)) {
+            return setErrorMessage("All Hosting fields (User, Password, URL) are required.");
+        }
+        if (formData.reviewRequired && (!formData.minReviews || formData.minReviews <= 0)) {
+            return setErrorMessage("Please specify a valid number of reviewers.");
+        }
+        if (!formData.isGlobal && !formData.aoiGeometry) {
+            return setErrorMessage("Please draw the Area of Interest (AOI).");
+        }
+
+        try {
+            setIsSubmitting(true);
+
+            // 2. DATA TRANSFORMATION (React State -> Python Model)
+            const tasksList = Object.keys(formData.tasks).filter(key => formData.tasks[key]);
+
+            // Map the React state to the Python "ProjectCreate" Pydantic fields
+            const oPayload = {
+                // --- Basic Info ---
+                name: formData.name,
+                description: formData.description || null,
+                link: formData.link || null,
+                isPublic: formData.isPublic,
+
+                // --- Dates (Convert to Epoch Millis) ---
+                creationDate: Date.now(), // Current time in millis
+                datasetStartDate: toEpochMillis(formData.startDate),
+                datasetEndDate: toEpochMillis(formData.endDate),
+
+                // --- Spatial ---
+                isGlobalAoI: formData.isGlobal,
+                // Only send bbox (WKT) if it is NOT global
+                bbox: formData.isGlobal ? null : toWKT(formData.aoiGeometry),
+
+                // --- Annotations & Review ---
+                // Python expects bool: "all" -> True, "own" -> False
+                hasAnnotatorGlobalView: formData.annotatorScope === 'all',
+                doesNeedReview: formData.reviewRequired,
+                reviewersNumber: formData.reviewRequired ? parseInt(formData.minReviews) : null,
+
+                // --- Data Config ---
+                mission: formData.eoMission,
+                tasks: tasksList, // Array of strings ["segmentation", "detection"]
+                // Assuming you handle the file upload separately and get a template name
+                labellingTemplate: "Standard_Template_v1", // Hardcoded for now, or use a state variable
+
+                // --- Hosting ---
+                isOwnerHosting: formData.ownerHosting,
+                hostingUsername: formData.ownerHosting ? formData.s3User : null,
+                hostingPassword: formData.ownerHosting ? formData.s3Password : null,
+                hostingUrl: formData.ownerHosting ? formData.s3Url : null,
+            };
+
+            console.log("Sending Payload to Python:", oPayload); // Debugging
+
+            // 3. API CALL
+            // Pass 'oPayload' instead of 'formData'
+            await createProject(oPayload);
+
+            setShowSuccessModal(true);
+        } catch (error) {
+            console.error("Save failed:", error);
+            setErrorMessage(error.message || "An unexpected error occurred.");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    // --- NEW: POPUP ACTION ---
+    const closePopupAndNavigate = () => {
+        setShowSuccessModal(false);
+        navigate('/'); // Go back to home
     };
 
     return (
@@ -65,8 +167,30 @@ const NewProjectRequest = () => {
             flexDirection: 'column',
             height: '100vh',
             background: '#f4f6f8',
-            overflowY: 'auto'
+            overflowY: 'auto',
+            position: 'relative'
         }}>
+
+            {/* --- NEW: SUCCESS POPUP OVERLAY --- */}
+            {bShowSuccessModal && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000,
+                    display: 'flex', justifyContent: 'center', alignItems: 'center'
+                }}>
+                    <div style={{
+                        background: 'white', padding: '30px', borderRadius: '8px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.2)', textAlign: 'center', width: '300px'
+                    }}>
+                        <div style={{fontSize: '40px', marginBottom: '10px'}}>✅</div>
+                        <h3 style={{margin: '0 0 10px 0', color: '#333'}}>Success!</h3>
+                        <p style={{color: '#666', marginBottom: '20px'}}>Request was created successfully.</p>
+                        <AppButton sVariant="primary" fnOnClick={closePopupAndNavigate}>
+                            OK, Great
+                        </AppButton>
+                    </div>
+                </div>
+            )}
 
             {/* HEADER */}
             <div style={{padding: '20px', background: 'white', borderBottom: '1px solid #ddd', marginBottom: '20px'}}>
@@ -74,6 +198,17 @@ const NewProjectRequest = () => {
             </div>
 
             <div style={{padding: '0 30px 30px 30px', maxWidth: '1000px', margin: '0 auto', width: '100%'}}>
+
+                {/* --- NEW: ERROR BANNER --- */}
+                {sErrorMessage && (
+                    <div style={{
+                        padding: '15px', background: '#fdeded', color: '#5f2120',
+                        border: '1px solid #f5c6cb', borderRadius: '4px', marginBottom: '20px'
+                    }}>
+                        ⚠️ <strong>Error:</strong> {sErrorMessage}
+                    </div>
+                )}
+
                 <form onSubmit={handleSave} style={{display: 'flex', flexDirection: 'column', gap: '20px'}}>
 
                     {/* --- 1. GENERAL INFO --- */}
@@ -83,12 +218,15 @@ const NewProjectRequest = () => {
                         <div style={gridStyle}>
                             <AppTextInput
                                 sName="name"
-                                sPlaceholder="Project Name"
+                                sValue={formData.name} // Ensure value is bound
+                                sPlaceholder="Project Name *"
                                 fnOnChange={handleInputChange}
+                                // We handled manual validation, but HTML required is good backup
                                 required
                             />
                             <AppTextInput
                                 sName="link"
+                                sValue={formData.link}
                                 type="url"
                                 sPlaceholder="External Link (Optional)"
                                 fnOnChange={handleInputChange}
@@ -98,14 +236,14 @@ const NewProjectRequest = () => {
                         <div style={{marginTop: '15px'}}>
                             <AppTextArea
                                 sName="description"
-                                sPlaceholder="Project Description..."
+                                sValue={formData.description}
+                                sPlaceholder="Project Description *"
                                 fnOnChange={handleInputChange}
                             />
                         </div>
 
                         {/* Dates */}
-                        <div style={{ ...gridStyle, marginTop: '15px' }}>
-
+                        <div style={{...gridStyle, marginTop: '15px'}}>
                             <AppDateInput
                                 sLabel="Creation Date"
                                 sName="creationDate"
@@ -113,21 +251,18 @@ const NewProjectRequest = () => {
                                 fnOnChange={handleInputChange}
                                 bRequired={true}
                             />
-
                             <AppDateInput
                                 sLabel="Start Date"
                                 sName="startDate"
-                                sValue={formData.startDate} // Don't forget to bind the value!
+                                sValue={formData.startDate}
                                 fnOnChange={handleInputChange}
                             />
-
                             <AppDateInput
                                 sLabel="End Date"
                                 sName="endDate"
-                                sValue={formData.endDate} // Don't forget to bind the value!
+                                sValue={formData.endDate}
                                 fnOnChange={handleInputChange}
                             />
-
                         </div>
 
                         {/* Toggles */}
@@ -152,10 +287,7 @@ const NewProjectRequest = () => {
                         <AppCard>
                             <h3 style={headerStyle}>2. Area of Interest (AOI)</h3>
                             <div style={{
-                                height: '400px',
-                                borderRadius: '4px',
-                                overflow: 'hidden',
-                                border: '1px solid #ccc'
+                                height: '400px', borderRadius: '4px', overflow: 'hidden', border: '1px solid #ccc'
                             }}>
                                 <MapboxMap
                                     aoMarkers={[]}
@@ -222,7 +354,7 @@ const NewProjectRequest = () => {
 
                         <div style={{marginBottom: '15px'}}>
                             <label style={subLabelStyle}>EO Mission</label>
-                            <AppSelect
+                            <AppDropdown
                                 sValue={formData.eoMission}
                                 fnOnChange={handleInputChange}
                                 aoOptions={["Sentinel-2", "Landsat-8", "Custom High-Res"]}
@@ -289,14 +421,16 @@ const NewProjectRequest = () => {
                         <AppButton
                             sVariant="outline"
                             fnOnClick={() => navigate('/')}
+                            disabled={bIsSubmitting}
                         >
                             Cancel
                         </AppButton>
                         <AppButton
                             type="submit"
                             sVariant="success"
+                            disabled={bIsSubmitting} // Disable while sending
                         >
-                            Create Project
+                            {bIsSubmitting ? 'Creating...' : 'Create Project'}
                         </AppButton>
                     </div>
 
