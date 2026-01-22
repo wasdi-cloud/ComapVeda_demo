@@ -1,25 +1,20 @@
 import React from 'react';
 
-const AppCheckbox = ({
-                         bChecked,
-                         fnOnChange,
-                         sLabel,
-                         sName,
-                         bRequired = false,
-                         oStyle = {}
-                     }) => {
+const AppCheckbox = ({ sLabel, sName, bChecked, fnOnChange, oStyle, disabled }) => {
     return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', ...oStyle }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', ...oStyle }}>
             <input
                 type="checkbox"
                 name={sName}
-                checked={bChecked}
+                checked={bChecked || false} // Ensure it's never undefined
                 onChange={fnOnChange}
-                required={bRequired}
-                style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                disabled={disabled}
+                // FIX: Silence warning
+                readOnly={!fnOnChange}
+                style={{ width: '16px', height: '16px', cursor: disabled ? 'not-allowed' : 'pointer' }}
             />
             {sLabel && (
-                <label style={{ fontSize: '14px', color: '#333', cursor: 'pointer' }}>
+                <label style={{ fontSize: '14px', color: disabled ? '#999' : '#333' }}>
                     {sLabel}
                 </label>
             )}

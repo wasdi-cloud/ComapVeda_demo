@@ -1,40 +1,24 @@
 import React from 'react';
 
-const AppDateInput = ({
-                          sLabel,       // String: The label text (e.g. "Start Date")
-                          sName,        // String: Form field name
-                          sValue,       // String: The date value (YYYY-MM-DD)
-                          fnOnChange,   // Function: Handle change
-                          bRequired = false,
-                          oStyle = {}
-                      }) => {
+const AppDateInput = ({ sLabel, sName, sValue, fnOnChange, oStyle, disabled, bRequired }) => {
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', width: '100%' }}>
-            {sLabel && (
-                <label style={{
-                    fontSize: '13px',
-                    fontWeight: 'bold',
-                    color: '#555'
-                }}>
-                    {sLabel}
-                </label>
-            )}
+        <div style={{ display: 'flex', flexDirection: 'column', ...oStyle }}>
+            {sLabel && <label style={{ marginBottom: '5px', fontSize: '13px', fontWeight: 'bold', color: '#555' }}>{sLabel}</label>}
             <input
                 type="date"
                 name={sName}
                 value={sValue}
                 onChange={fnOnChange}
+                disabled={disabled}
                 required={bRequired}
+                // FIX: Silence warning
+                readOnly={!fnOnChange}
                 style={{
-                    padding: '10px',
-                    borderRadius: '4px',
+                    padding: '8px',
                     border: '1px solid #ccc',
-                    fontSize: '14px',
-                    fontFamily: 'inherit',
-                    outline: 'none',
-                    width: '100%',
-                    boxSizing: 'border-box', // Critical for grid alignment
-                    ...oStyle
+                    borderRadius: '4px',
+                    background: disabled ? '#eee' : 'white',
+                    color: disabled ? '#666' : 'black'
                 }}
             />
         </div>

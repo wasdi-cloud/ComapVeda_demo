@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {useNavigate} from 'react-router-dom';
+import {useNavigate, useParams} from 'react-router-dom';
 
 // 1. REUSABLE COMPONENTS
 import MapboxMap from '../components/MapboxMap';
@@ -10,12 +10,22 @@ import AppDateInput from '../components/app-date-input'; // Don't forget this!
 import AppCheckbox from '../components/app-checkbox';
 import AppRadioButton from '../components/app-radiobutton';
 import AppButton from '../components/app-button';
+import {approveProject, rejectProject} from "../services/project-service";
 
 const ApproveProject = () => {
     const navigate = useNavigate();
 
-    // --- 1. DUMMY DATA (Simulating a fetched Pending Request) ---
-    // In a real app, you would fetch this by ID using useEffect
+    // 1. Get ID from URL
+    const {projectId} = useParams();
+    const safeProjectId = projectId || "REQ-2023-884"; // Fallback for UI testing
+
+    // --- 2. LOGIC STATE (NEW) ---
+    const [bIsSubmitting, setIsSubmitting] = useState(false);
+    const [sError, setError] = useState(null);
+    const [bShowSuccessModal, setShowSuccessModal] = useState(false);
+    const [sSuccessMessage, setSuccessMessage] = useState("");
+
+    // --- 3. DUMMY DATA (Preserved from your code) ---
     const [oRequestData] = useState({
         name: 'Amazon Rainforest Monitoring',
         description: 'Tracking deforestation in the western sector.',
@@ -24,37 +34,70 @@ const ApproveProject = () => {
         startDate: '2023-01-01',
         endDate: '2023-12-31',
         isPublic: false,
-        isGlobal: false, // It has a map!
+        isGlobal: false,
         annotatorScope: 'own',
         reviewRequired: true,
         minReviews: 2,
         eoMission: 'Sentinel-2',
         tasks: {segmentation: true, detection: false, classification: false, other: false},
-        ownerHosting: false, // Requesting platform hosting
+        ownerHosting: false,
         s3User: '', s3Password: '', s3Url: ''
     });
 
-    // --- 2. ADMIN STATE ---
-    const [iMaxStorage, setIMaxStorage] = useState(2); // Default 2GB per requirements
+    // --- 4. ADMIN STATE ---
+    const [iMaxStorage, setIMaxStorage] = useState(2);
     const [sAdminNote, setSAdminNote] = useState("");
 
-    // --- HANDLERS ---
-    const handleApprove = () => {
-        // Logic: convert request to project, save max storage...
-        console.log("Approved! Storage:", iMaxStorage, "GB. Note:", sAdminNote);
-        alert("Project Approved and User Notified! ✅");
-        navigate('/'); // Redirect to Admin Dashboard
+    // --- HANDLERS (INTEGRATED) ---
+
+    const handleApprove = async () => {
+        setError(null);
+        try {
+            setIsSubmitting(true);
+
+            // CALL SERVER (using the function we defined previously)
+            await approveProject(safeProjectId, iMaxStorage);
+
+            // SUCCESS UI
+            setSuccessMessage("Project Approved and User Notified! ✅");
+            setShowSuccessModal(true);
+        } catch (err) {
+            console.error(err);
+            setError(err.message || "Failed to approve project.");
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
-    const handleReject = () => {
-        if (!sAdminNote) {
-            alert("Please provide a note explaining the rejection.");
+    const handleReject = async () => {
+        setError(null);
+
+        // VALIDATION: Note is mandatory for rejection
+        if (!sAdminNote || sAdminNote.trim() === "") {
+            setError("Please provide a note explaining the rejection.");
             return;
         }
-        // Logic: delete request, email user with note...
-        console.log("Rejected. Reason:", sAdminNote);
-        alert("Request Rejected and User Notified! ❌");
-        navigate('/');
+
+        try {
+            setIsSubmitting(true);
+
+            // CALL SERVER
+            await rejectProject(safeProjectId, sAdminNote);
+
+            // SUCCESS UI
+            setSuccessMessage("Request Rejected and User Notified! ❌");
+            setShowSuccessModal(true);
+        } catch (err) {
+            console.error(err);
+            setError(err.message || "Failed to reject project.");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const closePopupAndNavigate = () => {
+        setShowSuccessModal(false);
+        navigate('/'); // Redirect to Dashboard
     };
 
     return (
@@ -63,58 +106,78 @@ const ApproveProject = () => {
             flexDirection: 'column',
             height: '100vh',
             background: '#f4f6f8',
-            overflowY: 'auto'
+            overflowY: 'auto',
+            position: 'relative'
         }}>
+
+            {/* --- NEW: SUCCESS POPUP OVERLAY --- */}
+            {bShowSuccessModal && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000,
+                    display: 'flex', justifyContent: 'center', alignItems: 'center'
+                }}>
+                    <div style={{
+                        background: 'white', padding: '30px', borderRadius: '8px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.2)', textAlign: 'center', width: '350px'
+                    }}>
+                        <div style={{fontSize: '40px', marginBottom: '10px'}}>
+                            {sSuccessMessage.includes("Rejected") ? "⚠️" : "🎉"}
+                        </div>
+                        <h3 style={{margin: '0 0 10px 0', color: '#333'}}>Action Complete</h3>
+                        <p style={{color: '#666', marginBottom: '20px'}}>{sSuccessMessage}</p>
+                        <AppButton sVariant="primary" fnOnClick={closePopupAndNavigate}>
+                            Back to Dashboard
+                        </AppButton>
+                    </div>
+                </div>
+            )}
 
             {/* HEADER */}
             <div style={{
-                padding: '20px',
-                background: 'white',
-                borderBottom: '1px solid #ddd',
-                marginBottom: '20px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
+                padding: '20px', background: 'white', borderBottom: '1px solid #ddd', marginBottom: '20px',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
             }}>
                 <div>
                     <h2 style={{margin: 0, color: '#333'}}>🕵️‍♂️ Review Project Request</h2>
-                    <p style={{margin: '5px 0 0 0', fontSize: '13px', color: '#666'}}>ID: #REQ-2023-884 • Requested
-                        by: <strong>John Doe</strong></p>
+                    <p style={{margin: '5px 0 0 0', fontSize: '13px', color: '#666'}}>
+                        ID: #{safeProjectId} • Requested by: <strong>John Doe</strong>
+                    </p>
                 </div>
                 <div style={{
-                    padding: '5px 10px',
-                    background: '#fff3cd',
-                    color: '#856404',
-                    borderRadius: '4px',
-                    fontSize: '13px',
-                    fontWeight: 'bold',
-                    border: '1px solid #ffeeba'
+                    padding: '5px 10px', background: '#fff3cd', color: '#856404', borderRadius: '4px',
+                    fontSize: '13px', fontWeight: 'bold', border: '1px solid #ffeeba'
                 }}>
                     ⚠️ Status: Pending
                 </div>
             </div>
 
             <div style={{padding: '0 30px 30px 30px', maxWidth: '1000px', margin: '0 auto', width: '100%'}}>
+
+                {/* --- NEW: ERROR BANNER --- */}
+                {sError && (
+                    <div style={{
+                        padding: '15px', background: '#fdeded', color: '#5f2120',
+                        border: '1px solid #f5c6cb', borderRadius: '4px', marginBottom: '20px'
+                    }}>
+                        ⚠️ <strong>Error:</strong> {sError}
+                    </div>
+                )}
+
                 <div style={{display: 'flex', flexDirection: 'column', gap: '20px'}}>
 
-                    {/* =========================================================
-                        USER DATA SECTIONS (READ ONLY)
-                        We add `disabled={true}` to everything
-                       ========================================================= */}
-
-                    {/* --- 1. GENERAL INFO --- */}
+                    {/* --- 1. GENERAL INFO (READ ONLY) --- */}
                     <AppCard>
                         <h3 style={headerStyle}>1. General Information</h3>
                         <div style={gridStyle}>
-                            <AppTextInput sLabel="Project Name" sValue={oRequestData.name} disabled/>
-                            <AppTextInput sLabel="External Link" sValue={oRequestData.link} disabled/>
+                            <AppTextInput sName="Project Name" sValue={oRequestData.name} disabled/>
+                            <AppTextInput sName="External Link" sValue={oRequestData.link} disabled/>
                         </div>
                         <div style={{marginTop: '15px'}}>
                             <AppTextArea sValue={oRequestData.description} disabled/>
                         </div>
                         <div style={{...gridStyle, marginTop: '15px'}}>
-                            <AppDateInput sLabel="Creation Date" sValue={oRequestData.creationDate}
-                                          oStyle={{background: '#eee'}} disabled/>
+                            <AppDateInput sLabel="Creation Date" sValue={oRequestData.creationDate} disabled/>
                             <AppDateInput sLabel="Start Date" sValue={oRequestData.startDate} disabled/>
                             <AppDateInput sLabel="End Date" sValue={oRequestData.endDate} disabled/>
                         </div>
@@ -135,14 +198,9 @@ const ApproveProject = () => {
                                 border: '1px solid #ccc',
                                 opacity: 0.9
                             }}>
-                                {/* Interactive features disabled for review view */}
                                 <MapboxMap
                                     aoMarkers={[]}
-                                    oInitialView={{
-                                        latitude: -3.4653,
-                                        longitude: -62.2159,
-                                        zoom: 5
-                                    }} // Example Amazon coordinates
+                                    oInitialView={{latitude: -3.4653, longitude: -62.2159, zoom: 5}}
                                     bEnableDraw={false}
                                     bEnableGeocoder={false}
                                 />
@@ -177,7 +235,7 @@ const ApproveProject = () => {
                     <AppCard>
                         <h3 style={headerStyle}>4. Data & Storage Request</h3>
                         <div style={gridStyle}>
-                            <AppTextInput sLabel="EO Mission" sValue={oRequestData.eoMission} disabled/>
+                            <AppTextInput sName="EO Mission" sValue={oRequestData.eoMission} disabled/>
                             <AppCheckbox sLabel="Owner Provided Hosting (S3)" bChecked={oRequestData.ownerHosting}
                                          disabled oStyle={{marginTop: '30px'}}/>
                         </div>
@@ -195,10 +253,7 @@ const ApproveProject = () => {
                         {/* A. STORAGE ALLOCATION (Only if not owner hosting) */}
                         {!oRequestData.ownerHosting && (
                             <div style={{
-                                marginBottom: '20px',
-                                padding: '15px',
-                                background: '#eef6fc',
-                                borderRadius: '4px'
+                                marginBottom: '20px', padding: '15px', background: '#eef6fc', borderRadius: '4px'
                             }}>
                                 <label style={{...subLabelStyle, color: '#0056b3'}}>
                                     💾 Platform Storage Allocation
@@ -221,9 +276,13 @@ const ApproveProject = () => {
                             <label style={subLabelStyle}>Admin Note (Required for Rejection)</label>
                             <AppTextArea
                                 sValue={sAdminNote}
-                                fnOnChange={(e) => setSAdminNote(e.target.value)}
+                                fnOnChange={(e) => {
+                                    setSAdminNote(e.target.value);
+                                    if (sError) setError(null); // Clear error when user types
+                                }}
                                 sPlaceholder="Enter feedback for the user here..."
                                 iRows={3}
+                                oStyle={sError ? {borderColor: 'red'} : {}}
                             />
                         </div>
 
@@ -236,18 +295,20 @@ const ApproveProject = () => {
                             paddingTop: '20px'
                         }}>
                             <AppButton
-                                sVariant="outline" // "Cancel" style but red for danger
+                                sVariant="outline"
                                 oStyle={{borderColor: '#dc3545', color: '#dc3545'}}
                                 fnOnClick={handleReject}
+                                disabled={bIsSubmitting}
                             >
-                                ❌ Reject Request
+                                {bIsSubmitting ? "Processing..." : "❌ Reject Request"}
                             </AppButton>
 
                             <AppButton
                                 sVariant="success"
                                 fnOnClick={handleApprove}
+                                disabled={bIsSubmitting}
                             >
-                                ✅ Approve Project
+                                {bIsSubmitting ? "Processing..." : "✅ Approve Project"}
                             </AppButton>
                         </div>
                     </AppCard>

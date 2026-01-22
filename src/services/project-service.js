@@ -20,22 +20,30 @@ export const createProject = async (projectData) => {
     });
 };
 
-// 4. APPROVE PROJECT (Admin)
+// 4. APPROVE PROJECT (Adapted for GET)
 export const approveProject = async (projectId, maxStorage) => {
-    return await request(`/projects/${projectId}/approve`, {
-        method: 'POST', // or PUT depending on backend
-        body: JSON.stringify({ maxStorage })
+    // We construct a Query String: /approve?project_id=XYZ&maxStorage=2
+    const params = new URLSearchParams({
+        project_id: projectId,
+        maxStorage: maxStorage // Sending it as query param
+    });
+
+    return await request(`projects/approve?${params.toString()}`, {
+        method: 'GET' // Changed to GET to match server
     });
 };
 
-// 5. REJECT PROJECT (Admin)
-export const rejectProject = async (projectId, note) => {
-    return await request(`/projects/${projectId}/reject`, {
-        method: 'POST',
-        body: JSON.stringify({ note })
+// 5. REJECT PROJECT (Adapted for GET)
+export const rejectProject = async (projectId) => {
+    // We construct a Query String: /reject?project_id=XYZ&note=Reason
+    const params = new URLSearchParams({
+        project_id: projectId,
+    });
+
+    return await request(`projects/reject?${params.toString()}`, {
+        method: 'GET' // Changed to GET to match server
     });
 };
-
 // 6. INVITE COLLAB (Admin)
 export const inviteCollab = async (projectId, note) => {
     return await request(`/projects/${projectId}/reject`, {
