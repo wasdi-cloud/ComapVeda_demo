@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import Map, {Marker, NavigationControl, Popup} from 'react-map-gl/mapbox'; // Note the import path
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import MapboxGeocoder from '@mapbox/mapbox-gl-geocoder';
@@ -12,16 +12,12 @@ import '@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css';
 const MAPBOX_TOKEN = process.env.REACT_APP_MAPBOX_TOKEN;
 
 const MapboxMap = ({
-                       aoMarkers = [],              // ao = Array of Objects
-                       oInitialView,                // o = Object
-                       onDrawUpdate,                // function (usually fn or on...)
-                       sActiveGeoTIFF,              // s = String
-
-                       // Booleans
+                       aoMarkers = [],
+                       oInitialView,
+                       onDrawUpdate,
+                       sActiveGeoTIFF,
                        bEnableGeocoder = false,
                        bEnableDraw = true,
-
-                       // Strings
                        sInitialMapStyle = "mapbox://styles/mapbox/satellite-v9"
                    }) => {
 
@@ -30,38 +26,92 @@ const MapboxMap = ({
     const [sMeasurements, setMeasurements] = useState("");
     const [sMapStyle, setMapStyle] = useState(sInitialMapStyle);
 
-    // Helper: Send data back to parent
-    const handleDrawUpdate = (e, drawInstance) => {
-        const oData = e.features[0];
-        if (oData) {
-            if (oData.geometry.type === 'LineString') {
-                const dDistance = turf.length(oData, {units: 'kilometers'});
-                setMeasurements(`Distance: ${dDistance.toFixed(3)} km`);
-            } else if (oData.geometry.type === 'Polygon') {
-                const dArea = turf.area(oData);
-                setMeasurements(`Area: ${(dArea / 1000000).toFixed(3)} km²`);
-            }
-        }
-        if (onDrawUpdate && drawInstance) {
-            onDrawUpdate(drawInstance.getAll());
-        }
-    };
+    const mapRef = useRef(null);
 
+    // --- NEW: Track the current source/layer ID to ensure clean removal ---
+    const activeLayerIdRef = useRef(null);
+
+    // --- 1. ROBUST LAYER UPDATE ---
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map) return;
+
+        const refreshLayer = () => {
+            // A. CLEANUP: Remove the SPECIFIC previous layer we added
+            if (activeLayerIdRef.current) {
+                if (map.getLayer(activeLayerIdRef.current)) {
+                    map.removeLayer(activeLayerIdRef.current);
+                }
+                if (map.getSource(activeLayerIdRef.current)) {
+                    map.removeSource(activeLayerIdRef.current);
+                }
+                activeLayerIdRef.current = null;
+            }
+
+            // B. ADD NEW: If we have a file selected
+            if (sActiveGeoTIFF) {
+                // Generate a unique ID to prevent cache/internal conflicts
+                const uniqueId = `geotiff-${Date.now()}`;
+                const sTileUrl = `http://127.0.0.1:8000/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=${sActiveGeoTIFF}`;
+
+                try {
+                    // Add Source
+                    map.addSource(uniqueId, {
+                        type: 'raster',
+                        tiles: [sTileUrl],
+                        tileSize: 256,
+                    });
+
+                    // Add Layer
+                    map.addLayer({
+                        id: uniqueId,
+                        type: 'raster',
+                        source: uniqueId,
+                        paint: {'raster-opacity': 1}
+                    });
+
+                    // Save this ID so we can remove it next time
+                    activeLayerIdRef.current = uniqueId;
+                } catch (error) {
+                    console.error("Mapbox layer error:", error);
+                }
+            }
+        };
+
+        // Execute immediately.
+        // We removed 'isStyleLoaded' check because addSource/addLayer usually queues if busy.
+        refreshLayer();
+
+        // Optional: Re-run if style changes (e.g. satellite -> street)
+        const onStyleData = () => {
+            // Only re-add if we lost our layer due to style switch
+            if (activeLayerIdRef.current && !map.getLayer(activeLayerIdRef.current)) {
+                refreshLayer();
+            }
+        };
+
+        map.on('styledata', onStyleData);
+        return () => {
+            map.off('styledata', onStyleData);
+        };
+
+    }, [sActiveGeoTIFF, sMapStyle]); // Dependencies
+
+    // --- 2. MAP LOAD HANDLER (Controls Only) ---
     const handleMapLoad = (e) => {
         const oMap = e.target;
+        mapRef.current = oMap;
 
-        // --- 1. GEOCODER (Search Bar) ---
         if (bEnableGeocoder) {
             const oGeocoder = new MapboxGeocoder({
                 accessToken: MAPBOX_TOKEN,
-                mapboxgl: require('mapbox-gl'), // Helper to attach to map instance
-                marker: false, // Do not add a default marker on search
-                collapsed: true // Start collapsed to save space
+                mapboxgl: require('mapbox-gl'),
+                marker: false,
+                collapsed: true
             });
             oMap.addControl(oGeocoder, 'top-right');
         }
 
-        // --- 2. MAPBOX DRAW ---
         if (bEnableDraw) {
             const oDraw = new MapboxDraw({
                 displayControlsDefault: false,
@@ -78,7 +128,6 @@ const MapboxMap = ({
                 if (onDrawUpdate) onDrawUpdate(oDraw.getAll());
             });
 
-            // Direct Select Logic
             oMap.on('draw.selectionchange', (e) => {
                 if (e.features.length > 0 && e.features[0].geometry.type !== 'Point') {
                     const sFeatureId = e.features[0].id;
@@ -88,30 +137,27 @@ const MapboxMap = ({
                 }
             });
         }
+    };
 
-        // --- 3. GEOTIFF LAYER ---
-        if (sActiveGeoTIFF) {
-            const sTILE_URL = `http://127.0.0.1:8000/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=${sActiveGeoTIFF}`;
-            if (!oMap.getSource('my-geotiff-source')) {
-                oMap.addSource('my-geotiff-source', {
-                    type: 'raster',
-                    tiles: [sTILE_URL],
-                    tileSize: 256,
-                    bounds: oInitialView.bounds || undefined
-                });
-                oMap.addLayer({
-                    id: 'geotiff-layer',
-                    type: 'raster',
-                    source: 'my-geotiff-source',
-                });
+    const handleDrawUpdate = (e, drawInstance) => {
+        const oData = e.features[0];
+        if (oData) {
+            if (oData.geometry.type === 'LineString') {
+                const dDistance = turf.length(oData, {units: 'kilometers'});
+                setMeasurements(`Distance: ${dDistance.toFixed(3)} km`);
+            } else if (oData.geometry.type === 'Polygon') {
+                const dArea = turf.area(oData);
+                setMeasurements(`Area: ${(dArea / 1000000).toFixed(3)} km²`);
             }
+        }
+        if (onDrawUpdate && drawInstance) {
+            onDrawUpdate(drawInstance.getAll());
         }
     };
 
     return (
         <div style={{position: 'relative', width: '100%', height: '100%'}}>
 
-            {/* --- STYLE SWITCHER (Floating Button) --- */}
             <div style={{position: 'absolute', bottom: 30, left: 10, zIndex: 10}}>
                 <select
                     onChange={(e) => setMapStyle(e.target.value)}
@@ -124,10 +170,9 @@ const MapboxMap = ({
                 </select>
             </div>
 
-            {/* Measurement HUD */}
             {sMeasurements && (
                 <div style={{
-                    position: 'absolute', top: 10, right: 50, zIndex: 1, // Moved left slightly to avoid geocoder
+                    position: 'absolute', top: 10, right: 50, zIndex: 1,
                     background: 'white', padding: '10px', borderRadius: '4px',
                     boxShadow: '0 0 10px rgba(0,0,0,0.2)', fontWeight: 'bold'
                 }}>
@@ -136,6 +181,7 @@ const MapboxMap = ({
             )}
 
             <Map
+                ref={mapRef}
                 mapboxAccessToken={MAPBOX_TOKEN}
                 initialViewState={{
                     longitude: oInitialView.longitude || 0,
@@ -143,12 +189,12 @@ const MapboxMap = ({
                     zoom: oInitialView.zoom || 1.5
                 }}
                 style={{width: '100%', height: '100%'}}
-                mapStyle={sMapStyle} // Uses state now, not hardcoded prop
+                mapStyle={sMapStyle}
                 onLoad={handleMapLoad}
             >
                 <NavigationControl position='bottom-right'/>
 
-                {aoMarkers.map((marker, index) => (
+                {aoMarkers && aoMarkers.length > 0 && aoMarkers.map((marker, index) => (
                     <Marker
                         key={index}
                         latitude={marker.position[0]}
