@@ -1,37 +1,57 @@
 import json
+
 import aiofiles
-from fastapi import FastAPI, Request, HTTPException, Body, Query
-from titiler.core.factory import TilerFactory
-from rio_tiler.errors import TileOutsideBounds
+import morecantile
+from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.responses import Response
-from starlette.middleware.cors import CORSMiddleware
+from rasterio import RasterioIOError
+from rio_tiler.errors import TileOutsideBounds
 from rio_tiler.io import Reader
 from rio_tiler.types import BBox
-import morecantile
+from starlette.middleware.cors import CORSMiddleware
+from titiler.core.factory import TilerFactory
+
 from GeoJsonRequest import GeoJsonRequest
+from api.AuthResource import oRouter as oAuthRouter
+from api.ImageResource import oRouter as oImageRouter
+from api.LabelsResource import oRouter as oLabelsRouter
 from api.ProjectResource import oRouter as oProjectRouter
 from api.TemplateResource import oRouter as oTemplateRouter
-from api.ImageResource import oRouter as oImageRouter
-from api.LabelsResource import oRouter as oLabelsRouter 
-from api.AuthResource import oRouter as oAuthRouter
-
 
 oApp = FastAPI()
 
+# Hex representation of a 1x1 pixel transparent PNG
+TRANSPARENT_PNG = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
 
+
+# 1. Handle Out of Bounds (Valid file, wrong zoom/pan) -> Silent
 @oApp.exception_handler(TileOutsideBounds)
 async def tile_out_of_bounds_handler(request: Request, exc: TileOutsideBounds):
     """
-    If the map asks for a tile outside the image, return 404
-    instead of crashing with a 500 error.
+    Return a valid 1x1 transparent PNG with Status 200.
+    1. Browser sees 200 OK -> No Red Console Error.
+    2. Mapbox sees valid PNG -> No "Decode Error".
+    3. User sees nothing -> Correct visual behavior.
     """
-    return Response(content=None, status_code=404)
+    return Response(content=TRANSPARENT_PNG, media_type="image/png")
+
+
+# 2. Handle Missing File (Invalid file path) -> 404 Error
+@oApp.exception_handler(RasterioIOError)
+async def file_not_found_handler(request: Request, exc: RasterioIOError):
+    """
+    Handle cases where the requested GeoTIFF file does not exist on the server.
+    """
+    # Option A: Return 404 (Correct HTTP behavior)
+    # The browser will log a 404, but the server won't crash.
+    # Mapbox will just show nothing for this tile.
+    return Response(content="File not found", status_code=404)
 
 
 # add CORS middleware
 oApp.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # allows all origins - need to be more restrictive in production
+    allow_origins=["*"],  # allows all origins - need to be more restrictive in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,9 +72,11 @@ oApp.include_router(oAuthRouter, tags=["Authentication"])
 
 s_WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
 
+
 @oApp.get("/")
 async def root():
     return {"message": "Hello, World!"}
+
 
 @oApp.get("/get_three_points")
 async def get_three_points():
@@ -65,6 +87,7 @@ async def get_three_points():
             {"lat": 20, "lng": -7}
         ]
     }
+
 
 @oApp.get("/geotiff_coordinates")
 async def geotiff_coordinates(url: str = Query("TCI.tif", description="Filename of the GeoTIFF")):
@@ -100,6 +123,7 @@ def getWasdiBoundingBox(oBBox: BBox) -> dict | None:
     except Exception as oE:
         return None
 
+
 @oApp.get("/list_tiles")
 async def listTiles(zoom: int = 1, url: str = "baresoil-flood.tif"):
     """List the tiles covering the GeoTIFF at a given zoom level."""
@@ -123,6 +147,7 @@ async def listTiles(zoom: int = 1, url: str = "baresoil-flood.tif"):
         }
     except Exception as oE:
         return {"error": str(oE)}
+
 
 @oApp.post("/store_label")
 async def store_label(oPayload: GeoJsonRequest):
@@ -166,6 +191,7 @@ async def read_label():
     except Exception as oE:
         raise HTTPException(status_code=500, detail=str(oE))
 
+
 if __name__ == "__main__":
     """
     To run the application from terminal, use the following command:
@@ -173,5 +199,5 @@ if __name__ == "__main__":
     """
 
     import uvicorn
+
     uvicorn.run("main:oApp", host="127.0.0.1", port=8000, reload=True)
-    
