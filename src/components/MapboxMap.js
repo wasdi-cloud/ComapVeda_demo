@@ -20,7 +20,8 @@ const MapboxMap = ({
                        bEnableDraw = true,
                        sInitialMapStyle = "mapbox://styles/mapbox/satellite-v9",
                        sSelectedFeatureId, // ID coming from Table Click
-                       onFeatureSelect     // Function to notify Table
+                       onFeatureSelect  ,
+                       aoFeatures = []// Function to notify Table
                    }) => {
 
     // Internal State
@@ -50,6 +51,35 @@ const MapboxMap = ({
         }
     }, [sSelectedFeatureId]);
 
+    useEffect(() => {
+        if (!drawRef.current) return;
+
+        const oDraw = drawRef.current;
+
+        // 1. We create a "signature" of the current IDs to avoid unnecessary re-renders
+        // But for filtering, we just wipe and rewrite.
+        // NOTE: This ensures the visual map always matches the 'filteredLabels' from parent.
+
+        // Get all current IDs in map to see if we really need to update
+        // (Optimization to prevent flickering during active drawing)
+        const currentIds = oDraw.getAll().features.map(f => f.id).sort().join(',');
+        const newIds = aoFeatures.map(f => f.id).sort().join(',');
+
+        // Only update if the LIST structure changed (Filtering/Deletion)
+        // OR if we have enriched metadata that is missing from the map
+        const needsUpdate = currentIds !== newIds || aoFeatures.some(f => f.properties.annotator && !oDraw.get(f.id)?.properties?.annotator);
+
+        if (needsUpdate) {
+            oDraw.deleteAll();
+            if (aoFeatures.length > 0) {
+                oDraw.add({
+                    type: 'FeatureCollection',
+                    features: aoFeatures
+                });
+            }
+        }
+
+    }, [aoFeatures]);
 
     // --- 1. ROBUST LAYER UPDATE ---
     useEffect(() => {
@@ -135,6 +165,14 @@ const MapboxMap = ({
 
     }, [sActiveGeoTIFF, sMapStyle]);
 
+    useEffect(() => {
+        if (drawRef.current && sSelectedFeatureId) {
+            try {
+                drawRef.current.changeMode('simple_select', { featureIds: [sSelectedFeatureId] });
+            } catch(e) { console.log("Draw not ready"); }
+        }
+    }, [sSelectedFeatureId]);
+
     // --- 2. MAP LOAD HANDLER (Controls Only) ---
     const handleMapLoad = (e) => {
         const oMap = e.target;
@@ -185,24 +223,28 @@ const MapboxMap = ({
             });
 
             // --- NEW: HOVER LOGIC ---
+            // --- HOVER LOGIC FIXED ---
             oMap.on('mousemove', (e) => {
-                // Check if mouse is over a Drawn Feature
-                // "gl-draw-polygon-fill-inactive.cold" is the layer name Mapbox Draw uses for unselected shapes
-                const features = oMap.queryRenderedFeatures(e.point);
+                // 1. DISABLE POPUP WHILE DRAWING
+                const mode = oDraw.getMode();
+                if (mode.startsWith('draw_')) {
+                    setHoverInfo(null);
+                    return; // Exit immediately
+                }
 
-                // Filter for features created by the Draw tool
-                // Note: Draw features usually don't have custom properties available in 'queryRenderedFeatures'
-                // easily until saved, but we can look up the ID in the Draw instance.
+                const features = oMap.queryRenderedFeatures(e.point);
                 const drawFeature = features.find(f => f.source && f.source.includes('mapbox-gl-draw'));
 
                 if (drawFeature) {
-                    // Get the full data from Draw memory (which includes our 'annotator' property)
+                    // 2. GET ENRICHED DATA
+                    // Because we sync'd aoFeatures back to oDraw in UseEffect, this .get() now works!
                     const fullData = oDraw.get(drawFeature.properties.id);
-                    if (fullData && fullData.properties) {
+
+                    if (fullData && fullData.properties && fullData.properties.annotator) {
                         setHoverInfo({
                             latitude: e.lngLat.lat,
                             longitude: e.lngLat.lng,
-                            annotator: fullData.properties.annotator || "Unknown",
+                            annotator: fullData.properties.annotator,
                             class: fullData.properties.className || "Shape"
                         });
                         oMap.getCanvas().style.cursor = 'pointer';
@@ -210,7 +252,6 @@ const MapboxMap = ({
                     }
                 }
 
-                // Reset if nothing found
                 setHoverInfo(null);
                 oMap.getCanvas().style.cursor = '';
             });

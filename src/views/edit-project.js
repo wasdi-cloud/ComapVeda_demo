@@ -245,7 +245,7 @@ const EditProject = () => {
                         onDrawUpdate={handleDrawUpdate}
                         sSelectedFeatureId={sSelectedFeatureId}
                         onFeatureSelect={(id) => setSelectedFeatureId(id)}
-
+                        aoFeatures={filteredLabels}
 
                         sInitialMapStyle="mapbox://styles/mapbox/satellite-v9"
                     />
