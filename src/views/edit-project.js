@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import * as turf from '@turf/turf';
 import AppButton from "../components/app-button";
 import MapboxMap from "../components/MapboxMap";
-import {useLocation} from "react-router-dom";
+import {useLocation, useNavigate} from "react-router-dom";
 
 const MOCK_COLLABS = [
     { id: 'all', name: 'All Annotators' },
@@ -13,7 +13,7 @@ const MOCK_COLLABS = [
 ];
 
 const EditProject = () => {
-
+    const navigate = useNavigate();
     // --- 1. GET DATA FROM NAVIGATION ---
     const location = useLocation();
     // Fallback to default if page loaded directly without navigation state
@@ -136,7 +136,7 @@ const EditProject = () => {
 
     return (
         <div style={{
-            position: 'fixed', top: 0, bottom: 0, left: 0, right: 0,
+            position: 'fixed', top: 60, bottom: 0, left: 0, right: 0,
             display: 'flex', overflow: 'hidden', fontFamily: 'sans-serif', background: '#fff'
         }}>
 
@@ -147,7 +147,12 @@ const EditProject = () => {
             }}>
                 <div style={{ padding: '15px', borderBottom: '1px solid #ddd', background: 'white' }}>
                     <h3 style={{ margin: '0 0 10px 0', fontSize: '16px' }}>Images ({aoImages.length})</h3>
-                    <AppButton sVariant="primary" oStyle={{ width: '100%', fontSize: '12px' }}>+ Add Image</AppButton>
+                    <AppButton
+                        fnOnClick={()=>navigate('/add-eo')}
+                               sVariant="primary"
+                               oStyle={{ width: '100%', fontSize: '12px' }}>
+                        + Add Image
+                    </AppButton>
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto', padding: '10px' }}>
                     {aoImages.map(img => {
