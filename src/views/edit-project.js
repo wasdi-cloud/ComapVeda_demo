@@ -26,7 +26,7 @@ const EditProject = () => {
 
     // --- 2. UI STATE ---
     const [iSelectedImageId, setISelectedImageId] = useState(null);
-    const [iLabelOpacity, setILabelOpacity] = useState(70);
+    const [iImageOpacity, setImageOpacity] = useState(100);
     const [sStyleBy, setStyleBy] = useState('label');
     const [sFilterCollab, setFilterCollab] = useState('all');
     const [bShowValidatedOnly, setShowValidatedOnly] = useState(false);
@@ -55,7 +55,7 @@ const EditProject = () => {
 
                 // Randomize Annotator logic...
                 let assignedUser = sCurrentUser;
-                if (Math.random() > 0.7) {
+                if (Math.random() > 0.5) {
                     const randomCollab = MOCK_COLLABS[Math.floor(Math.random() * MOCK_COLLABS.length)];
                     if (randomCollab.id !== 'all') assignedUser = randomCollab.name;
                 }
@@ -203,11 +203,11 @@ const EditProject = () => {
                                 <label style={{color: '#666'}}>Opacity:</label>
                                 <input
                                     type="range" min="0" max="100"
-                                    value={iLabelOpacity}
-                                    onChange={(e) => setILabelOpacity(e.target.value)}
+                                    value={iImageOpacity}
+                                    onChange={(e) => setImageOpacity(e.target.value)}
                                     style={{ width: '100px', cursor: 'pointer' }}
                                 />
-                                <span style={{width: '25px', fontSize: '11px'}}>{iLabelOpacity}%</span>
+                                <span style={{width: '25px', fontSize: '11px'}}>{iImageOpacity}%</span>
                             </div>
                         </div>
 
@@ -263,6 +263,7 @@ const EditProject = () => {
                         sSelectedFeatureId={sSelectedFeatureId}
                         onFeatureSelect={(id) => setSelectedFeatureId(id)}
                         aoFeatures={filteredLabels}
+                        iImageOpacity={iImageOpacity / 100}
 
                         sInitialMapStyle="mapbox://styles/mapbox/satellite-v9"
                     />

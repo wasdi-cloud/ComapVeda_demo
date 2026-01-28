@@ -21,7 +21,9 @@ const MapboxMap = ({
                        sInitialMapStyle = "mapbox://styles/mapbox/satellite-v9",
                        sSelectedFeatureId, // ID coming from Table Click
                        onFeatureSelect  ,
-                       aoFeatures = []// Function to notify Table
+                       aoFeatures = [],// Function to notify Table,
+                       // NEW PROP: Image Opacity (0.0 to 1.0)
+                       iImageOpacity = 1
                    }) => {
 
     // Internal State
@@ -50,6 +52,18 @@ const MapboxMap = ({
             }
         }
     }, [sSelectedFeatureId]);
+
+
+    // --- 1. DYNAMIC OPACITY UPDATE ---
+    // This updates the opacity INSTANTLY when the slider moves
+    useEffect(() => {
+        const map = mapRef.current;
+        const layerId = activeLayerIdRef.current;
+
+        if (map && layerId && map.getLayer(layerId)) {
+            map.setPaintProperty(layerId, 'raster-opacity', iImageOpacity);
+        }
+    }, [iImageOpacity]);
 
     useEffect(() => {
         if (!drawRef.current) return;
@@ -140,7 +154,7 @@ const MapboxMap = ({
                         id: uniqueId,
                         type: 'raster',
                         source: uniqueId,
-                        paint: { 'raster-opacity': 1 }
+                        paint: { 'raster-opacity': iImageOpacity }
                     }, beforeId); // <--- THIS IS THE FIX
 
                     activeLayerIdRef.current = uniqueId;
