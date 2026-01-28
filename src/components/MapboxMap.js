@@ -18,7 +18,9 @@ const MapboxMap = ({
                        sActiveGeoTIFF,
                        bEnableGeocoder = false,
                        bEnableDraw = true,
-                       sInitialMapStyle = "mapbox://styles/mapbox/satellite-v9"
+                       sInitialMapStyle = "mapbox://styles/mapbox/satellite-v9",
+                       sSelectedFeatureId, // ID coming from Table Click
+                       onFeatureSelect     // Function to notify Table
                    }) => {
 
     // Internal State
@@ -26,10 +28,28 @@ const MapboxMap = ({
     const [sMeasurements, setMeasurements] = useState("");
     const [sMapStyle, setMapStyle] = useState(sInitialMapStyle);
 
-    const mapRef = useRef(null);
+    // --- NEW: Hover Popup State ---
+    const [oHoverInfo, setHoverInfo] = useState(null);
 
-    // --- NEW: Track the current source/layer ID to ensure clean removal ---
+    const mapRef = useRef(null);
+    const drawRef = useRef(null); // Need to access Draw instance globally
     const activeLayerIdRef = useRef(null);
+
+
+
+    // --- SYNC TABLE SELECTION TO MAP ---
+    useEffect(() => {
+        // If sSelectedFeatureId changes (user clicked table row), tell Draw to select it
+        if (drawRef.current && sSelectedFeatureId) {
+            try {
+                // Change mode to 'simple_select' with the specific ID
+                drawRef.current.changeMode('simple_select', { featureIds: [sSelectedFeatureId] });
+            } catch(e) {
+                console.log("Draw not ready yet");
+            }
+        }
+    }, [sSelectedFeatureId]);
+
 
     // --- 1. ROBUST LAYER UPDATE ---
     useEffect(() => {
@@ -37,7 +57,7 @@ const MapboxMap = ({
         if (!map) return;
 
         const refreshLayer = () => {
-            // A. CLEANUP: Remove the SPECIFIC previous layer we added
+            // A. CLEANUP (Same as before)
             if (activeLayerIdRef.current) {
                 if (map.getLayer(activeLayerIdRef.current)) {
                     map.removeLayer(activeLayerIdRef.current);
@@ -48,29 +68,51 @@ const MapboxMap = ({
                 activeLayerIdRef.current = null;
             }
 
-            // B. ADD NEW: If we have a file selected
+            // B. ADD NEW
             if (sActiveGeoTIFF) {
-                // Generate a unique ID to prevent cache/internal conflicts
                 const uniqueId = `geotiff-${Date.now()}`;
                 const sTileUrl = `http://127.0.0.1:8000/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=${sActiveGeoTIFF}`;
 
                 try {
-                    // Add Source
                     map.addSource(uniqueId, {
                         type: 'raster',
                         tiles: [sTileUrl],
                         tileSize: 256,
                     });
 
-                    // Add Layer
+                    // --- NEW LOGIC: FIND WHERE TO INSERT ---
+                    // We want to put this image BELOW the drawing layers and BELOW text labels.
+
+                    const layers = map.getStyle().layers;
+                    let beforeId = undefined;
+
+                    // 1. Look for the first Mapbox Draw layer
+                    for (const layer of layers) {
+                        if (layer.id.startsWith('gl-draw')) {
+                            beforeId = layer.id;
+                            break;
+                        }
+                    }
+
+                    // 2. If no draw layer found, look for the first symbol (text) layer
+                    // This ensures street names sit on top of your image
+                    if (!beforeId) {
+                        for (const layer of layers) {
+                            if (layer.type === 'symbol') {
+                                beforeId = layer.id;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Add the layer with the 'beforeId' argument
                     map.addLayer({
                         id: uniqueId,
                         type: 'raster',
                         source: uniqueId,
-                        paint: {'raster-opacity': 1}
-                    });
+                        paint: { 'raster-opacity': 1 }
+                    }, beforeId); // <--- THIS IS THE FIX
 
-                    // Save this ID so we can remove it next time
                     activeLayerIdRef.current = uniqueId;
                 } catch (error) {
                     console.error("Mapbox layer error:", error);
@@ -78,13 +120,9 @@ const MapboxMap = ({
             }
         };
 
-        // Execute immediately.
-        // We removed 'isStyleLoaded' check because addSource/addLayer usually queues if busy.
         refreshLayer();
 
-        // Optional: Re-run if style changes (e.g. satellite -> street)
         const onStyleData = () => {
-            // Only re-add if we lost our layer due to style switch
             if (activeLayerIdRef.current && !map.getLayer(activeLayerIdRef.current)) {
                 refreshLayer();
             }
@@ -95,7 +133,7 @@ const MapboxMap = ({
             map.off('styledata', onStyleData);
         };
 
-    }, [sActiveGeoTIFF, sMapStyle]); // Dependencies
+    }, [sActiveGeoTIFF, sMapStyle]);
 
     // --- 2. MAP LOAD HANDLER (Controls Only) ---
     const handleMapLoad = (e) => {
@@ -120,7 +158,7 @@ const MapboxMap = ({
             });
 
             oMap.addControl(oDraw, 'top-left');
-
+            drawRef.current = oDraw;
             oMap.on('draw.create', (e) => handleDrawUpdate(e, oDraw));
             oMap.on('draw.update', (e) => handleDrawUpdate(e, oDraw));
             oMap.on('draw.delete', () => {
@@ -128,14 +166,55 @@ const MapboxMap = ({
                 if (onDrawUpdate) onDrawUpdate(oDraw.getAll());
             });
 
+            // --- NEW: SELECTION CHANGE (Map -> Table) ---
             oMap.on('draw.selectionchange', (e) => {
-                if (e.features.length > 0 && e.features[0].geometry.type !== 'Point') {
-                    const sFeatureId = e.features[0].id;
-                    if (oDraw.getMode() !== 'direct_select') {
-                        oDraw.changeMode('direct_select', {featureId: sFeatureId});
+                if (e.features.length > 0) {
+                    const selectedId = e.features[0].id;
+                    // Notify parent to highlight row
+                    if(onFeatureSelect) onFeatureSelect(selectedId);
+
+                    // Specific direct_select logic
+                    if (e.features[0].geometry.type !== 'Point' && oDraw.getMode() !== 'direct_select') {
+                        // Optional: automatically go to edit mode
+                        // oDraw.changeMode('direct_select', { featureId: selectedId });
                     }
+                } else {
+                    // Deselected everything
+                    if(onFeatureSelect) onFeatureSelect(null);
                 }
             });
+
+            // --- NEW: HOVER LOGIC ---
+            oMap.on('mousemove', (e) => {
+                // Check if mouse is over a Drawn Feature
+                // "gl-draw-polygon-fill-inactive.cold" is the layer name Mapbox Draw uses for unselected shapes
+                const features = oMap.queryRenderedFeatures(e.point);
+
+                // Filter for features created by the Draw tool
+                // Note: Draw features usually don't have custom properties available in 'queryRenderedFeatures'
+                // easily until saved, but we can look up the ID in the Draw instance.
+                const drawFeature = features.find(f => f.source && f.source.includes('mapbox-gl-draw'));
+
+                if (drawFeature) {
+                    // Get the full data from Draw memory (which includes our 'annotator' property)
+                    const fullData = oDraw.get(drawFeature.properties.id);
+                    if (fullData && fullData.properties) {
+                        setHoverInfo({
+                            latitude: e.lngLat.lat,
+                            longitude: e.lngLat.lng,
+                            annotator: fullData.properties.annotator || "Unknown",
+                            class: fullData.properties.className || "Shape"
+                        });
+                        oMap.getCanvas().style.cursor = 'pointer';
+                        return;
+                    }
+                }
+
+                // Reset if nothing found
+                setHoverInfo(null);
+                oMap.getCanvas().style.cursor = '';
+            });
+
         }
     };
 
@@ -193,7 +272,22 @@ const MapboxMap = ({
                 onLoad={handleMapLoad}
             >
                 <NavigationControl position='bottom-right'/>
-
+                {/* --- NEW: HOVER TOOLTIP --- */}
+                {oHoverInfo && (
+                    <Popup
+                        latitude={oHoverInfo.latitude}
+                        longitude={oHoverInfo.longitude}
+                        closeButton={false}
+                        closeOnClick={false}
+                        anchor="bottom"
+                        offset={15}
+                    >
+                        <div style={{fontSize:'12px'}}>
+                            <strong>{oHoverInfo.class}</strong><br/>
+                            <span style={{color:'#666'}}>By: {oHoverInfo.annotator}</span>
+                        </div>
+                    </Popup>
+                )}
                 {aoMarkers && aoMarkers.length > 0 && aoMarkers.map((marker, index) => (
                     <Marker
                         key={index}
