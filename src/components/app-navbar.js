@@ -27,12 +27,12 @@ const AppNavbar = () => {
                 <Link to="/" style={{textDecoration: 'none'}}>
                     <span style={{color: 'white', marginRight: '15px', lineHeight: '34px'}}>Home</span>
                 </Link>
-                <Link to="/login" style={{textDecoration: 'none'}}>
-                    <span style={{color: 'white', marginRight: '15px', lineHeight: '34px'}}>Login</span>
-                </Link>
-                <Link to="/register" style={{textDecoration: 'none'}}>
-                    <AppButton sVariant="success" oStyle={{padding: '5px 15px'}}>Register</AppButton>
-                </Link>
+                {/*<Link to="/login" style={{textDecoration: 'none'}}>*/}
+                {/*    <span style={{color: 'white', marginRight: '15px', lineHeight: '34px'}}>Login</span>*/}
+                {/*</Link>*/}
+                {/*<Link to="/register" style={{textDecoration: 'none'}}>*/}
+                {/*    <AppButton sVariant="success" oStyle={{padding: '5px 15px'}}>Register</AppButton>*/}
+                {/*</Link>*/}
                 
             </div>
         </nav>
