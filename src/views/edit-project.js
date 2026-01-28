@@ -41,50 +41,33 @@ const EditProject = () => {
         if (!featureCollection) return;
 
         const enrichedFeatures = featureCollection.features.map(feature => {
-
-            // 1. ALWAYS Recalculate Measurement (Fix for editing shapes)
-            let sMeasurement = "0";
-            if (feature.geometry.type === 'Polygon') {
-                sMeasurement = (turf.area(feature) / 1000000).toFixed(3) + " km²";
-            } else if (feature.geometry.type === 'LineString') {
-                sMeasurement = turf.length(feature, {units: 'kilometers'}).toFixed(3) + " km";
-            }
-
-            // 2. If it's a NEW feature, assign metadata (User, Class, Status)
             if (!feature.properties.annotator) {
-
-                // Randomize Annotator logic...
+                // 1. Randomize Annotator (for Demo purposes)
+                // 70% chance it's Jihed, 30% chance it's someone else
                 let assignedUser = sCurrentUser;
                 if (Math.random() > 0.7) {
                     const randomCollab = MOCK_COLLABS[Math.floor(Math.random() * MOCK_COLLABS.length)];
                     if (randomCollab.id !== 'all') assignedUser = randomCollab.name;
                 }
+                // 2. Calculate Stats
+                let sMeasurement = "0";
+                if (feature.geometry.type === 'Polygon') {
+                    sMeasurement = (turf.area(feature) / 1000000).toFixed(3) + " km²";
+                } else if (feature.geometry.type === 'LineString') {
+                    sMeasurement = turf.length(feature, {units: 'kilometers'}).toFixed(3) + " km";
+                }
 
-                return {
-                    ...feature,
-                    properties: {
-                        ...feature.properties,
-                        id: feature.id,
-                        className: "Road",
-                        annotator: assignedUser,
-                        status: "Pending",
-                        timestamp: new Date().toISOString(),
-                        associatedImage: oSelectedImage ? oSelectedImage.name : "Global Map",
-                        measurement: sMeasurement // Assign initial measurement
-                    }
+                feature.properties = {
+                    ...feature.properties,
+                    id: feature.id,
+                    className: "Road",
+                    annotator: assignedUser, // Use the randomized user
+                    status: "Pending",
+                    measurement: sMeasurement,
+                    timestamp: new Date().toISOString()
                 };
             }
-
-            // 3. If it's an EXISTING feature, just update the measurement
-            else {
-                return {
-                    ...feature,
-                    properties: {
-                        ...feature.properties,
-                        measurement: sMeasurement // <--- Update measurement here!
-                    }
-                };
-            }
+            return feature;
         });
 
         setAoFeatures(enrichedFeatures);
