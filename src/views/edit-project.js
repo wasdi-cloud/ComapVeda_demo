@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import * as turf from '@turf/turf';
 import AppButton from "../components/app-button";
 import MapboxMap from "../components/MapboxMap";
+import {useLocation} from "react-router-dom";
 
 const MOCK_COLLABS = [
     { id: 'all', name: 'All Annotators' },
@@ -12,6 +13,11 @@ const MOCK_COLLABS = [
 ];
 
 const EditProject = () => {
+
+    // --- 1. GET DATA FROM NAVIGATION ---
+    const location = useLocation();
+    // Fallback to default if page loaded directly without navigation state
+    const sProjectTitle = location.state?.projectTitle || "High-Res Flood Analysis";
     // --- 1. DATA STATE ---
     const sCurrentUser = "Jihed"; // Simulate logged-in user
 
@@ -178,7 +184,7 @@ const EditProject = () => {
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between'
                 }}>
                     <div>
-                        <h2 style={{ margin: 0, fontSize: '18px', color: '#2c3e50' }}>High-Res Flood Analysis</h2>
+                        <h2 style={{ margin: 0, fontSize: '18px', color: '#2c3e50' }}>{sProjectTitle}</h2>
                         <span style={{ fontSize: '12px', color: '#999' }}>Owner: Jihed_123</span>
                     </div>
                     <div style={{ display: 'flex', gap: '10px' }}>

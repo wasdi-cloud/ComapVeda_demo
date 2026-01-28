@@ -153,7 +153,12 @@ const HomePage = () => {
 
                         <AppButton
                             sVariant="outline"
-                            fnOnClick={() => navigate('/edit-project')}
+                            fnOnClick={() => navigate('/edit-project', {
+                                state: {
+                                    projectTitle: project.name, // Or project.name from your loop
+                                    projectId: 123
+                                }
+                            })}
                             oStyle={{padding: '6px 15px', fontSize: '13px'}}
                         >
                             Open
