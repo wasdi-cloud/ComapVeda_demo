@@ -147,11 +147,24 @@ const EditProject = () => {
             }}>
                 <div style={{ padding: '15px', borderBottom: '1px solid #ddd', background: 'white' }}>
                     <h3 style={{ margin: '0 0 10px 0', fontSize: '16px' }}>Images ({aoImages.length})</h3>
+
                     <AppButton
-                        fnOnClick={()=>navigate('/add-eo')}
-                               sVariant="primary"
-                               oStyle={{ width: '100%', fontSize: '12px' }}>
+                        fnOnClick={() => navigate('/add-eo')}
+                        sVariant="primary"
+                        // Added marginBottom here 👇
+                        oStyle={{ width: '100%', fontSize: '12px', marginBottom: '10px' }}
+                    >
                         + Add Image
+                    </AppButton>
+
+                    <AppButton
+                        // Assuming you might want a different link for styling?
+                        // Currently points to same place
+                        fnOnClick={() => navigate('/image-styling')}
+                        sVariant="secondary"
+                        oStyle={{ width: '100%', fontSize: '12px' }}
+                    >
+                        Image Style
                     </AppButton>
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto', padding: '10px' }}>
@@ -193,9 +206,9 @@ const EditProject = () => {
                         <span style={{ fontSize: '12px', color: '#999' }}>Owner: Jihed_123</span>
                     </div>
                     <div style={{ display: 'flex', gap: '10px' }}>
-                        <AppButton sVariant="outline" oStyle={{ fontSize: '13px', padding: '6px 12px' }}>⚙️ Properties</AppButton>
-                        <AppButton sVariant="outline" oStyle={{ fontSize: '13px', padding: '6px 12px' }}>👥 Collaborators</AppButton>
-                        <AppButton sVariant="primary" oStyle={{ fontSize: '13px', padding: '6px 12px' }}>📥 Export Project</AppButton>
+                        <AppButton  sVariant="outline" oStyle={{ fontSize: '13px', padding: '6px 12px' }}>⚙️ Properties</AppButton>
+                        <AppButton fnOnClick={()=>navigate('/project-collabs')} sVariant="outline" oStyle={{ fontSize: '13px', padding: '6px 12px' }}>👥 Collaborators</AppButton>
+                        <AppButton fnOnClick={()=>navigate('/export-project')} sVariant="primary" oStyle={{ fontSize: '13px', padding: '6px 12px' }}>📥 Export Project</AppButton>
                     </div>
                 </div>
 

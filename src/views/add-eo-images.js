@@ -127,16 +127,6 @@ const AddEoImages = () => {
                                     fnOnChange={(e) => setSProductName(e.target.value)}
                                 />
 
-                                {/* Use Crontab Button (Toggle) */}
-                                <div style={{display: 'flex', justifyContent: 'flex-start'}}>
-                                    <AppButton
-                                        sVariant={bUseCrontab ? "success" : "outline"}
-                                        fnOnClick={() => setBUseCrontab(!bUseCrontab)}
-                                        oStyle={{fontSize: '12px', padding: '8px 15px'}}
-                                    >
-                                        {bUseCrontab ? "✅ Crontab Active" : "⏱️ Use Crontab"}
-                                    </AppButton>
-                                </div>
 
                                 {/* Dates */}
                                 <div style={gridStyle}>

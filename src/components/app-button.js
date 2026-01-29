@@ -15,6 +15,10 @@ const AppButton = ({
             bg: '#007bff', color: 'white', border: 'none',
             hoverBg: '#0056b3', hoverColor: 'white'
         },
+        secondary: {
+            bg: '#5190e6', color: 'white', border: 'none',
+            hoverBg: '#0056b3', hoverColor: 'white'
+        },
         success: {
             bg: '#28a745', color: 'white', border: 'none',
             hoverBg: '#218838', hoverColor: 'white'
