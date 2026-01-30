@@ -23,7 +23,8 @@ const MapboxMap = ({
                        onFeatureSelect  ,
                        aoFeatures = [],// Function to notify Table,
                        // NEW PROP: Image Opacity (0.0 to 1.0)
-                       iImageOpacity = 1
+                       iImageOpacity = 1,
+                       oZoomToBBox = null
                    }) => {
 
     // Internal State
@@ -52,7 +53,16 @@ const MapboxMap = ({
             }
         }
     }, [sSelectedFeatureId]);
-
+// --- NEW: ZOOM TO BBOX LOGIC ---
+    useEffect(() => {
+        const map = mapRef.current;
+        if (map && oZoomToBBox && oZoomToBBox.length === 4) {
+            map.fitBounds(oZoomToBBox, {
+                padding: 50, // Keep some padding around the image
+                duration: 1500 // Smooth fly animation
+            });
+        }
+    }, [oZoomToBBox]);
 
     // --- 1. DYNAMIC OPACITY UPDATE ---
     // This updates the opacity INSTANTLY when the slider moves

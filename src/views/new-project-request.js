@@ -31,7 +31,8 @@ const NewProjectRequest = () => {
         eoMission: 'Sentinel-2',
         tasks: {segmentation: false, detection: false, classification: false, other: false},
         ownerHosting: false, s3User: '', s3Password: '', s3Url: '',
-        aoiGeometry: null
+        aoiGeometry: null,
+        labelTemplate: null,
     });
 
     // --- HANDLERS ---
@@ -356,7 +357,7 @@ const NewProjectRequest = () => {
                             <label style={subLabelStyle}>EO Mission</label>
                             <AppDropdown
                                 sValue={formData.eoMission}
-                                fnOnChange={handleInputChange}
+                                fnOnChange={(e) => setFormData({ ...formData, eoMission: e.target.value })}
                                 aoOptions={["Sentinel-2", "Landsat-8", "Custom High-Res"]}
                                 oStyle={{width: '100%', marginTop: '5px'}}
                             />
@@ -378,7 +379,13 @@ const NewProjectRequest = () => {
 
                         <div>
                             <label style={subLabelStyle}>Labelling Template</label>
-                            <input type="file" style={{display: 'block', marginTop: '5px', fontSize: '14px'}}/>
+                            <AppDropdown
+                                sValue={formData.labelTemplate}
+                                // FIX: Update the state here!
+                                fnOnChange={(e) => setFormData({ ...formData, labelTemplate: e.target.value })}
+                                aoOptions={["Template A", "Template B"]}
+                                oStyle={{width: '100%', marginTop: '5px'}}
+                            />
                         </div>
                     </AppCard>
 
