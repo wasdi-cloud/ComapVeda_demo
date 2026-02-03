@@ -104,7 +104,7 @@ const ApproveProject = () => {
         <div style={{
             display: 'flex',
             flexDirection: 'column',
-            height: '100vh',
+            height: '90vh',
             background: '#f4f6f8',
             overflowY: 'auto',
             position: 'relative'

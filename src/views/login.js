@@ -37,12 +37,14 @@ const Login = () => {
                         type="email"
                         sPlaceholder="Email"
                         required
+                        fnOnChange={(e)=> console.log(e)}
                     />
 
                     <AppInput
                         type="password"
                         sPlaceholder="Password"
                         required
+                        fnOnChange={(e)=> console.log(e)}
                     />
 
                     {/* Forgot Password Link */}

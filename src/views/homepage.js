@@ -2,7 +2,6 @@ import React, {useEffect, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 import MapboxMap from '../components/MapboxMap';
 
-// Import our new UI components
 import AppTextInput from '../components/app-text-input';
 import AppDropdown from '../components/app-dropdown-input';
 import AppButton from '../components/app-button';
@@ -14,7 +13,10 @@ const HomePage = () => {
     const oHomeMapView = {latitude: 20, longitude: 0, zoom: 1.5};
 
     // --- STATE ---
+    // 1. NEW: Store the master list separately so we don't lose data when filtering
+    const [aoAllProjects, setAllProjects] = useState([]);
     const [aoProjects, setProjects] = useState([]);
+
     const [bIsLoading, setIsLoading] = useState(true);
     const [sError, setError] = useState(null);
 
@@ -28,7 +30,11 @@ const HomePage = () => {
             try {
                 setIsLoading(true);
                 const oData = await getPublicProjects();
-                setProjects(oData || []);
+                const safeData = oData || [];
+
+                // 2. Save data to BOTH states initially
+                setAllProjects(safeData);
+                setProjects(safeData);
             } catch (error) {
                 console.error("Failed to load public projects:", error);
                 setError("Could not load projects. Please try again later.");
@@ -39,12 +45,33 @@ const HomePage = () => {
         loadProjects();
     }, []);
 
+    // 3. FILTER LOGIC
     const handleSearchClick = () => {
         console.log("Searching for:", {sSearchText, sSelectedMission, sSelectedTask});
+
+        // Start with the master list
+        let result = [...aoAllProjects];
+
+        // Filter by Text (Name)
+        if (sSearchText) {
+            result = result.filter(p =>
+                p.name.toLowerCase().includes(sSearchText.toLowerCase())
+            );
+        }
+
+        // Optional: You can easily add the dropdown filters here too
+        if (sSelectedMission) {
+            result = result.filter(p => p.mission === sSelectedMission);
+        }
+        if (sSelectedTask) {
+            // Assuming your project object has a 'task' property
+            // result = result.filter(p => p.task === sSelectedTask);
+        }
+
+        setProjects(result);
     };
 
     // --- RENDER ---
-    // Note: No Navbar here, and no 100vh outer div. The Layout handles that.
     return (
         <div style={{maxWidth: '1000px', margin: '0 auto'}}>
 
@@ -61,24 +88,26 @@ const HomePage = () => {
                 </label>
 
                 <div style={{display: 'flex', gap: '10px', flexWrap: 'wrap'}}>
+                    {/* 4. FIX: Use 'sValue' and 'fnOnChange' to match your component library style */}
                     <AppTextInput
-                        value={sSearchText}
-                        onChange={(e) => setSearchText(e.target.value)}
+                        disabled={false}
+                        sValue={sSearchText}
+                        fnOnChange={(e) => setSearchText(e.target.value)}
                         sPlaceholder="Type project name..."
                         oStyle={{flex: 2}}
                     />
 
                     <AppDropdown
-                        value={sSelectedMission}
-                        onChange={(e) => setSelectedMission(e.target.value)}
+                        sValue={sSelectedMission}
+                        fnOnChange={(e) => setSelectedMission(e.target.value)}
                         aoOptions={["Sentinel-2", "Landsat 8", "MODIS"]}
                         sPlaceholder="Select Mission"
                         oStyle={{flex: 1}}
                     />
 
                     <AppDropdown
-                        value={sSelectedTask}
-                        onChange={(e) => setSelectedTask(e.target.value)}
+                        sValue={sSelectedTask}
+                        fnOnChange={(e) => setSelectedTask(e.target.value)}
                         aoOptions={["Classification", "Detection", "Segmentation"]}
                         sPlaceholder="Select Task"
                         oStyle={{flex: 1}}
@@ -93,7 +122,7 @@ const HomePage = () => {
                 </div>
             </AppCard>
 
-            {/* --- MAPBOX SECTION --- */}
+            {/* ... MAP SECTION (Unchanged) ... */}
             <div style={{
                 height: '350px', width: '100%', borderRadius: '8px', overflow: 'hidden',
                 marginBottom: '20px', border: '1px solid #ddd', background: '#e0e0e0'
@@ -116,7 +145,10 @@ const HomePage = () => {
                     display: 'flex', justifyContent: 'space-between'
                 }}>
                     <span>Available Projects</span>
-                    <span style={{fontWeight: 'normal', color: '#666'}}>{aoProjects.length} found</span>
+                    <span style={{fontWeight: 'normal', color: '#666'}}>
+                        {/* Show count of filtered vs total */}
+                        {aoProjects.length} found {aoProjects.length !== aoAllProjects.length ? `(of ${aoAllProjects.length})` : ''}
+                    </span>
                 </div>
 
                 {bIsLoading && (
@@ -155,8 +187,8 @@ const HomePage = () => {
                             sVariant="outline"
                             fnOnClick={() => navigate('/edit-project', {
                                 state: {
-                                    projectTitle: project.name, // Or project.name from your loop
-                                    projectId: 123
+                                    projectTitle: project.name,
+                                    projectId: project.id
                                 }
                             })}
                             oStyle={{padding: '6px 15px', fontSize: '13px'}}
@@ -168,7 +200,7 @@ const HomePage = () => {
 
                 {!bIsLoading && !sError && aoProjects.length === 0 && (
                     <div style={{padding: '20px', textAlign: 'center', color: '#999'}}>
-                        No public projects available at the moment.
+                        No public projects match your search.
                     </div>
                 )}
             </AppCard>

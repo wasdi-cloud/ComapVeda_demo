@@ -15,7 +15,7 @@ const AppNavbar = () => {
                 <Link to="/login" style={{textDecoration: 'none'}}>
                     <span style={{color: 'white', marginRight: '15px', lineHeight: '34px'}}>My Account</span>
                 </Link>
-                <Link to="/approve-project" style={{textDecoration: 'none'}}>
+                <Link to="/project-requests" style={{textDecoration: 'none'}}>
                     <span style={{color: 'white', marginRight: '15px', lineHeight: '34px'}}>Requests</span>
                 </Link>
                 <Link to="/label-templates" style={{textDecoration: 'none'}}>

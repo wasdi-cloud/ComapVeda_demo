@@ -91,6 +91,13 @@ const EditProject = () => {
         }
     };
 
+
+    useEffect(() => {
+        // Whenever the selected image ID changes, wipe the features list.
+        setAoFeatures([]);
+    }, [iSelectedImageId]);
+
+
     // --- 4. FILTERING LOGIC ---
     const filteredLabels = aoFeatures.filter(feature => {
         const props = feature.properties || {};

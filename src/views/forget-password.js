@@ -42,6 +42,7 @@ const ForgotPassword = () => {
                             type="email"
                             sPlaceholder="Enter your email"
                             required
+                            fnOnChange={(e)=>console.log(e)}
                         />
 
                         {/* Reusable Button - Primary Variant */}
