@@ -16,6 +16,8 @@ import EditImageStyle from "./views/edit-image-style";
 import ExportProject from "./views/export-project";
 import Layout from "./views/layout";
 import ProjectRequests from "./views/project-requests";
+import ProjectProperties from "./views/project-properties";
+import ProjectPropertiesPage from "./views/project-properties";
 
 function App() {
     return (
@@ -34,6 +36,7 @@ function App() {
                     <Route path="/image-styling" element={<EditImageStyle/>}/>
                     <Route path="/export-project" element={<ExportProject/>}/>
                     <Route path="/project-requests" element={<ProjectRequests/>}/>
+                    <Route path="/project-properties" element={<ProjectPropertiesPage/>}/>
                 </Route>
 
                 {/* GROUP 2: Pages that DO NOT have the Navbar (Login, Register) */}
