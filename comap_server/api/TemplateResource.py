@@ -1,12 +1,16 @@
+from datetime import time
+
 from fastapi import APIRouter, HTTPException, Query
-from schemas.templates.TemplateCreate import TemplateCreate
+
+from schemas.templates.Attribute import Attribute, CategoryValue
+from schemas.templates.LabellingTemplate import LabellingTemplate
 from schemas.templates.TemplateListItem import TemplateListItem
 
 
 oRouter = APIRouter(prefix="/templates")
 
 @oRouter.post("/create")
-async def create(oTemplateData: TemplateCreate):
+async def create(oTemplateData: LabellingTemplate):
     """
     Create a new template with validated data.
     
@@ -57,7 +61,7 @@ async def getList():
     
 
 @oRouter.put("/update")
-async def update(template_id: str = Query(..., description="Unique identifier for the template to update"), oTemplateData: TemplateCreate = ...):
+async def update(template_id: str = Query(..., description="Unique identifier for the template to update"), oTemplateData: LabellingTemplate = ...):
     """
     Update an existing template with validated data.
 
@@ -93,7 +97,7 @@ async def delete(template_id: str = Query(..., description="Unique identifier fo
         raise HTTPException(status_code=500, detail=f'Error deleting template: {str(oE)}')
     
 
-@oRouter.get("/getByProject", response_model=TemplateListItem)
+@oRouter.get("/getByProject", response_model=LabellingTemplate)
 async def getByProject(project_id: str = Query(..., description="Unique identifier for the project")):
     """
     Retrieve the template associated with a specific project.
@@ -102,12 +106,27 @@ async def getByProject(project_id: str = Query(..., description="Unique identifi
     :return: TemplateListItem object containing template information
     """
     try:
-        # TODO: Add database logic to retrieve the template associated with the project
-        return TemplateListItem(
-            templateId="template-1111-2222",
-            name="Template 1",
-            user="user-1234",
-            creationDate=1678886400000  # Unix timestamp in milliseconds
+        # TODO: Real DB lookup using project_id
+
+        # MOCK RETURN: A template with 3 dynamic attributes
+        return LabellingTemplate(
+            name="temp-dynamic-001",
+            creator="jihed-admin",
+            creationDate=111000000000,
+            description="Template for city zoning.",
+            geometryTypes=["polygon", "polyline"],
+            isSingleColorStyle=False,
+            featureColor="blue",
+            # DYNAMIC ATTRIBUTES HERE:
+            attributes=[
+                Attribute(name="Zone Type", type="category", categoryValues=[
+                    CategoryValue(value="Residential", color="#3b82f6"),
+                    CategoryValue(value="Commercial", color="#ef4444"),
+                    CategoryValue(value="Industrial", color="#eab308")
+                ]),
+                Attribute(name="Floors", type="integer", isOptional=True),
+                Attribute(name="Avg Height", type="float", isOptional=True)
+            ]
         )
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error retrieving template: {str(oE)}')

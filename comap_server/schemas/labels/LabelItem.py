@@ -2,7 +2,10 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from shapely import wkt, errors
 
-class Attribute(BaseModel):
+
+
+# to avoid confusion between this and attribute in labeling template, we add value to this one
+class AttributeValue(BaseModel):
     """Represents an attribute in a label."""
 
     name: str = Field(..., description="Name of the attribute")
@@ -34,5 +37,5 @@ class LabelItem(BaseModel):
 
     coordinates: str = Field(..., description="Coordinates of the geometry in GeoJSON format")
 
-    attributes: Optional[List[Attribute]] = Field(None, description="List of attributes associated with the label")
+    attributes: Optional[List[AttributeValue]] = Field(None, description="List of attributes associated with the label")
 

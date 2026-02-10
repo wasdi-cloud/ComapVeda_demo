@@ -25,8 +25,8 @@ export const getById = async (sTemplateId) => {
  * Get the label template associated with a specific project
  * @param {String} sProjectId
  */
-export const getByProject = async (sProjectId) => {
-    return await request(`/projects/${sProjectId}/label-template`, {
+export const getLabelTemplateByProject = async (sProjectId) => {
+    return await request(`templates/getByProject?project_id=${sProjectId}`, {
         method: 'GET'
     });
 };

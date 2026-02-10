@@ -50,25 +50,25 @@ const HomePage = () => {
         console.log("Searching for:", {sSearchText, sSelectedMission, sSelectedTask});
 
         // Start with the master list
-        let result = [...aoAllProjects];
+        let oResult = [...aoAllProjects];
 
         // Filter by Text (Name)
         if (sSearchText) {
-            result = result.filter(p =>
+            oResult = oResult.filter(p =>
                 p.name.toLowerCase().includes(sSearchText.toLowerCase())
             );
         }
 
         // Optional: You can easily add the dropdown filters here too
         if (sSelectedMission) {
-            result = result.filter(p => p.mission === sSelectedMission);
+            oResult = oResult.filter(p => p.mission === sSelectedMission);
         }
         if (sSelectedTask) {
             // Assuming your project object has a 'task' property
-            // result = result.filter(p => p.task === sSelectedTask);
+            // oResult = oResult.filter(p => p.task === sSelectedTask);
         }
 
-        setProjects(result);
+        setProjects(oResult);
     };
 
     // --- RENDER ---

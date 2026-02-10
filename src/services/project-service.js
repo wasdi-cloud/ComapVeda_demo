@@ -6,6 +6,10 @@ import request from './api';
 export const getPublicProjects = async () => {
     return await request('projects/getPublic', { method: 'GET' });
 };
+// 1. GET PROJECT BY ID
+export const getProject = async ( sProjectId) => {
+    return await request(`projects/getProject?project_id=${sProjectId}`, { method: 'GET' });
+};
 
 // 2. GET PROJECTS BY USER
 export const getProjectsByUser = async (userId) => {
