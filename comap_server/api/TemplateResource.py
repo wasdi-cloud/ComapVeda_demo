@@ -1,36 +1,47 @@
-from datetime import time
+from fastapi import APIRouter, HTTPException, Query, Depends
+from sqlalchemy.orm import Session
 
-from fastapi import APIRouter, HTTPException, Query
-
+from database import get_db
+from entities.LabellingTemplate import LabellingTemplateEntity
 from schemas.templates.Attribute import Attribute, CategoryValue
 from schemas.templates.LabellingTemplate import LabellingTemplate
 from schemas.templates.TemplateListItem import TemplateListItem
 
-
 oRouter = APIRouter(prefix="/templates")
 
 @oRouter.post("/create")
-async def create(oTemplateData: LabellingTemplate):
+async def create(
+        oTemplateData: LabellingTemplate,
+        oDB: Session = Depends(get_db)  # <--- Inject the DB here
+):
     """
     Create a new template with validated data.
-    
-    :param oTemplateData: TemplateCreate validator containing all required and optional fields
-    :return: dict containing templateId of the newly created template
     """
     try:
-        # The TemplateCreate validator has already validated the input
-        # Convert to dict for storage/processing
-        dTemplateDict = oTemplateData.model_dump()
+        # 1. Create the Entity from the Pydantic model
+        # We can use **model_dump() to unpack the data because names match
+        oNewtemplate = LabellingTemplateEntity(
+            **oTemplateData.model_dump()
+        )
 
-        # TODO: Add database logic to store the template
-        # TODO: may be worth saving also a timestampe with the creation time and the id of the user who create it
+        # 2. Add to DB
+        oDB.add(oNewtemplate)
+        oDB.commit()
+
+        # 3. Refresh to get the auto-generated ID
+        oDB.refresh(oNewtemplate)
 
         return {
-            "templateId": "template-1111-2222"
+            "templateId": oNewtemplate.id,  # Returns the real DB ID
+            "status": "created"
         }
+
     except Exception as oE:
+        # Rollback in case of error so the DB isn't stuck
+        oDB.rollback()
+        print(f"Error: {oE}")  # Print to console for debugging
         raise HTTPException(status_code=500, detail=f'Error creating template: {str(oE)}')
-    
+
 
 @oRouter.get("/getList", response_model=list[TemplateListItem])
 async def getList():
@@ -58,10 +69,11 @@ async def getList():
         ]
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error retrieving templates: {str(oE)}')
-    
+
 
 @oRouter.put("/update")
-async def update(template_id: str = Query(..., description="Unique identifier for the template to update"), oTemplateData: LabellingTemplate = ...):
+async def update(template_id: str = Query(..., description="Unique identifier for the template to update"),
+                 oTemplateData: LabellingTemplate = ...):
     """
     Update an existing template with validated data.
 
@@ -80,6 +92,7 @@ async def update(template_id: str = Query(..., description="Unique identifier fo
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error updating template: {str(oE)}');
 
+
 @oRouter.delete("/delete")
 async def delete(template_id: str = Query(..., description="Unique identifier for the template to delete")):
     """
@@ -95,7 +108,7 @@ async def delete(template_id: str = Query(..., description="Unique identifier fo
         }
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error deleting template: {str(oE)}')
-    
+
 
 @oRouter.get("/getByProject", response_model=LabellingTemplate)
 async def getByProject(project_id: str = Query(..., description="Unique identifier for the project")):
@@ -130,7 +143,7 @@ async def getByProject(project_id: str = Query(..., description="Unique identifi
         )
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error retrieving template: {str(oE)}')
-    
+
 
 @oRouter.get("/getAttributes")
 async def getAttributes(template_id: str = Query(..., description="Unique identifier for the template")):
@@ -160,4 +173,3 @@ async def getAttributes(template_id: str = Query(..., description="Unique identi
         ]
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error retrieving attributes: {str(oE)}')
-    

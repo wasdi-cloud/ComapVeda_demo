@@ -17,7 +17,10 @@ from api.ImageResource import oRouter as oImageRouter
 from api.LabelsResource import oRouter as oLabelsRouter
 from api.ProjectResource import oRouter as oProjectRouter
 from api.TemplateResource import oRouter as oTemplateRouter
+from database import Base, engine
 
+# Create Tables
+Base.metadata.create_all(bind=engine)
 oApp = FastAPI()
 
 # Hex representation of a 1x1 pixel transparent PNG
