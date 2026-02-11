@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from entities.LabellingTemplate import LabellingTemplateEntity
-from schemas.templates.Attribute import Attribute, CategoryValue
 from schemas.templates.LabellingTemplate import LabellingTemplate
 from schemas.templates.TemplateListItem import TemplateListItem
 
@@ -43,133 +42,136 @@ async def create(
         raise HTTPException(status_code=500, detail=f'Error creating template: {str(oE)}')
 
 
-@oRouter.get("/getList", response_model=list[TemplateListItem])
-async def getList():
+# --- 1. GET LIST ---
+@oRouter.get("/getList",response_model=list[TemplateListItem])  # Add response_model=list[TemplateListItem] back if imported
+async def getList(oDB: Session = Depends(get_db)):
     """
-    Retrieve all templates in simplified format.
-    
-    :return: list of TemplateListItem objects containing template information
+    Retrieve all templates from the database.
     """
     try:
-        # TODO: Add database logic to retrieve all templates
-        # For now, return a mock list of templates
-        return [
-            TemplateListItem(
-                templateId="template-1111-2222",
-                name="Template 1",
-                user="user-1234",
-                creationDate=1678886400000  # Unix timestamp in milliseconds
-            ),
-            TemplateListItem(
-                templateId="template-3333-4444",
-                name="Template 2",
-                user="user-5678",
-                creationDate=1678886500000  # Unix timestamp in milliseconds
-            )
-        ]
+        # Fetch all records from the database
+        aoTemplates = oDB.query(LabellingTemplateEntity).all()
+
+        oTemplateItemList = []
+        for t in aoTemplates:
+            oTemplateItemList.append({
+                "templateId": str(t.id),  # Convert int to str for your frontend
+                "name": t.name,
+                "user": t.creator,  # Mapping DB 'creator' to expected 'user'
+                "creationDate": t.creationDate or 0
+            })
+        return oTemplateItemList
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error retrieving templates: {str(oE)}')
 
 
+# --- 2. UPDATE ---
 @oRouter.put("/update")
-async def update(template_id: str = Query(..., description="Unique identifier for the template to update"),
-                 oTemplateData: LabellingTemplate = ...):
+async def update(
+        oTemplateData: LabellingTemplate,
+        itemplateId: int = Query(..., description="Unique identifier (int) for the template"),
+        oDB: Session = Depends(get_db)
+):
     """
-    Update an existing template with validated data.
-
-    :param template_id: Unique identifier for the template to update
-    :param oTemplateData: TemplateCreate validator containing updated fields
-    :return: dict indicating success or failure of the update operation
+    Update an existing template in the database.
     """
     try:
-        # The TemplateCreate validator has already validated the input
-        # Convert to dict for storage/processing
-        dTemplateDict = oTemplateData.model_dump()
+        # 1. Find the existing template
+        oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.id == itemplateId).first()
 
-        return {
-            "templateId": "template-1111-2222"
-        }
+        if not oTemplate:
+            raise HTTPException(status_code=404, detail="Template not found")
+
+        # 2. Update the fields dynamically
+        oUpdateData = oTemplateData.model_dump()
+        for key, value in oUpdateData.items():
+            setattr(oTemplate, key, value)  # This updates the Python object
+
+        # 3. Save changes
+        oDB.commit()
+        oDB.refresh(oTemplate)
+
+        return {"templateId": oTemplate.id, "status": "updated"}
+
+    except HTTPException:
+        raise  # Re-raise 404s so they don't get caught as 500s below
     except Exception as oE:
-        raise HTTPException(status_code=500, detail=f'Error updating template: {str(oE)}');
+        oDB.rollback()
+        raise HTTPException(status_code=500, detail=f'Error updating template: {str(oE)}')
 
 
+# --- 3. DELETE ---
 @oRouter.delete("/delete")
-async def delete(template_id: str = Query(..., description="Unique identifier for the template to delete")):
+async def delete(
+        iTemplateId: int = Query(..., description="Unique identifier for the template"),
+        oDB: Session = Depends(get_db)
+):
     """
-    Delete an existing template.
-
-    :param template_id: Unique identifier for the template to delete
-    :return: dict indicating success or failure of the delete operation
+    Delete an existing template from the database.
     """
     try:
-        # TODO: Add database logic to delete the template  
-        return {
-            "templateId": template_id
-        }
+        # 1. Find it
+        oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.id == iTemplateId).first()
+
+        if not oTemplate:
+            raise HTTPException(status_code=404, detail="Template not found")
+
+        # 2. Delete it
+        oDB.delete(oTemplate)
+        oDB.commit()
+
+        return {"templateId": iTemplateId, "status": "deleted"}
+
+    except HTTPException:
+        raise
     except Exception as oE:
+        oDB.rollback()
         raise HTTPException(status_code=500, detail=f'Error deleting template: {str(oE)}')
 
 
+# --- 4. GET BY PROJECT ---
 @oRouter.get("/getByProject", response_model=LabellingTemplate)
-async def getByProject(project_id: str = Query(..., description="Unique identifier for the project")):
+async def getByProject(
+        sProjectId: str = Query(..., description="Unique identifier for the project"),
+        oDB: Session = Depends(get_db)
+):
     """
     Retrieve the template associated with a specific project.
-
-    :param project_id: Unique identifier for the project
-    :return: TemplateListItem object containing template information
     """
     try:
-        # TODO: Real DB lookup using project_id
+        oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.projectId == sProjectId).first()
 
-        # MOCK RETURN: A template with 3 dynamic attributes
-        return LabellingTemplate(
-            name="temp-dynamic-001",
-            creator="jihed-admin",
-            creationDate=111000000000,
-            description="Template for city zoning.",
-            geometryTypes=["polygon", "polyline"],
-            isSingleColorStyle=False,
-            featureColor="blue",
-            # DYNAMIC ATTRIBUTES HERE:
-            attributes=[
-                Attribute(name="Zone Type", type="category", categoryValues=[
-                    CategoryValue(value="Residential", color="#3b82f6"),
-                    CategoryValue(value="Commercial", color="#ef4444"),
-                    CategoryValue(value="Industrial", color="#eab308")
-                ]),
-                Attribute(name="Floors", type="integer", isOptional=True),
-                Attribute(name="Avg Height", type="float", isOptional=True)
-            ]
-        )
+        if not oTemplate:
+            raise HTTPException(status_code=404, detail="Template not found for this project")
+
+        return oTemplate
+    except HTTPException:
+        raise
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error retrieving template: {str(oE)}')
 
 
+# --- 5. GET ATTRIBUTES ---
 @oRouter.get("/getAttributes")
-async def getAttributes(template_id: str = Query(..., description="Unique identifier for the template")):
+async def getAttributes(
+        iTemplateId: int = Query(..., description="Unique identifier for the template"),
+        oDB: Session = Depends(get_db)
+):
     """
     Retrieve all attributes associated with a specific template.
-
-    :param template_id: Unique identifier for the template
-    :return: list of dicts containing attribute information
     """
     try:
-        # TODO: Add database logic to retrieve attributes associated with the template
-        return [
-            {
-                "name": "Attribute 1",
-                "type": "string",
-                "isOptional": False
-            },
-            {
-                "name": "Attribute 2",
-                "type": "category",
-                "categoryValues": [
-                    {"value": "Category A", "color": "#FF0000"},
-                    {"value": "Category B", "color": "#00FF00"}
-                ],
-                "isOptional": True
-            }
-        ]
+        # Find the template
+        oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.id == iTemplateId).first()
+
+        if not oTemplate:
+            raise HTTPException(status_code=404, detail="Template not found")
+
+        # Because we stored attributes as a JSON column, we can just return it directly!
+        # FastAPI will automatically serialize it back into JSON for the frontend.
+        return oTemplate.attributes
+
+    except HTTPException:
+        raise
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error retrieving attributes: {str(oE)}')

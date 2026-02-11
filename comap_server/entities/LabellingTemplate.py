@@ -23,3 +23,4 @@ class LabellingTemplateEntity(Base):
     isSingleColorStyle = Column(Boolean, default=False)
     featureColor = Column(String, nullable=True)
     creationDate = Column(Float, nullable=True)
+    projectId = Column(String)
