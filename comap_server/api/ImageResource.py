@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
-from schemas.images.ImageItem import ImageItem
-from schemas.images.ImageImport import ImageImport
+from viewmodels.images.ImageItem import ImageItem
+from viewmodels.images.ImageImport import ImageImport
 
 
 oRouter = APIRouter(prefix="/images")

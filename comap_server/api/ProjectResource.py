@@ -1,220 +1,256 @@
-from fastapi import APIRouter, HTTPException, Query
-from schemas.projects.ProjectCreate import ProjectCreate
-from schemas.projects.ProjectListItem import ProjectPublic, AOI
-from schemas.projects.InviteCollaborator import InviteCollaborator
+from fastapi import APIRouter, HTTPException, Query, Depends
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
+
+from database import get_db
+from entities.DatasetProject import DatasetProjectEntity
+from entities.ImageStyle import ImageStyleEntity
+from viewmodels.projects.InviteCollaborator import InviteCollaborator
+# Import your Pydantic Models
+from viewmodels.projects.ProjectCreate import ProjectCreate
+from viewmodels.projects.ProjectListItem import ProjectPublic, AOI
 
 oRouter = APIRouter(prefix="/projects")
 
 
+# --- 1. CREATE PROJECT ---
 @oRouter.post("/create")
-async def create(oProjectData: ProjectCreate):
+async def create(
+        oProjectData: ProjectCreate,
+        oDB: Session = Depends(get_db)
+):
     """
-    Create a new project with validated data.
-    
-    :param oProjectData: ProjectCreate validator containing all required and optional fields
-    :return: dict containing projectId of the newly created project
+    Create a new project and its associated ImageStyle.
     """
     try:
-        # The ProjectCreate validator has already validated the input
-        # Convert to dict for storage/processing
-        dProjectDict = oProjectData.model_dump()
-        
-        # TODO: Add database logic to store the project
-        
-        return {
-            "projectId": "1111-2222-3333-4444"
+        oData = oProjectData.model_dump()
+
+        # 1. Extract Style Data (if any) to save separately
+        # Assuming your ProjectCreate has a field 'style' or similar.
+        # If not, you might need to adjust where style info comes from.
+        oStyle= oData.pop('style', None)
+
+        # 2. Map Frontend names to DB names (if they differ)
+        # Example: Frontend 'isGlobalAoI' -> DB 'isGlobal'
+        oProject = {
+            "name": oData.get("name"),
+            "description": oData.get("description"),
+            "isGlobal": oData.get("isGlobalAoI"),  # Mapping here
+            "bbox": [oData.get("bbox")] if oData.get("bbox") else None,  # Store as JSON list
+            "isPublic": oData.get("isPublic"),
+            "creationDate": oData.get("creationDate"),
+            "startDate": oData.get("datasetStartDate"),
+            "endDate": oData.get("datasetEndDate"),
+            "mission": oData.get("mission"),
+            "task": oData.get("tasks"),  # List of strings
+            "annotatorsSeeAllLabels": oData.get("hasAnnotatorGlobalView"),
+            "reviewRequired": oData.get("doesNeedReview"),
+            "minReviewCount": oData.get("reviewersNumber") or 0,
+
+            # Hosting
+            "selfHosted": oData.get("isOwnerHosting"),
+            "s3Address": oData.get("hostingUrl"),
+            "s3User": oData.get("hostingUsername"),
+            "s3Password": oData.get("hostingPassword"),
+
+            # Foreign Key (Template)
+            # Assuming the frontend sends 'labellingTemplate' as the UUID string
+            "template_id": oData.get("labellingTemplate")
         }
+
+        # 3. Create Project Entity
+        oNewProject = DatasetProjectEntity(**oProject)
+        oDB.add(oNewProject)
+        oDB.flush()  # Flush to generate the new_project.id (GUID) without committing yet
+
+        # 4. Create Image Style Entity (if provided)
+        if oStyle:
+            new_style = ImageStyleEntity(
+                projectId=oNewProject.id,
+                **oStyle
+            )
+            oDB.add(new_style)
+
+        # 5. Commit everything
+        oDB.commit()
+        oDB.refresh(oNewProject)
+
+        return {"projectId": oNewProject.id}
+
     except Exception as oE:
+        oDB.rollback()
         raise HTTPException(status_code=500, detail=f'Error creating project: {str(oE)}')
 
 
+# --- 2. GET PUBLIC PROJECTS ---
 @oRouter.get("/getPublic", response_model=list[ProjectPublic])
-async def getPublic():
-    """
-    Retrieve all public projects in simplified format.
-    
-    :return: list of ProjectPublic objects containing public project information
-    """
+async def getPublic(oDB: Session = Depends(get_db)):
     try:
-        # TODO: Query database for all public projects
-        # For now, return mock data
-        oAOI = AOI(isGlobal=True, bbox=None)
-        
-        aoPublicProjects = [
-            ProjectPublic(
-                id="123-456-789",
-                name="Public Project 1",
-                description="First test public project",
+        # Fetch where isPublic = True
+        aoPublicProjects = oDB.query(DatasetProjectEntity) \
+            .filter(DatasetProjectEntity.isPublic == True) \
+            .order_by(desc(DatasetProjectEntity.creationDate)) \
+            .all()
+
+        oResult = []
+        for oProject in aoPublicProjects:
+            # Map DB Entity -> ProjectPublic Pydantic Model
+            oAOI = AOI(
+                isGlobal=oProject.isGlobal,
+                bbox=oProject.bbox[0] if oProject.bbox and len(oProject.bbox) > 0 else None
+            )
+
+            oResult.append(ProjectPublic(
+                id=oProject.id,
+                name=oProject.name,
+                description=oProject.description,
                 aoi=oAOI,
-                mission="Sentinel-2",
-                tasks=["classification", "other"]
-            ),
-            ProjectPublic(
-                id="987-654-321",
-                name="Public Project 2",
-                description="Second test public project",
-                aoi=oAOI,
-                mission="Sentinel-2",
-                tasks=[]
-            ),
-        ]
-        
-        return aoPublicProjects
+                mission=oProject.mission.value if oProject.mission else None,
+                tasks=oProject.task if oProject.task else []
+            ))
+
+        return oResult
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error fetching public projects: {str(oE)}')
-    
 
+
+# --- 3. GET USER PROJECTS ---
 @oRouter.get("/getByUser", response_model=list[ProjectPublic])
-async def getByUser():
-    """
-    Retrieve all projects associated with the current user.
-    
-    :return: list of ProjectPublic objects containing user's project information
-    """
+async def getByUser(
+        # user_id: str = Depends(get_current_user_id), # You will need auth later
+        oDB: Session = Depends(get_db)
+):
     try:
-        # TODO: Query database for all public projects
-        # For now, return mock data
-        oAOI = AOI(isGlobal=True, bbox=None)
-        
-        aoPublicProjects = [
-            ProjectPublic(
-                id = "555-666-777",
-                name="User Project 1",
-                description="First test user project",
+        # TODO: Once you have Authentication, filter by owner/annotator ID
+        # For now, we return ALL projects just to see them work
+        aoUserProjects = oDB.query(DatasetProjectEntity).all()
+
+        oResult = []
+        for oProject in aoUserProjects:
+            oAOI = AOI(
+                isGlobal=oProject.isGlobal,
+                bbox=oProject.bbox[0] if oProject.bbox else None
+            )
+
+            oResult.append(ProjectPublic(
+                id=oProject.id,
+                name=oProject.name,
+                description=oProject.description,
                 aoi=oAOI,
-                mission="Sentinel-2",
-                tasks=["classification", "other"],
-                userRole="annotator"
-            ),
-            ProjectPublic(
-                id="888-999-000",
-                name="User Project 2",
-                description="Second test user project",
-                aoi=oAOI,
-                mission="Sentinel-2",
-                tasks=[],
-                userRole ="owner"
-            ),
-        ]
-        
-        return aoPublicProjects
+                mission=oProject.mission.value if oProject.mission else None,
+                tasks=oProject.task if oProject.task else [],
+                userRole="owner"  # Hardcoded for now until Auth is ready
+            ))
+
+        return oResult
     except Exception as oE:
-        raise HTTPException(status_code=500, detail=f'Error fetching public projects: {str(oE)}')  
+        raise HTTPException(status_code=500, detail=f'Error fetching user projects: {str(oE)}')
 
 
+# --- 4. GET SINGLE PROJECT ---
 @oRouter.get("/getProject", response_model=ProjectCreate)
-async def getProject(project_id: str = Query(..., description="The unique identifier of the project")):
-    """
-    Retrieve detailed information about a specific project.
-    
-    :param project_id: The unique identifier of the project (required, non-null query parameter)
-    :return: ProjectCreate object containing all project details
-    """
+async def getProject(
+        sProjectId: str = Query(..., description="The unique identifier of the project"),
+        oDB: Session = Depends(get_db)
+):
     try:
-        # TODO: Query database for project by ID
-        # For now, return mock data
-        oProject = ProjectCreate(
-            id="9876-5432-1098-7654",
-            userRole="owner",
-            name="Sample Project",
-            description="This is a sample project retrieved by ID",
-            isGlobalAoI=False,
-            bbox="POLYGON ((10.537949 36.618283, 10.491943 36.633162, 10.441818 36.619937, 10.449371 36.564806, 10.518723 36.549914, 10.548248 36.571424, 10.537949 36.618283))",
-            isPublic=True,
-            link="https://example.com/project",
-            creationDate=10000000000,
-            datasetStartDate=10000000000,
-            datasetEndDate=10000000000,
-            hasAnnotatorGlobalView=True,
-            doesNeedReview=False,
-            reviewersNumber=None,
-            mission="Sentinel-2",
-            tasks=["segmentation", "detection"],
-            labellingTemplate="labelling-template-1",
-            isOwnerHosting=False,
-            hostingUsername=None,
-            hostingPassword=None,
-            hostingUrl=None
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == sProjectId).first()
+
+        if not oProject:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        # Extract style if it exists
+        oStyle = oProject.style  # SQLAlchemy relationship magic
+
+        # Map DB Entity -> ProjectCreate Pydantic Model
+        return ProjectCreate(
+            id=oProject.id,
+            name=oProject.name,
+            description=oProject.description,
+            isGlobalAoI=oProject.isGlobal,
+            # Handle bbox array -> string conversion if needed
+            bbox=oProject.bbox[0] if oProject.bbox and len(oProject.bbox) > 0 else None,
+            isPublic=oProject.isPublic,
+            link=oProject.link,
+            creationDate=oProject.creationDate,
+            datasetStartDate=oProject.startDate,
+            datasetEndDate=oProject.endDate,
+            hasAnnotatorGlobalView=oProject.annotatorsSeeAllLabels,
+            doesNeedReview=oProject.reviewRequired,
+            reviewersNumber=oProject.minReviewCount,
+            mission=oProject.mission.value if oProject.mission else None,
+            tasks=oProject.task if oProject.task else [],
+            labellingTemplate=oProject.template_id,
+            isOwnerHosting=oProject.selfHosted,
+            hostingUsername=oProject.s3User,
+            hostingPassword=oProject.s3Password,
+            hostingUrl=oProject.s3Address,
+            # TODO: Map style object back to Pydantic if needed
         )
-        
-        return oProject
+
+    except HTTPException:
+        raise
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error fetching project: {str(oE)}')
 
 
+# --- 5. REJECT / APPROVE ---
 @oRouter.get("/reject")
-async def reject(project_id: str = Query(..., description="The unique identifier of the project to reject")):
-    """
-    Reject a project by its ID.
-    
-    :param project_id: The unique identifier of the project to reject (required, non-null query parameter)
-    :return: dict containing success status message
-    """
+async def reject(
+        sProjectId: str = Query(...),
+        oDB: Session = Depends(get_db)
+):
     try:
-        # TODO: Add database logic to reject the project
-        
-        return {
-            "status": "success",
-            "message": f"Project {project_id} has been rejected"
-        }
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == sProjectId).first()
+        if not oProject:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        oProject.rejected = True
+        oProject.approved = False
+        oDB.commit()
+
+        return {"status": "success", "message": f"Project {sProjectId} rejected"}
     except Exception as oE:
-        raise HTTPException(status_code=500, detail=f'Error rejecting project: {str(oE)}')
+        raise HTTPException(status_code=500, detail=f'Error rejecting: {str(oE)}')
 
 
 @oRouter.get("/approve")
-async def approve(project_id: str = Query(..., description="The unique identifier of the project to approve")):
-    """
-    Approve a project by its ID.
-
-    :param project_id: The unique identifier of the project to approve (required, non-null query parameter)
-    :return: dict containing success status message
-    """
+async def approve(
+        sProjectId: str = Query(...),
+        oDB: Session = Depends(get_db)
+):
     try:
-        # TODO: Add database logic to approve the project
-        
-        return {
-            "status": "success",
-            "message": f"Project {project_id} has been approved"
-        }
-    except Exception as oE:
-        raise HTTPException(status_code=500, detail=f'Error approving project: {str(oE)}')
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == sProjectId).first()
+        if not oProject:
+            raise HTTPException(status_code=404, detail="Project not found")
 
+        oProject.approved = True
+        oProject.rejected = False
+        oDB.commit()
+
+        return {"status": "success", "message": f"Project {sProjectId} approved"}
+    except Exception as oE:
+        raise HTTPException(status_code=500, detail=f'Error approving: {str(oE)}')
+
+
+# --- 6. COLLABORATORS (Placeholder) ---
+# Since we don't have a 'Collaborators' table yet (just JSON arrays in Project),
+# we will append to the JSON list for now.
 
 @oRouter.post("/inviteCollaborator")
-async def inviteCollaborator(oInviteData: InviteCollaborator):
-    """
-    Invite a collaborator to a project.
-    
-    :param oInviteData: InviteCollaborator validator containing email, role, and optional note
-    :return: dict containing success status and invitation details
-    """
-    try:
-        # TODO: Add database logic to create invitation and send email
-        
-        return {
-            "status": "success",
-            "message": f"Invitation sent to {oInviteData.userEmail} with role {oInviteData.role}"
-        }
-    except Exception as oE:
-        raise HTTPException(status_code=500, detail=f'Error inviting collaborator: {str(oE)}')
+async def inviteCollaborator(
+        oInviteData: InviteCollaborator,
+        oDB: Session = Depends(get_db)
+):
+    # TODO: Logic depends on if you want to store invitations in a separate table
+    # or just append email to project.annotators JSON list.
+    return {
+        "status": "success",
+        "message": f"Mock invite sent to {oInviteData.userEmail}"
+    }
 
 
 @oRouter.delete("/removeCollaborator")
-async def removeCollaborator(id: str = Query(..., description="The unique identifier of the collaborator to remove")):
-    """
-    Remove a collaborator from a project.
-    
-    :param id: The unique identifier of the collaborator to remove (required, non-empty query parameter)
-    :return: dict containing success status message
-    """
-    try:
-        # TODO: Add database logic to remove the collaborator
-        
-        return {
-            "status": "success",
-            "message": f"Collaborator {id} has been removed from the project"
-        }
-    except Exception as oE:
-        raise HTTPException(status_code=500, detail=f'Error removing collaborator: {str(oE)}')
-
-
+async def removeCollaborator(sId: str = Query(...)):
+    # TODO: Logic to remove ID from project.annotators JSON list
+    return {"status": "success", "message": f"User {sId} removed"}

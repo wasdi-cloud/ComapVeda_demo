@@ -19,6 +19,16 @@ from api.ProjectResource import oRouter as oProjectRouter
 from api.TemplateResource import oRouter as oTemplateRouter
 from database import Base, engine
 
+# 1. Import parent tables first
+from entities.LabellingTemplate import LabellingTemplateEntity
+
+# 2. Import middle tables next
+from entities.DatasetProject import DatasetProjectEntity
+
+# 3. Import child tables last
+from entities.ImageStyle import ImageStyleEntity
+from entities.Label import LabelEntity
+
 # Create Tables
 Base.metadata.create_all(bind=engine)
 oApp = FastAPI()

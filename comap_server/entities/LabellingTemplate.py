@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy import Column, Integer, String, Boolean, Float, JSON
 from database import Base
 
@@ -6,7 +8,7 @@ class LabellingTemplateEntity(Base):
     __tablename__ = "labelling_templates"
 
     # Auto-incrementing ID for the DB
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
 
     # Basic Fields
     name = Column(String, index=True)

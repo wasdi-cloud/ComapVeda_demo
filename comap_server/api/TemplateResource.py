@@ -3,8 +3,8 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from entities.LabellingTemplate import LabellingTemplateEntity
-from schemas.templates.LabellingTemplate import LabellingTemplate
-from schemas.templates.TemplateListItem import TemplateListItem
+from viewmodels.templates.LabellingTemplate import LabellingTemplate
+from viewmodels.templates.TemplateListItem import TemplateListItem
 
 oRouter = APIRouter(prefix="/templates")
 
@@ -55,7 +55,7 @@ async def getList(oDB: Session = Depends(get_db)):
         oTemplateItemList = []
         for t in aoTemplates:
             oTemplateItemList.append({
-                "templateId": str(t.id),  # Convert int to str for your frontend
+                "templateId":t.id,  # Convert int to str for your frontend
                 "name": t.name,
                 "user": t.creator,  # Mapping DB 'creator' to expected 'user'
                 "creationDate": t.creationDate or 0
@@ -69,7 +69,7 @@ async def getList(oDB: Session = Depends(get_db)):
 @oRouter.put("/update")
 async def update(
         oTemplateData: LabellingTemplate,
-        itemplateId: int = Query(..., description="Unique identifier (int) for the template"),
+        sTemplateId: str = Query(..., description="Unique identifier (int) for the template"),
         oDB: Session = Depends(get_db)
 ):
     """
@@ -77,7 +77,7 @@ async def update(
     """
     try:
         # 1. Find the existing template
-        oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.id == itemplateId).first()
+        oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.id == sTemplateId).first()
 
         if not oTemplate:
             raise HTTPException(status_code=404, detail="Template not found")
@@ -103,7 +103,7 @@ async def update(
 # --- 3. DELETE ---
 @oRouter.delete("/delete")
 async def delete(
-        iTemplateId: int = Query(..., description="Unique identifier for the template"),
+        sTemplateId: str = Query(..., description="Unique identifier for the template"),
         oDB: Session = Depends(get_db)
 ):
     """
@@ -111,7 +111,7 @@ async def delete(
     """
     try:
         # 1. Find it
-        oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.id == iTemplateId).first()
+        oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.id == sTemplateId).first()
 
         if not oTemplate:
             raise HTTPException(status_code=404, detail="Template not found")
@@ -120,7 +120,7 @@ async def delete(
         oDB.delete(oTemplate)
         oDB.commit()
 
-        return {"templateId": iTemplateId, "status": "deleted"}
+        return {"templateId": sTemplateId, "status": "deleted"}
 
     except HTTPException:
         raise
@@ -154,7 +154,7 @@ async def getByProject(
 # --- 5. GET ATTRIBUTES ---
 @oRouter.get("/getAttributes")
 async def getAttributes(
-        iTemplateId: int = Query(..., description="Unique identifier for the template"),
+        sTemplateId: str= Query(..., description="Unique identifier for the template"),
         oDB: Session = Depends(get_db)
 ):
     """
@@ -162,7 +162,7 @@ async def getAttributes(
     """
     try:
         # Find the template
-        oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.id == iTemplateId).first()
+        oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.id == sTemplateId).first()
 
         if not oTemplate:
             raise HTTPException(status_code=404, detail="Template not found")

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Query
 
-from schemas.auth.LoginModel import LoginModel
-from schemas.auth.OtpModel import OtpModel
-from schemas.auth.Registration import Registration
+from viewmodels.auth.LoginModel import LoginModel
+from viewmodels.auth.OtpModel import OtpModel
+from viewmodels.auth.Registration import Registration
 
 
 oRouter = APIRouter(prefix="/auth")
