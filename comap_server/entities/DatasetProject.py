@@ -77,7 +77,7 @@ class DatasetProjectEntity(Base):
 
     # 3. Users & Images (Stored as JSON Arrays of Strings/IDs for now)
     # Since DatasetImage isn't a table, we just store the links/paths here.
-    images = Column(JSON, default=list)
+    images = relationship("DatasetImageEntity", backref="project", cascade="all, delete-orphan")
     owners = Column(JSON, default=list)
     annotators = Column(JSON, default=list)
     reviewers = Column(JSON, default=list)
