@@ -32,11 +32,11 @@ export const getLabelTemplateByProject = async (sProjectId) => {
 };
 
 /**
- * Create a new labelling template
+ * Create a new labeling template
  * @param {Object} oTemplateData - { name, description, geometryTypes, etc. }
  */
-export const create = async (oTemplateData) => {
-    return await request('/label-templates', {
+export const createTemplate = async (oTemplateData) => {
+    return await request('templates/create', {
         method: 'POST',
         body: JSON.stringify(oTemplateData)
     });

@@ -1,6 +1,6 @@
 # entities/image_style.py
 import uuid
-from sqlalchemy import Column, String, Boolean, Integer
+from sqlalchemy import Column, String, Boolean, Integer, ForeignKey
 from database import Base
 
 
@@ -11,7 +11,7 @@ class ImageStyleEntity(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # Link to the Project (We will make this a Foreign Key later when Project is ready)
-    projectId = Column(String, nullable=False, index=True)
+    projectId = Column(String, ForeignKey('dataset_projects.id'), nullable=False)
 
     # Band Configurations
     singleBand = Column(Boolean, default=False)

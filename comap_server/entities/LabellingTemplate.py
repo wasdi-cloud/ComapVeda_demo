@@ -1,6 +1,7 @@
 import uuid
 
-from sqlalchemy import Column, Integer, String, Boolean, Float, JSON
+from sqlalchemy import Column, String, Boolean, Float, JSON, Integer
+
 from database import Base
 
 
@@ -12,17 +13,19 @@ class LabellingTemplateEntity(Base):
 
     # Basic Fields
     name = Column(String, index=True)
-    creator = Column(String)
     description = Column(String, nullable=True)
-
-    # Complex Fields (stored as JSON)
-    # This allows you to store ["point", "polygon"] directly
-    geometryTypes = Column(JSON)
-
+    colourAttributeName = Column(String, nullable=True)
+    hasPolygons = Column(Boolean, default=False)
+    hasLines = Column(Boolean, default=False)
+    hasPoints = Column(Boolean, default=False)
+    isFixedColorStyle = Column(Boolean, default=False)
+    fixedColor = Column(String, nullable=True)
     # This stores the list of Attribute objects as a JSON blob
     attributes = Column(JSON)
-
-    isSingleColorStyle = Column(Boolean, default=False)
-    featureColor = Column(String, nullable=True)
     creationDate = Column(Float, nullable=True)
-    projectId = Column(String)
+    creator = Column(String)
+    # projectId = Column(String)
+
+    # # Complex Fields (stored as JSON)
+    # # This allows you to store ["point", "polygon"] directly
+    # geometryTypes = Column(JSON)

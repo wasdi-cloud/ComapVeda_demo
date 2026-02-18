@@ -3,46 +3,59 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from entities.LabellingTemplate import LabellingTemplateEntity
-from viewmodels.templates.LabellingTemplate import LabellingTemplate
+from viewmodels.templates.LabellingTemplateViewModel import LabellingTemplateViewModel
 from viewmodels.templates.TemplateListItem import TemplateListItem
 
 oRouter = APIRouter(prefix="/templates")
 
+
 @oRouter.post("/create")
 async def create(
-        oTemplateData: LabellingTemplate,
-        oDB: Session = Depends(get_db)  # <--- Inject the DB here
+        oTemplateData: LabellingTemplateViewModel,
+        oDB: Session = Depends(get_db)
 ):
-    """
-    Create a new template with validated data.
-    """
     try:
-        # 1. Create the Entity from the Pydantic model
-        # We can use **model_dump() to unpack the data because names match
+        # 1. Convert Pydantic Model to Dict
+        oData = oTemplateData.model_dump()
+
+        # 2. Manual Mapping: ViewModel -> Entity
+        # We map the lists/booleans from the VM to the specific columns in the Entity
         oNewtemplate = LabellingTemplateEntity(
-            **oTemplateData.model_dump()
+            name=oData['name'],
+            creator=oData['creator'],
+            description=oData['description'],
+            creationDate=oData['creationDate'],
+
+            # Map Geometry Types List -> Boolean Flags
+            hasPolygons=('polygon' in oData['geometryTypes']),
+            hasLines=('polyline' in oData['geometryTypes']),
+            hasPoints=('point' in oData['geometryTypes']),
+
+            # Map Style
+            isFixedColorStyle=oData['isSingleColorStyle'],
+            fixedColor=oData['featureColor'],  # Ensure DB column is String for Hex
+            colourAttributeName=oData['colourAttributeName'],
+
+            # Save Attributes as JSON directly
+            attributes=[attr for attr in oData['attributes']]
         )
 
-        # 2. Add to DB
         oDB.add(oNewtemplate)
         oDB.commit()
-
-        # 3. Refresh to get the auto-generated ID
         oDB.refresh(oNewtemplate)
 
         return {
-            "templateId": oNewtemplate.id,  # Returns the real DB ID
+            "templateId": oNewtemplate.id,
             "status": "created"
         }
 
     except Exception as oE:
-        # Rollback in case of error so the DB isn't stuck
         oDB.rollback()
-        print(f"Error: {oE}")  # Print to console for debugging
+        print(f"Server Error: {oE}")
         raise HTTPException(status_code=500, detail=f'Error creating template: {str(oE)}')
 
 
-# --- 1. GET LIST ---
+# --- GET LIST ---
 @oRouter.get("/getList",response_model=list[TemplateListItem])  # Add response_model=list[TemplateListItem] back if imported
 async def getList(oDB: Session = Depends(get_db)):
     """
@@ -68,7 +81,7 @@ async def getList(oDB: Session = Depends(get_db)):
 # --- 2. UPDATE ---
 @oRouter.put("/update")
 async def update(
-        oTemplateData: LabellingTemplate,
+        oTemplateData: LabellingTemplateViewModel,
         sTemplateId: str = Query(..., description="Unique identifier (int) for the template"),
         oDB: Session = Depends(get_db)
 ):
@@ -130,7 +143,7 @@ async def delete(
 
 
 # --- 4. GET BY PROJECT ---
-@oRouter.get("/getByProject", response_model=LabellingTemplate)
+@oRouter.get("/getByProject", response_model=LabellingTemplateViewModel)
 async def getByProject(
         sProjectId: str = Query(..., description="Unique identifier for the project"),
         oDB: Session = Depends(get_db)
