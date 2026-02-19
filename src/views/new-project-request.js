@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 
 // 1. COMPONENTS
@@ -12,6 +12,7 @@ import AppDateInput from "../components/app-date-input";
 import {createProject} from "../services/project-service";
 import AppRadioButton from "../components/app-radiobutton";
 import AppDropdown from "../components/app-dropdown-input";
+import {getLabelTemplates} from "../services/labelling-template-service";
 
 const NewProjectRequest = () => {
     const navigate = useNavigate();
@@ -20,6 +21,8 @@ const NewProjectRequest = () => {
     const [bIsSubmitting, setIsSubmitting] = useState(false);
     const [sErrorMessage, setErrorMessage] = useState(null);
     const [bShowSuccessModal, setShowSuccessModal] = useState(false); // Controls the popup
+    const [aoTemplates, setAoTemplates] = useState([]);
+    const [bLoadingTemplates, setBLoadingTemplates] = useState(true);
 
     // --- FORM STATE ---
     const [formData, setFormData] = useState({
@@ -28,22 +31,32 @@ const NewProjectRequest = () => {
         startDate: '', endDate: '',
         isPublic: false, isGlobal: true,
         annotatorScope: 'all', reviewRequired: false, minReviews: 1,
-        eoMission: 'Sentinel-2',
-        tasks: {segmentation: false, detection: false, classification: false, other: false},
+
+        // FIX: Default to exact Python Enum key
+        eoMission: 'S2',
+
+        // FIX: Use exact Python Enum keys for tasks
+        tasks: {
+            SEMANTING_SEGMENTATION: false,
+            OBJECT_DETECTION: false,
+            OTHER: false
+        },
+
         ownerHosting: false, s3User: '', s3Password: '', s3Url: '',
         aoiGeometry: null,
-        labelTemplate: null,
+        labelTemplate: null, // We will send null for now to avoid FK errors
     });
 
     // --- HANDLERS ---
     const handleInputChange = (e) => {
         const {name, value, type, checked} = e.target;
 
-        // Clear errors when user starts typing again
         if (sErrorMessage) setErrorMessage(null);
 
         if (name.startsWith('task_')) {
-            const taskName = name.split('_')[1];
+            // FIX: Replace the prefix instead of splitting by underscore
+            const taskName = name.replace('task_', '');
+
             setFormData(prev => ({
                 ...prev,
                 tasks: {...prev.tasks, [taskName]: checked}
@@ -61,23 +74,57 @@ const NewProjectRequest = () => {
         setFormData(prev => ({...prev, aoiGeometry: drawData}));
     };
 
+
+    useEffect(() => {
+        const fetchTemplates = async () => {
+            try {
+                setBLoadingTemplates(true);
+
+                // FIX: getLabelTemplates() likely already returns the JSON array
+                const oData = await getLabelTemplates();
+
+                setAoTemplates(oData);
+
+                if (oData && oData.length > 0) {
+                    setFormData(prev => ({ ...prev, labelTemplate: oData[0].templateId }));
+                }
+            } catch (error) {
+                console.error("Failed to load templates:", error);
+            } finally {
+                setBLoadingTemplates(false);
+            }
+        };
+
+        fetchTemplates();
+    }, []);
+
     // --- HELPER: Convert Date String (YYYY-MM-DD) to Epoch Milliseconds ---
     const toEpochMillis = (dateString) => {
         if (!dateString) return null;
         return new Date(dateString).getTime();
     };
 
-    // --- HELPER: Convert GeoJSON/Draw Data to WKT (Simplified) ---
-    // Note: In a real app, use a library like @terraformer/wkt or wellknown
-    const toWKT = (geometry) => {
+    // --- HELPER: Convert GeoJSON/Draw Data to WKT ---
+    const toWKT = (featureCollection) => {
+        // 1. Check if we actually have drawn features
+        if (!featureCollection || !featureCollection.features || featureCollection.features.length === 0) {
+            return null;
+        }
+
+        // 2. Extract the geometry from the FIRST feature drawn
+        const geometry = featureCollection.features[0].geometry;
+
         if (!geometry || !geometry.coordinates) return null;
 
-        // Assuming geometry is a simple Polygon from Mapbox Draw
-        // Structure: [[[lon, lat], [lon, lat], ...]]
-        const ring = geometry.coordinates[0];
-        const coordString = ring.map(pt => `${pt[0]} ${pt[1]}`).join(", ");
+        // 3. Convert Mapbox Polygon to WKT String
+        if (geometry.type === 'Polygon') {
+            const ring = geometry.coordinates[0];
+            const coordString = ring.map(pt => `${pt[0]} ${pt[1]}`).join(", ");
+            return `POLYGON((${coordString}))`;
+        }
 
-        return `POLYGON((${coordString}))`;
+        // If they drew a line/point by mistake, ignore or handle differently
+        return null;
     };
 
     // --- MAIN SAVE HANDLER ---
@@ -132,7 +179,7 @@ const NewProjectRequest = () => {
                 mission: formData.eoMission,
                 tasks: tasksList, // Array of strings ["segmentation", "detection"]
                 // Assuming you handle the file upload separately and get a template name
-                labellingTemplate: "Standard_Template_v1", // Hardcoded for now, or use a state variable
+                labellingTemplate: formData.labelTemplate, // Hardcoded for now, or use a state variable
 
                 // --- Hosting ---
                 isOwnerHosting: formData.ownerHosting,
@@ -296,6 +343,10 @@ const NewProjectRequest = () => {
                                     onDrawUpdate={handleAoiDraw}
                                     bEnableDraw={true}
                                     bEnableGeocoder={true}
+
+                                    // --- THE FIX IS HERE ---
+                                    // Feed the drawn features back into the map so it doesn't delete them
+                                    aoFeatures={formData.aoiGeometry ? formData.aoiGeometry.features : []}
                                 />
                             </div>
                         </AppCard>
@@ -355,10 +406,11 @@ const NewProjectRequest = () => {
 
                         <div style={{marginBottom: '15px'}}>
                             <label style={subLabelStyle}>EO Mission</label>
+                            {/* FIX: Use exact Backend Enums */}
                             <AppDropdown
                                 sValue={formData.eoMission}
                                 fnOnChange={(e) => setFormData({ ...formData, eoMission: e.target.value })}
-                                aoOptions={["Sentinel-2", "Landsat-8", "Custom High-Res"]}
+                                aoOptions={["S2", "CUSTOM"]}
                                 oStyle={{width: '100%', marginTop: '5px'}}
                             />
                         </div>
@@ -366,26 +418,49 @@ const NewProjectRequest = () => {
                         <div style={{marginBottom: '15px'}}>
                             <label style={subLabelStyle}>Tasks</label>
                             <div style={{display: 'flex', gap: '20px', flexWrap: 'wrap', marginTop: '8px'}}>
-                                {['Semantic Segmentation', 'Object Detection', 'Image Classification', 'Other'].map(task => (
+                                {/* FIX: Map over the actual state keys so they match the backend */}
+                                {Object.keys(formData.tasks).map(taskKey => (
                                     <AppCheckbox
-                                        key={task}
-                                        sName={`task_${task.split(' ')[0].toLowerCase()}`}
-                                        sLabel={task}
+                                        key={taskKey}
+                                        sName={`task_${taskKey}`}
+                                        sLabel={taskKey.replace('_', ' ')} // Makes it look nice: "OBJECT DETECTION"
+                                        bChecked={formData.tasks[taskKey]}
                                         fnOnChange={handleInputChange}
                                     />
                                 ))}
                             </div>
                         </div>
 
-                        <div>
+                        <div style={{ marginBottom: '15px' }}>
                             <label style={subLabelStyle}>Labelling Template</label>
-                            <AppDropdown
-                                sValue={formData.labelTemplate}
-                                // FIX: Update the state here!
-                                fnOnChange={(e) => setFormData({ ...formData, labelTemplate: e.target.value })}
-                                aoOptions={["Template A", "Template B"]}
-                                oStyle={{width: '100%', marginTop: '5px'}}
-                            />
+
+                            {bLoadingTemplates ? (
+                                <div style={{ marginTop: '5px', fontSize: '13px', color: '#666' }}>
+                                    ⏳ Loading templates...
+                                </div>
+                            ) : (
+                                <select
+                                    value={formData.labelTemplate}
+                                    onChange={(e) => setFormData({ ...formData, labelTemplate: e.target.value })}
+                                    style={{
+                                        width: '100%',
+                                        marginTop: '5px',
+                                        padding: '10px',
+                                        borderRadius: '4px',
+                                        border: '1px solid #ccc',
+                                        fontSize: '14px',
+                                        backgroundColor: '#fff'
+                                    }}
+                                    required
+                                >
+                                    <option value="" disabled>-- Select a Template --</option>
+                                    {aoTemplates.map(template => (
+                                        <option key={template.templateId} value={template.templateId}>
+                                            {template.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
                         </div>
                     </AppCard>
 

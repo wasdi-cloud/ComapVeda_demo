@@ -145,14 +145,14 @@ async def delete(
 # --- 4. GET BY PROJECT ---
 @oRouter.get("/getByProject", response_model=LabellingTemplateViewModel)
 async def getByProject(
-        sProjectId: str = Query(..., description="Unique identifier for the project"),
+        project_id: str = Query(..., description="Unique identifier for the project"),
         oDB: Session = Depends(get_db)
 ):
     """
     Retrieve the template associated with a specific project.
     """
     try:
-        oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.projectId == sProjectId).first()
+        oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.projectId == project_id).first()
 
         if not oTemplate:
             raise HTTPException(status_code=404, detail="Template not found for this project")

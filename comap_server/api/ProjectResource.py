@@ -150,11 +150,11 @@ async def getByUser(
 # --- 4. GET SINGLE PROJECT ---
 @oRouter.get("/getProject", response_model=ProjectCreate)
 async def getProject(
-        sProjectId: str = Query(..., description="The unique identifier of the project"),
+        project_id: str = Query(..., description="The unique identifier of the project"),
         oDB: Session = Depends(get_db)
 ):
     try:
-        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == sProjectId).first()
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
 
         if not oProject:
             raise HTTPException(status_code=404, detail="Project not found")

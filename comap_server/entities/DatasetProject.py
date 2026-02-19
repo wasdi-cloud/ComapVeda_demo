@@ -41,7 +41,11 @@ class DatasetProjectEntity(Base):
     selfHosted = Column(Boolean, default=False)
 
     mission = Column(Enum(Missions), nullable=True)
+    #todo verify if this is a single value or a list
     task = Column(JSON, nullable=True)
+    # task = Column(Enum(Tasks), nullable=True)
+
+
 
     maxStorage = Column(Integer, nullable=True)
     s3Address = Column(String, nullable=True)

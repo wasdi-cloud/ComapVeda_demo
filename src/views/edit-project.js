@@ -19,6 +19,7 @@ const EditProject = () => {
     const oNavigate = useNavigate();
     const oLocation = useLocation();
     const sProjectTitle = oLocation.state?.projectTitle || "High-Res Flood Analysis";
+    const sProjectId = oLocation.state?.projectId || null;
     const sCurrentUser = "Jihed";
 
     // --- DATA ---
@@ -71,22 +72,38 @@ const EditProject = () => {
         setAoFeatures([]);
     }, [iSelectedImageId]);
 
-    // Helper to convert "POLYGON ((30 10...))" to [minX, minY, maxX, maxY]
+    // Helper to convert "POLYGON((30 10...))" to [minX, minY, maxX, maxY]
     const parseWKTBbox = (wkt) => {
         if (!wkt) return null;
         try {
-            const coordsText = wkt.replace("POLYGON ((", "").replace("))", "");
+            // FIX: Use Regex to safely strip "POLYGON" and all brackets/parentheses regardless of spacing
+            const coordsText = wkt.replace(/POLYGON\s*\(\(/i, "").replace(/\)\)/, "");
             const pairs = coordsText.split(",").map(p => p.trim());
+
             let xValues = [];
             let yValues = [];
 
             pairs.forEach(pair => {
-                const [x, y] = pair.split(" ").map(Number);
-                xValues.push(x);
-                yValues.push(y);
+                // Safely split the coordinate pair by any whitespace
+                const [x, y] = pair.split(/\s+/).map(Number);
+
+                // Only push valid numbers
+                if (!isNaN(x) && !isNaN(y)) {
+                    xValues.push(x);
+                    yValues.push(y);
+                }
             });
 
-            return [Math.min(...xValues), Math.min(...yValues), Math.max(...xValues), Math.max(...yValues)];
+            const bbox = [
+                Math.min(...xValues),
+                Math.min(...yValues),
+                Math.max(...xValues),
+                Math.max(...yValues)
+            ];
+
+            console.log("Parsed BBOX for Mapbox:", bbox); // <-- Added to help you verify
+            return bbox;
+
         } catch (e) {
             console.error("Failed to parse BBOX:", e);
             return null;
@@ -94,36 +111,49 @@ const EditProject = () => {
     };
 
     // --- LOAD PROJECT DATA ---
+    // --- LOAD PROJECT DATA ---
     useEffect(() => {
         const loadProject = async () => {
+            // 1. Safety check: If there is no ID, send them back to home
+            if (!sProjectId) {
+                console.error("No project ID found! Redirecting to home...");
+                oNavigate('/');
+                return;
+            }
+
             try {
-                // TODO: Get real ID from URL params later
-                const oData = await getProject("random_id");
+                // 2. Use the real ID!
+                const oData = await getProject(sProjectId);
 
                 if (oData) {
                     console.log("Project Loaded:", oData);
                     setProject(oData);
 
-                    // 2. Load Template associated with this project
-                    // We assume projectData.id is what connects them
-                    const templateData = await getLabelTemplateByProject("random_id");
-                    if (templateData) {
-                        console.log("Template Loaded:", templateData);
-                        setLabelTemplate(templateData);
-                    }
+                    // 3. Load Template associated with this project using the real ID
+                    // (Ensure your backend endpoint accepts this ID)
+                    // const templateData = await getLabelTemplateByProject(sProjectId);
+                    // if (templateData) {
+                    //     console.log("Template Loaded:", templateData);
+                    //     setLabelTemplate(templateData);
+                    // }
 
-                    // 2. Parse and Set Project BBox (for initial zoom)
+                    // 4. Parse and Set Project BBox (for initial zoom)
                     if (oData.bbox) {
+                        console.log("here")
+                        console.log(oData.bbox);
+
                         const parsedBox = parseWKTBbox(oData.bbox);
+                        console.log(parsedBox);
                         setProjectBBox(parsedBox);
                     }
                 }
             } catch (error) {
-                console.log(error);
+                console.log("Error loading project data:", error);
             }
         }
+
         loadProject();
-    }, []); // Run once on mount
+    }, [sProjectId, oNavigate]); // Add dependencies here
 
     // --- NEW: HANDLE COLOR CHANGE ---
     const handleColorChange = (newColor) => {
