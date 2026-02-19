@@ -10,5 +10,5 @@ class TemplateListItem(BaseModel):
 
     user: str = Field(..., description="User who created the template")
         
-    creationDate: int = Field(..., description="Timestamp in milliseconds of when the template was created")
+    creationDate: float = Field(..., description="Timestamp in milliseconds of when the template was created")
     

@@ -9,6 +9,7 @@ import AppSelect from '../components/app-dropdown-input';
 import AppCheckbox from '../components/app-checkbox';
 import AppRadioButton from '../components/app-radiobutton';
 import AppButton from '../components/app-button';
+import {createTemplate} from "../services/labelling-template-service";
 
 
 // --- FIXED COMPONENT: Moved OUTSIDE the main function ---
@@ -125,22 +126,70 @@ const NewLabelTemplate = () => {
         setOCategoryColors(prev => ({ ...prev, [sCategoryValue]: sColor }));
     };
 
-    const handleSaveTemplate = () => {
+
+
+    const handleSaveTemplate = async () => {
+        // 1. Convert Booleans to List of Strings for backend
+        const aoGeometryTypes = [];
+        if (oGeometries.polygon) aoGeometryTypes.push("polygon");
+        if (oGeometries.polyline) aoGeometryTypes.push("polyline");
+        if (oGeometries.point) aoGeometryTypes.push("point");
+
+        if (aoGeometryTypes.length === 0) {
+            alert("Please select at least one geometry type.");
+            return;
+        }
+
+        // 2. Map Frontend Attributes -> Backend "Attribute" Model
+        const formattedAttributes = aoAttributes.map(attr => {
+            // Prepare categoryValues if type is Category
+            let categoryValuesList = null;
+
+            if (attr.type === "Category" && attr.options) {
+                categoryValuesList = attr.options.map(optValue => ({
+                    value: optValue,
+                    // If we have a color assigned in the UI, use it. Otherwise default black.
+                    color: oCategoryColors[optValue] || "#000000"
+                }));
+            }
+
+            return {
+                name: attr.name,
+                type: attr.type.toLowerCase(), // Server expects "category", "string" (lowercase check in validator)
+                isOptional: !attr.mandatory,   // Map 'mandatory' (UI) -> 'isOptional' (Server)
+                categoryValues: categoryValuesList
+            };
+        });
+
+        // 3. Construct Payload
         const oPayload = {
             name: sName,
+            creator: "jihed-admin", // Hardcoded user for now
             description: sDescription,
-            geometries: oGeometries,
-            attributes: aoAttributes,
-            style: {
-                type: sStyleType,
-                singleColor: sSingleColor,
-                categoryAttr: sSelectedCategoryAttr,
-                categoryColors: oCategoryColors
-            }
+            geometryTypes: aoGeometryTypes,
+            attributes: formattedAttributes,
+
+            // Style Mapping
+            isSingleColorStyle: sStyleType === 'single',
+            featureColor: sStyleType === 'single' ? sSingleColor : null,
+            colourAttributeName: sStyleType === 'category' ? sSelectedCategoryAttr : null,
+
+            creationDate: Date.now() / 1000 // Send Unix Timestamp (seconds) if float expected, or ms
         };
-        console.log("Saving:", oPayload);
-        alert("Template Saved!");
-        navigate('/label-templates');
+
+        // 4. Call Service
+        try {
+            console.log("Sending Payload:", oPayload);
+            const response = await createTemplate(oPayload);
+
+            console.log("Success:", response);
+            alert("Template Saved Successfully!");
+            navigate('/label-templates');
+
+        } catch (error) {
+            console.error("Error saving template:", error);
+            alert("Error: " + (error.message || "Unknown error"));
+        }
     };
 
     return (
