@@ -9,7 +9,7 @@ import {getLabelTemplates} from "../services/labelling-template-service";
 
 const LabelTemplatesLibrary = () => {
     const navigate = useNavigate();
-    const sCurrentUserId = "jihed_123";
+    const sCurrentUserId = "jihed-admin";
 
     // 1. STATE MANAGEMENT
     const [aoLabelTemplates, setLabelTemplates] = useState([]);
@@ -22,8 +22,8 @@ const LabelTemplatesLibrary = () => {
         const loadLabelTemplates = async () => {
             try {
                 setBIsLoading(true);
-                const data = await getLabelTemplates();
-                setLabelTemplates(data || []);
+                const aoData = await getLabelTemplates();
+                setLabelTemplates(aoData || []);
             } catch (error) {
                 console.error("Failed to load templates:", error);
                 setSError("Could not load templates. Please try again.");
@@ -44,7 +44,9 @@ const LabelTemplatesLibrary = () => {
 
     const formatDate = (timestamp) => {
         if (!timestamp) return "N/A";
-        return new Date(Number(timestamp)).toLocaleDateString("en-GB", {
+
+        // Multiply by 1000 to convert seconds to milliseconds
+        return new Date(Number(timestamp) * 1000).toLocaleDateString("en-GB", {
             day: '2-digit', month: '2-digit', year: 'numeric'
         });
     };
@@ -107,7 +109,6 @@ const LabelTemplatesLibrary = () => {
                             <thead style={{background: '#f9f9f9', borderBottom: '2px solid #eee'}}>
                             <tr style={{textAlign: 'left', color: '#555'}}>
                                 <th style={thStyle}>Template Name</th>
-                                <th style={thStyle}>Geometry</th>
                                 <th style={thStyle}>Created At</th>
                                 <th style={thStyle}>Creator</th>
                                 <th style={{...thStyle, textAlign: 'right'}}>Actions</th>
@@ -117,17 +118,6 @@ const LabelTemplatesLibrary = () => {
                             {filteredTemplates.map((item) => (
                                 <tr key={item.templateId} style={{borderBottom: '1px solid #eee', background: 'white'}}>
                                     <td style={tdStyle}><strong>{item.name}</strong></td>
-                                    <td style={tdStyle}>
-                                        <span style={{
-                                            padding: '4px 8px',
-                                            background: '#e6f7ff',
-                                            color: '#1890ff',
-                                            borderRadius: '4px',
-                                            fontSize: '12px'
-                                        }}>
-                                            {item.geometry}
-                                        </span>
-                                    </td>
                                     <td style={tdStyle}>{formatDate(item.creationDate)}</td>
                                     <td style={tdStyle}>{item.user}</td>
                                     <td style={{...tdStyle, textAlign: 'right'}}>
