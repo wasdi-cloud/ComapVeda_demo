@@ -188,3 +188,47 @@ async def getAttributes(
         raise
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error retrieving attributes: {str(oE)}')
+
+
+
+
+@oRouter.get("/getById", response_model=LabellingTemplateViewModel)
+async def getByID(
+        template_id: str = Query(..., description="Unique identifier for the template"),
+        oDB: Session = Depends(get_db)
+):
+    """
+    Retrieve the template by id
+    """
+    try:
+        oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.id == template_id).first()
+
+        if not oTemplate:
+            raise HTTPException(status_code=404, detail="Template not found for this id")
+
+        # 1. Reverse map the boolean flags back to the List of strings
+        asGeomTypes = []
+        if oTemplate.hasPolygons:
+            asGeomTypes.append("polygon")
+        if oTemplate.hasLines:
+            asGeomTypes.append("polyline")
+        if oTemplate.hasPoints:
+            asGeomTypes.append("point")
+
+        # 2. Return the explicitly mapped Pydantic ViewModel
+        return LabellingTemplateViewModel(
+            name=oTemplate.name,
+            creator=oTemplate.creator,
+            description=oTemplate.description,
+            geometryTypes=asGeomTypes,
+            attributes=oTemplate.attributes if oTemplate.attributes else [],
+            isSingleColorStyle=oTemplate.isFixedColorStyle,      # Mapped field
+            featureColor=oTemplate.fixedColor,                    # Mapped field
+            colourAttributeName=oTemplate.colourAttributeName,
+            creationDate=oTemplate.creationDate
+        )
+
+    except HTTPException:
+        raise
+    except Exception as oE:
+        raise HTTPException(status_code=500, detail=f'Error retrieving template: {str(oE)}')

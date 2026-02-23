@@ -122,17 +122,33 @@ const LabelTemplatesLibrary = () => {
                                     <td style={tdStyle}>{item.user}</td>
                                     <td style={{...tdStyle, textAlign: 'right'}}>
                                         <div style={{display: 'flex', justifyContent: 'flex-end', gap: '10px'}}>
-                                            <AppButton sVariant="outline"
-                                                       oStyle={{padding: '6px 12px', fontSize: '12px'}}>View</AppButton>
+                                            {/* --- FIX: VIEW BUTTON --- */}
+                                            <AppButton
+                                                sVariant="outline"
+                                                oStyle={{padding: '6px 12px', fontSize: '12px'}}
+                                                fnOnClick={() => navigate('/create-label-template', { state: { templateId: item.templateId, mode: 'view' } })}
+                                            >
+                                                View
+                                            </AppButton>
+
                                             {item.user === sCurrentUserId && (
                                                 <>
-                                                    <AppButton sVariant="primary" oStyle={{
-                                                        padding: '6px 12px',
-                                                        fontSize: '12px'
-                                                    }}>Edit</AppButton>
-                                                    <AppButton sVariant="danger"
-                                                               oStyle={{padding: '6px 12px', fontSize: '12px'}}
-                                                               fnOnClick={() => handleDelete(item.templateId)}>Delete</AppButton>
+                                                    {/* --- FIX: EDIT BUTTON --- */}
+                                                    <AppButton
+                                                        sVariant="primary"
+                                                        oStyle={{padding: '6px 12px', fontSize: '12px'}}
+                                                        fnOnClick={() => navigate('/create-label-template', { state: { templateId: item.templateId, mode: 'edit' } })}
+                                                    >
+                                                        Edit
+                                                    </AppButton>
+
+                                                    <AppButton
+                                                        sVariant="danger"
+                                                        oStyle={{padding: '6px 12px', fontSize: '12px'}}
+                                                        fnOnClick={() => handleDelete(item.templateId)}
+                                                    >
+                                                        Delete
+                                                    </AppButton>
                                                 </>
                                             )}
                                         </div>

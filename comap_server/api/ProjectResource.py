@@ -9,6 +9,7 @@ from viewmodels.projects.InviteCollaborator import InviteCollaborator
 # Import your Pydantic Models
 from viewmodels.projects.ProjectCreate import ProjectCreate
 from viewmodels.projects.ProjectListItem import ProjectPublic, AOI
+from viewmodels.projects.ProjectPropertiesViewModel import ProjectPropertiesViewModel
 
 oRouter = APIRouter(prefix="/projects")
 
@@ -254,3 +255,36 @@ async def inviteCollaborator(
 async def removeCollaborator(sId: str = Query(...)):
     # TODO: Logic to remove ID from project.annotators JSON list
     return {"status": "success", "message": f"User {sId} removed"}
+
+
+@oRouter.put("/update")
+async def updateProject(
+        project_id: str = Query(..., description="The unique identifier of the project"),
+        oProjectPropertiesData: ProjectPropertiesViewModel = ...,
+        oDB: Session = Depends(get_db)
+):
+    """
+    Update specific properties of an existing project.
+    """
+    try:
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
+
+        if not oProject:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        # Map the incoming ViewModel data to the Database Entity
+        oProject.name = oProjectPropertiesData.name
+        oProject.description = oProjectPropertiesData.description
+        oProject.isPublic = oProjectPropertiesData.isPublic
+        oProject.annotatorsSeeAllLabels = oProjectPropertiesData.hasAnnotatorGlobalView
+
+        if oProjectPropertiesData.labellingTemplate:
+            oProject.template_id = oProjectPropertiesData.labellingTemplate
+
+        oDB.commit()
+
+        return {"status": "success", "projectId": oProject.id}
+
+    except Exception as oE:
+        oDB.rollback()
+        raise HTTPException(status_code=500, detail=f'Error updating project: {str(oE)}')

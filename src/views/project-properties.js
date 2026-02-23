@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 // REUSABLE COMPONENTS
@@ -6,46 +6,85 @@ import AppCard from '../components/app-card';
 import AppButton from '../components/app-button';
 import AppTextInput from '../components/app-text-input';
 import AppCheckbox from '../components/app-checkbox';
-import AppSelect from '../components/app-dropdown-input';
+
+// SERVICES
+import { updateProject } from "../services/project-service";
+import { getLabelTemplates } from "../services/labelling-template-service";
 
 const ProjectPropertiesPage = () => {
     const navigate = useNavigate();
     const location = useLocation();
 
     // 1. Get Data Passed from EditProject
-    // If someone goes to this URL directly without clicking the button, fallback to defaults
-    const initialData = location.state?.projectData || {
-        name: "New Project",
-        description: "",
-        mission: "Sentinel-2",
-        creationDate: new Date().toISOString().split('T')[0],
-        labelTemplate: "",
-        isPublic: false,
-        projectLink: "",
-        aoiSummary: "N/A",
-        tasks: "",
-        annotatorVisibility: "all"
+    const oProjectState = location.state?.projectData;
+    const bHasLabelTemplate = location.state?.hasLabelTemplate || false;
+
+    // Safety fallback
+    const oDefaultProject = {
+        id: "", name: "Unknown", description: "", mission: "Unknown",
+        creationDate: "", labelTemplate: "", isPublic: false, annotatorVisibility: "all"
     };
 
-    const hasLabels = location.state?.hasLabels || false;
+    const oInitialData = oProjectState ? oProjectState : oDefaultProject;
 
-    const [formData, setFormData] = useState(initialData);
+    const [formData, setFormData] = useState(oInitialData);
 
-    const handleSave = () => {
-        // In a real app, you would send an API request here
-        console.log("Saving Properties:", formData);
 
-        // Go back to the project and pass the updated data back!
-        navigate('/edit-project', {
-            state: {
-                projectTitle: formData.name, // Pass back new name
-                // You might need to pass other updated props back depending on your app flow
+    const [bIsSaving, setIsSaving] = useState(false);
+    const [sError, setError] = useState(null);
+
+    // Templates State (to populate the real dropdown)
+    const [aoTemplates, setAoTemplates] = useState([]);
+
+    // --- LOAD REAL TEMPLATES FOR DROPDOWN ---
+    useEffect(() => {
+        const fetchTemplates = async () => {
+            try {
+                const data = await getLabelTemplates();
+                setAoTemplates(data || []);
+            } catch (error) {
+                console.error("Failed to load templates", error);
             }
-        });
+        };
+        fetchTemplates();
+    }, []);
+
+    // --- SAVE HANDLER ---
+    const handleSave = async () => {
+        setError(null);
+        setIsSaving(true);
+
+        try {
+            // 1. Map React State to Python ViewModel
+            const oPayload = {
+                name: formData.name,
+                description: formData.description || null,
+                isPublic: formData.isPublic,
+                hasAnnotatorGlobalView: formData.annotatorVisibility === 'all',
+                labellingTemplate: formData.labelTemplate || null
+            };
+
+            // 2. Call the API
+            await updateProject(formData.id, oPayload);
+
+            // 3. Navigate back to Edit Project, passing the ID and new Title
+            navigate('/edit-project', {
+                state: {
+                    projectId: formData.id,
+                    projectTitle: formData.name // Send the newly updated name back!
+                }
+            });
+
+        } catch (error) {
+            console.error("Failed to save:", error);
+            setError(error.message || "An error occurred while saving the project.");
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleCancel = () => {
-        navigate(-1); // Go back to previous page
+        navigate(-1); // Go back to previous page safely
     };
 
     return (
@@ -53,8 +92,14 @@ const ProjectPropertiesPage = () => {
 
             <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <h2 style={{ margin: 0, color: '#333' }}>⚙️ Project Properties</h2>
-                <AppButton sVariant="outline" fnOnClick={handleCancel}>Cancel / Go Back</AppButton>
+                <AppButton sVariant="outline" fnOnClick={handleCancel} disabled={bIsSaving}>Cancel / Go Back</AppButton>
             </div>
+
+            {sError && (
+                <div style={{ padding: '15px', background: '#fdeded', color: '#5f2120', border: '1px solid #f5c6cb', borderRadius: '4px', marginBottom: '20px' }}>
+                    ⚠️ {sError}
+                </div>
+            )}
 
             <AppCard>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
@@ -80,18 +125,34 @@ const ProjectPropertiesPage = () => {
 
                     {/* C. & D. Read Only Info */}
                     <AppTextInput sLabel="Mission" sValue={formData.mission} disabled={true} />
-                    <AppTextInput sLabel="Creation Date" sValue={formData.creationDate} disabled={true} />
+
+                    {/* Format the Unix timestamp nicely if needed, or leave disabled */}
+                    <AppTextInput sLabel="Creation Date (Unix ms)" sValue={formData.creationDate} disabled={true} />
 
                     {/* E. Template */}
                     <div style={{ gridColumn: 'span 2' }}>
                         <label style={labelStyle}>Label Template</label>
-                        <AppSelect
-                            sValue={formData.labelTemplate}
-                            fnOnChange={(e) => setFormData({...formData, labelTemplate: e.target.value})}
-                            aoOptions={["Land Use V1", "Urban Planning", "Flood Damage Schema"]}
-                            disabled={hasLabels}
-                        />
-                        {hasLabels && <div style={{fontSize:'11px', color:'orange'}}>⚠️ Cannot change: labels exist.</div>}
+                        <select
+                            value={formData.labelTemplate}
+                            onChange={(e) => setFormData({...formData, labelTemplate: e.target.value})}
+                            disabled={bHasLabelTemplate} // <-- This fulfills your Use Case perfectly!
+                            style={{
+                                width: '100%', padding: '10px', borderRadius: '4px',
+                                border: '1px solid #ccc',
+                                backgroundColor: bHasLabelTemplate ? '#f5f5f5' : '#fff',
+                                cursor: bHasLabelTemplate ? 'not-allowed' : 'pointer'
+                            }}
+                        >
+                            <option value="" disabled>-- Select Template --</option>
+                            {aoTemplates.map(t => (
+                                <option key={t.id || t.templateId} value={t.id || t.templateId}>
+                                    {t.name}
+                                </option>
+                            ))}
+                        </select>
+                        {bHasLabelTemplate && <div style={{fontSize:'11px', color:'orange', marginTop: '4px'}}>
+                            ⚠️ Cannot change: labels already exist on this project.
+                        </div>}
                     </div>
 
                     {/* F. Visibility */}
@@ -120,8 +181,8 @@ const ProjectPropertiesPage = () => {
 
                 {/* Footer */}
                 <div style={{ marginTop: '30px', paddingTop: '20px', borderTop: '1px solid #eee', textAlign: 'right' }}>
-                    <AppButton sVariant="primary" fnOnClick={handleSave} oStyle={{width: '150px'}}>
-                        Save Changes
+                    <AppButton sVariant="primary" fnOnClick={handleSave} oStyle={{width: '150px'}} disabled={bIsSaving}>
+                        {bIsSaving ? "Saving..." : "Save Changes"}
                     </AppButton>
                 </div>
             </AppCard>

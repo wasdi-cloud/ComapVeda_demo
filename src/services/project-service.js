@@ -70,4 +70,12 @@ export const exportProject = async (projectId, note) => {
     });
 };
 
+export const updateProject = async (projectId, projectData) => {
+    // Notice how we pass project_id in the URL to match the Python Query parameter
+    return await request(`projects/update?project_id=${projectId}`, {
+        method: 'PUT',
+        body: JSON.stringify(projectData)
+    });
+};
+
 

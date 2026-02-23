@@ -4,7 +4,7 @@ import {useLocation, useNavigate} from 'react-router-dom';
 import AppButton from "../components/app-button";
 import MapboxMap from "../components/MapboxMap";
 import {getProject} from "../services/project-service";
-import {getLabelTemplateByProject} from "../services/labelling-template-service";
+import {getLabelTemplateById, getLabelTemplateByProject} from "../services/labelling-template-service";
 
 
 const MOCK_COLLABS = [
@@ -131,11 +131,11 @@ const EditProject = () => {
 
                     // 3. Load Template associated with this project using the real ID
                     // (Ensure your backend endpoint accepts this ID)
-                    // const templateData = await getLabelTemplateByProject(sProjectId);
-                    // if (templateData) {
-                    //     console.log("Template Loaded:", templateData);
-                    //     setLabelTemplate(templateData);
-                    // }
+                    const oTemplateData = await getLabelTemplateById(oData.labellingTemplate);
+                    if (oTemplateData) {
+                        console.log("Template Loaded:", oTemplateData);
+                        setLabelTemplate(oTemplateData);
+                    }
 
                     // 4. Parse and Set Project BBox (for initial zoom)
                     if (oData.bbox) {
@@ -396,15 +396,19 @@ const EditProject = () => {
                             fnOnClick={() => oNavigate('/project-properties', {
                                 state: {
                                     projectData: {
+                                        id: oProject.id,
                                         name: sProjectTitle,
                                         description: oProject?.description || "",
                                         mission: oProject?.mission || "Sentinel-2",
                                         creationDate: oProject?.creationDate || "",
-                                        labelTemplate: oLabelTemplate, // Pass the extracted template
+
+                                        // FIX: Pass the String UUID, not the Object!
+                                        labelTemplate: oProject?.labellingTemplate || "",
+
                                         isPublic: oProject?.isPublic || false,
                                         annotatorVisibility: oProject?.hasAnnotatorGlobalView ? 'all' : 'own'
                                     },
-                                    hasLabels: aoFeatures.length > 0
+                                    hasLabelTemplate: !!oProject?.labellingTemplate
                                 }
                             })}
                         >
@@ -593,7 +597,7 @@ const EditProject = () => {
                                     <td style={tdStyle}>{feature.properties.measurement}</td>
                                     <td style={tdStyle}>{feature.properties.annotator}</td>
                                     <td style={tdStyle}>
-                                        <button>🗑️</button>
+                                        <button style={{color:'#f30909'}} >X</button>
                                     </td>
                                 </tr>
                             ))}

@@ -15,8 +15,8 @@ export const getLabelTemplates = async () => {
  * Get a specific template by its ID
  * @param {String} sTemplateId
  */
-export const getById = async (sTemplateId) => {
-    return await request(`/label-templates/${sTemplateId}`, {
+export const getLabelTemplateById = async (sTemplateId) => {
+    return await request(`templates/getById?template_id=${sTemplateId}`, {
         method: 'GET'
     });
 };
@@ -47,7 +47,7 @@ export const createTemplate = async (oTemplateData) => {
  * @param {String} sTemplateId
  * @param {Object} oData
  */
-export const update = async (sTemplateId, oData) => {
+export const updateLabelTemplate = async (sTemplateId, oData) => {
     return await request(`/label-templates/${sTemplateId}`, {
         method: 'PUT',
         body: JSON.stringify(oData)
@@ -58,7 +58,7 @@ export const update = async (sTemplateId, oData) => {
  * Delete a template
  * @param {String} sTemplateId
  */
-export const remove = async (sTemplateId) => { // 'delete' is a reserved word in JS, so we use 'remove'
+export const removeLabelTemplate = async (sTemplateId) => { // 'delete' is a reserved word in JS, so we use 'remove'
     return await request(`/label-templates/${sTemplateId}`, {
         method: 'DELETE'
     });
