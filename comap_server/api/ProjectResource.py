@@ -7,9 +7,10 @@ from entities.DatasetProject import DatasetProjectEntity
 from entities.ImageStyle import ImageStyleEntity
 from viewmodels.projects.InviteCollaborator import InviteCollaborator
 # Import your Pydantic Models
-from viewmodels.projects.ProjectCreate import ProjectCreate
+from viewmodels.projects.ProjectViewModel import ProjectViewModel
 from viewmodels.projects.ProjectListItem import ProjectPublic, AOI
 from viewmodels.projects.ProjectPropertiesViewModel import ProjectPropertiesViewModel
+from viewmodels.projects.ProjectRequest import ProjectRequestViewModel
 
 oRouter = APIRouter(prefix="/projects")
 
@@ -17,7 +18,7 @@ oRouter = APIRouter(prefix="/projects")
 # --- 1. CREATE PROJECT ---
 @oRouter.post("/create")
 async def create(
-        oProjectData: ProjectCreate,
+        oProjectData: ProjectViewModel,
         oDB: Session = Depends(get_db)
 ):
     """
@@ -149,7 +150,7 @@ async def getByUser(
 
 
 # --- 4. GET SINGLE PROJECT ---
-@oRouter.get("/getProject", response_model=ProjectCreate)
+@oRouter.get("/getProject", response_model=ProjectViewModel)
 async def getProject(
         project_id: str = Query(..., description="The unique identifier of the project"),
         oDB: Session = Depends(get_db)
@@ -164,7 +165,7 @@ async def getProject(
         oStyle = oProject.style  # SQLAlchemy relationship magic
 
         # Map DB Entity -> ProjectCreate Pydantic Model
-        return ProjectCreate(
+        return ProjectViewModel(
             id=oProject.id,
             name=oProject.name,
             description=oProject.description,
@@ -186,6 +187,9 @@ async def getProject(
             hostingUsername=oProject.s3User,
             hostingPassword=oProject.s3Password,
             hostingUrl=oProject.s3Address,
+            approved=oProject.approved,
+            rejected=oProject.rejected,
+            rejectionNote=oProject.rejectionNote
             # TODO: Map style object back to Pydantic if needed
         )
 
@@ -195,45 +199,49 @@ async def getProject(
         raise HTTPException(status_code=500, detail=f'Error fetching project: {str(oE)}')
 
 
-# --- 5. REJECT / APPROVE ---
 @oRouter.get("/reject")
 async def reject(
-        sProjectId: str = Query(...),
+        # Notice we use project_id to match the frontend URL parameter
+        project_id: str = Query(...),
+        note: str = Query(None, description="Reason for rejection"),
         oDB: Session = Depends(get_db)
 ):
     try:
-        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == sProjectId).first()
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
         if not oProject:
             raise HTTPException(status_code=404, detail="Project not found")
 
         oProject.rejected = True
         oProject.approved = False
+        oProject.rejectionNote = note # <-- SAVE THE NOTE
         oDB.commit()
 
-        return {"status": "success", "message": f"Project {sProjectId} rejected"}
+        return {"status": "success", "message": f"Project {project_id} rejected"}
     except Exception as oE:
+        oDB.rollback()
         raise HTTPException(status_code=500, detail=f'Error rejecting: {str(oE)}')
 
 
 @oRouter.get("/approve")
 async def approve(
-        sProjectId: str = Query(...),
+        project_id: str = Query(...),
+        maxStorage: int = Query(None, description="Max storage in GB"),
         oDB: Session = Depends(get_db)
 ):
     try:
-        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == sProjectId).first()
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
         if not oProject:
             raise HTTPException(status_code=404, detail="Project not found")
 
         oProject.approved = True
         oProject.rejected = False
+        oProject.maxStorage = maxStorage # <-- SAVE THE STORAGE LIMIT
         oDB.commit()
 
-        return {"status": "success", "message": f"Project {sProjectId} approved"}
+        return {"status": "success", "message": f"Project {project_id} approved"}
     except Exception as oE:
+        oDB.rollback()
         raise HTTPException(status_code=500, detail=f'Error approving: {str(oE)}')
-
-
 # --- 6. COLLABORATORS (Placeholder) ---
 # Since we don't have a 'Collaborators' table yet (just JSON arrays in Project),
 # we will append to the JSON list for now.
@@ -288,3 +296,31 @@ async def updateProject(
     except Exception as oE:
         oDB.rollback()
         raise HTTPException(status_code=500, detail=f'Error updating project: {str(oE)}')
+
+
+@oRouter.get("/getRequests", response_model=list[ProjectRequestViewModel])
+async def getRequests(oDB: Session = Depends(get_db)):
+    """
+    Get all projects with their raw approval flags.
+    """
+    try:
+        # Fetch all projects, newest first
+        aoProjects = oDB.query(DatasetProjectEntity).order_by(desc(DatasetProjectEntity.creationDate)).all()
+
+        oResult = []
+        for oProject in aoProjects:
+            sRequester = oProject.owners[0] if oProject.owners and len(oProject.owners) > 0 else "System Admin"
+
+            oResult.append(ProjectRequestViewModel(
+                id=oProject.id,
+                name=oProject.name,
+                requester=sRequester,
+                creationDate=oProject.creationDate or 0,
+                approved=oProject.approved,
+                rejected=oProject.rejected,
+                description=oProject.description or "No description provided."
+            ))
+
+        return oResult
+    except Exception as oE:
+        raise HTTPException(status_code=500, detail=f'Error fetching requests: {str(oE)}')

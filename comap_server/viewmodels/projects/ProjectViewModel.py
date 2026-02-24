@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from shapely import wkt, errors
 from typing import Optional
 
-class ProjectCreate(BaseModel):
+class ProjectViewModel(BaseModel):
 
     id: Optional[str] = Field(None, description="Unique identifier of the project")
 
@@ -108,4 +108,7 @@ class ProjectCreate(BaseModel):
             if not all([self.hostingUsername, self.hostingPassword, self.hostingUrl]):
                 raise ValueError("If 'isOwnerHosting' is True, 'hostingUsername', 'hostingPassword', and 'hostingUrl' must be provided.")
         return self
-    
+
+    approved: Optional[bool] = False
+    rejected: Optional[bool] = False
+    rejectionNote: Optional[str] = None

@@ -38,14 +38,15 @@ export const approveProject = async (projectId, maxStorage) => {
 };
 
 // 5. REJECT PROJECT (Adapted for GET)
-export const rejectProject = async (projectId) => {
+export const rejectProject = async (projectId, note) => {
     // We construct a Query String: /reject?project_id=XYZ&note=Reason
     const params = new URLSearchParams({
         project_id: projectId,
+        note: note || "" // <-- ADD THE NOTE HERE!
     });
 
     return await request(`projects/reject?${params.toString()}`, {
-        method: 'GET' // Changed to GET to match server
+        method: 'GET'
     });
 };
 // 6. INVITE COLLAB (Admin)
@@ -78,4 +79,9 @@ export const updateProject = async (projectId, projectData) => {
     });
 };
 
+
+// Add this to project-service.js
+export const getProjectRequests = async () => {
+    return await request('projects/getRequests', { method: 'GET' });
+};
 

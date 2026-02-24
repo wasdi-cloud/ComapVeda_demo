@@ -28,7 +28,7 @@ function App() {
                     <Route path="/" element={<HomePage/>}/>
                     <Route path="/edit-project" element={<EditProject/>}/>
                     <Route path="/new-project" element={<NewProjectRequest/>}/>
-                    <Route path="/approve-project" element={<ApproveProject/>}/>
+                    <Route path="/approve-project/:projectId" element={<ApproveProject/>}/>
                     <Route path="/label-templates" element={<LabelTemplatesLibrary/>}/>
                     <Route path="/create-label-template" element={<NewLabelTemplate/>}/>
                     <Route path="/project-collabs" element={<ProjectCollaborators/>}/>

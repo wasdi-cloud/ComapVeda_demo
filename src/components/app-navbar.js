@@ -37,7 +37,7 @@ const AppNavbar = () => {
                     <span style={{ color: 'white', fontSize: '14px', fontWeight: '500' }}>My Account</span>
                 </Link>
                 {/* Note: Ensure this path matches your Route path for "ApproveProject" */}
-                <Link to="/approve-project" style={{ textDecoration: 'none' }}>
+                <Link to="/project-requests" style={{ textDecoration: 'none' }}>
                     <span style={{ color: 'white', fontSize: '14px', fontWeight: '500' }}>Requests</span>
                 </Link>
                 <Link to="/label-templates" style={{ textDecoration: 'none' }}>
