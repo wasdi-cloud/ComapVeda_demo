@@ -117,37 +117,88 @@ async def getPublic(oDB: Session = Depends(get_db)):
 
 
 # --- 3. GET USER PROJECTS ---
+# --- GET USER PROJECTS (Updated to supply Role and Count) ---
 @oRouter.get("/getByUser", response_model=list[ProjectPublic])
 async def getByUser(
-        # user_id: str = Depends(get_current_user_id), # You will need auth later
+        user_id: str = "jihed_admin",  # Mock Auth user
         oDB: Session = Depends(get_db)
 ):
     try:
-        # TODO: Once you have Authentication, filter by owner/annotator ID
-        # For now, we return ALL projects just to see them work
+        # Fetching all projects for demo purposes.
+        # In reality, filter where user_id is in owners, annotators, or reviewers lists.
         aoUserProjects = oDB.query(DatasetProjectEntity).all()
 
         oResult = []
         for oProject in aoUserProjects:
-            oAOI = AOI(
-                isGlobal=oProject.isGlobal,
-                bbox=oProject.bbox[0] if oProject.bbox else None
-            )
+            # 1. Mock determining the role.
+            # In a real app, check if user_id is in oProject.owners, oProject.annotators, etc.
+            role = "OWNER"  # Defaulting to OWNER for testing your Delete UC
+
+            # 2. Count owners to prevent the last owner from leaving
+            owners_list = oProject.owners if oProject.owners else []
+            count = len(owners_list)
+            if count == 0: count = 1  # Fake fallback for testing
 
             oResult.append(ProjectPublic(
                 id=oProject.id,
                 name=oProject.name,
                 description=oProject.description,
-                aoi=oAOI,
+                aoi=AOI(isGlobal=oProject.isGlobal, bbox=oProject.bbox[0] if oProject.bbox else None),
                 mission=oProject.mission.value if oProject.mission else None,
                 tasks=oProject.task if oProject.task else [],
-                userRole="owner"  # Hardcoded for now until Auth is ready
+                userRole=role,
+                ownersCount=count
             ))
 
         return oResult
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error fetching user projects: {str(oE)}')
 
+
+# --- DELETE PROJECT ---
+@oRouter.delete("/delete")
+async def delete_project(
+        project_id: str = Query(...),
+        oDB: Session = Depends(get_db)
+):
+    try:
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
+        if not oProject:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        oDB.delete(oProject)
+        oDB.commit()
+
+        # UC: "The system sends an email to all collaborators stating that the project has been deleted."
+        print(f"MOCK EMAIL: Sent to collaborators of project {project_id} notifying deletion.")
+
+        return {"status": "success", "message": "Project completely removed from the system"}
+    except Exception as oE:
+        oDB.rollback()
+        raise HTTPException(status_code=500, detail=f'Error deleting project: {str(oE)}')
+
+
+# --- LEAVE PROJECT ---
+@oRouter.post("/leave")
+async def leave_project(
+        project_id: str = Query(...),
+        user_id: str = Query(...),
+        oDB: Session = Depends(get_db)
+):
+    try:
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
+        if not oProject:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        # In a real app, you would do:
+        # if user_id in oProject.owners: oProject.owners.remove(user_id)
+        # elif user_id in oProject.annotators: oProject.annotators.remove(user_id)
+
+        oDB.commit()
+        return {"status": "success", "message": f"User {user_id} dropped from collaborators"}
+    except Exception as oE:
+        oDB.rollback()
+        raise HTTPException(status_code=500, detail=f'Error leaving project: {str(oE)}')
 
 # --- 4. GET SINGLE PROJECT ---
 @oRouter.get("/getProject", response_model=ProjectViewModel)

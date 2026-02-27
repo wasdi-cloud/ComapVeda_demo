@@ -13,7 +13,7 @@ export const getProject = async ( sProjectId) => {
 
 // 2. GET PROJECTS BY USER
 export const getProjectsByUser = async (userId) => {
-    return await request(`/projects/user/${userId}`, { method: 'GET' });
+    return await request(`projects/getByUser?user_id=${userId}`, { method: 'GET' });
 };
 
 // 3. CREATE PROJECT
@@ -85,3 +85,18 @@ export const getProjectRequests = async () => {
     return await request('projects/getRequests', { method: 'GET' });
 };
 
+
+// --- NEW: DELETE PROJECT ---
+export const deleteProject = async (projectId) => {
+    return await request(`projects/delete?project_id=${projectId}`, {
+        method: 'DELETE'
+    });
+};
+
+// --- NEW: LEAVE PROJECT ---
+export const leaveProject = async (projectId, userId) => {
+    // Ideally this uses the logged in session token, but we pass ID for testing
+    return await request(`projects/leave?project_id=${projectId}&user_id=${userId}`, {
+        method: 'POST'
+    });
+};

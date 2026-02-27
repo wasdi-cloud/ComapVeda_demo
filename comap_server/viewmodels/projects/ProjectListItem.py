@@ -25,3 +25,5 @@ class ProjectPublic(BaseModel):
     tasks: List[str] = Field(default_factory=list, description="List of tasks associated with the project")
 
     userRole: Optional[str] = Field(None, description="Role of the user in the project (e.g., annotator, reviewer)")
+
+    ownersCount: Optional[int] = 0
