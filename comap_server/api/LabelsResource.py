@@ -1,6 +1,7 @@
 import json
+import uuid
 
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Body
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -209,3 +210,47 @@ async def rejectLabel(
         return {"labelId": sLabelId, "status": "rejected"}
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error rejecting OLabel: {str(oE)}')
+
+
+@oRouter.post("/sync")
+async def syncLabels(
+        image_id: str = Query(..., description="The ID of the image being annotated"),
+        # FIX: Use Body(...) to tell FastAPI the entire JSON body is this list
+        aoLabels: list[LabelItem] = Body(...),
+        oDB: Session = Depends(get_db)
+):
+    """
+    Bulk Sync: Deletes existing labels for the image and inserts the current Mapbox state.
+    """
+    try:
+        # 1. Clear existing labels for this specific image
+        oDB.query(LabelEntity).filter(LabelEntity.datasetImageId == image_id).delete(synchronize_session=False)
+
+        # 2. Insert the new state
+        for oLabelData in aoLabels:
+            oGeojson = {
+                "type": oLabelData.geometryType,
+                "coordinates": oLabelData.coordinates
+            }
+            sGeojson = json.dumps(oGeojson)
+
+            sNewId = oLabelData.labelId if oLabelData.labelId and len(str(oLabelData.labelId)) > 20 else str(uuid.uuid4())
+
+            oNewLabel = LabelEntity(
+                id=sNewId,
+                datasetImageId=image_id,
+                geometry=func.ST_SetSRID(func.ST_GeomFromGeoJSON(sGeojson), 4326),
+                attributes=oLabelData.attributes, # This now safely maps the dict to JSON!
+                isPolygon=(oLabelData.geometryType.lower() == "polygon"),
+                isLine=(oLabelData.geometryType.lower() == "linestring"),
+                isPoint=(oLabelData.geometryType.lower() == "point"),
+                creatorId="jihed_admin"
+            )
+            oDB.add(oNewLabel)
+
+        oDB.commit()
+        return {"status": "success", "message": f"Synced {len(aoLabels)} labels."}
+
+    except Exception as oE:
+        oDB.rollback()
+        raise HTTPException(status_code=500, detail=f'Error syncing labels: {str(oE)}')
