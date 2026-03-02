@@ -68,3 +68,19 @@ export const reject = async (sLabelId, sReason = "") => {
         body: JSON.stringify({ reason: sReason })
     });
 };
+
+
+// GET labels for an image
+export const getLabelsByImage = async (projectId, imageId) => {
+    return await request(`labels/getByImage?project_id=${projectId}&sImageName=${imageId}`, {
+        method: 'GET'
+    });
+};
+
+// SYNC (Save) all labels for an image
+export const syncLabels = async (imageId, labelsArray) => {
+    return await request(`labels/sync?image_id=${imageId}`, {
+        method: 'POST',
+        body: JSON.stringify(labelsArray)
+    });
+};

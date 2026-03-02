@@ -5,6 +5,7 @@ import AppButton from "../components/app-button";
 import MapboxMap from "../components/MapboxMap";
 import {getProject} from "../services/project-service";
 import {getLabelTemplateById, getLabelTemplateByProject} from "../services/labelling-template-service";
+import {getLabelsByImage, syncLabels} from "../services/labels-service";
 
 
 const MOCK_COLLABS = [
@@ -67,6 +68,62 @@ const EditProject = () => {
 
     const oSelectedImage = aoImages.find(img => img.id === iSelectedImageId);
 
+    const [bIsSavingLabels, setIsSavingLabels] = useState(false);
+
+    // --- FETCH LABELS WHEN IMAGE CHANGES ---
+    useEffect(() => {
+        const loadLabels = async () => {
+            if (!iSelectedImageId) return;
+
+            try {
+                // Assuming iSelectedImageId is the string UUID of the image in the DB
+                const data = await getLabelsByImage(sProjectId, String(iSelectedImageId));
+
+                // Map Backend LabelItems -> Mapbox GeoJSON Features
+                const mapboxFeatures = (data || []).map(lbl => ({
+                    id: lbl.labelId,
+                    type: "Feature",
+                    geometry: {
+                        type: lbl.geometryType,
+                        coordinates: lbl.coordinates
+                    },
+                    properties: lbl.attributes // Restores color, annotator, measurements, etc.
+                }));
+
+                setAoFeatures(mapboxFeatures);
+            } catch (error) {
+                console.error("Failed to load labels:", error);
+            }
+        };
+
+        loadLabels();
+    }, [iSelectedImageId, sProjectId]);
+
+    // --- SAVE LABELS HANDLER ---
+    const handleSaveLabels = async () => {
+        if (!iSelectedImageId) return;
+        setIsSavingLabels(true);
+
+        try {
+            // Map Mapbox GeoJSON Features -> Backend LabelItems
+            const payload = aoFeatures.map(f => ({
+                labelId: f.id,
+                imageName: String(iSelectedImageId),
+                geometryType: f.geometry.type,
+                coordinates: f.geometry.coordinates,
+                attributes: f.properties // Sends color, annotator, etc. as JSON dictionary
+            }));
+
+            await syncLabels(String(iSelectedImageId), payload);
+            alert("Labels saved to database successfully! 💾");
+        } catch (error) {
+            console.error(error);
+            alert("Failed to save labels: " + error.message);
+        } finally {
+            setIsSavingLabels(false);
+        }
+    };
+
     // --- EFFECT: CLEAR ON SWITCH ---
     useEffect(() => {
         setAoFeatures([]);
@@ -110,7 +167,6 @@ const EditProject = () => {
         }
     };
 
-    // --- LOAD PROJECT DATA ---
     // --- LOAD PROJECT DATA ---
     useEffect(() => {
         const loadProject = async () => {
@@ -444,6 +500,14 @@ const EditProject = () => {
                             }}>
                                 🏷️ Labels: {filteredLabels.length}
                             </div>
+                            <AppButton
+                                sVariant="success"
+                                oStyle={{ padding: '4px 12px', fontSize: '12px' }}
+                                fnOnClick={handleSaveLabels}
+                                disabled={bIsSavingLabels}
+                            >
+                                {bIsSavingLabels ? "Saving..." : "💾 Save Labels"}
+                            </AppButton>
                             <div style={{display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px'}}>
                                 <span style={{fontWeight: 'bold', color: '#555'}}>Color:</span>
                                 <div style={{
