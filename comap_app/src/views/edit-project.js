@@ -66,6 +66,9 @@ const EditProject = () => {
     const [sSelectedFeatureId, setSelectedFeatureId] = useState(null);
     const [sDrawingColor, setDrawingColor] = useState("#3b82f6");
 
+    const [oEditingCell, setEditingCell] = useState({ featureId: null, attrName: null });
+    const [sEditValue, setEditValue] = useState("");
+
     const oSelectedImage = aoImages.find(img => img.id === iSelectedImageId);
 
     const [bIsSavingLabels, setIsSavingLabels] = useState(false);
@@ -236,63 +239,64 @@ const EditProject = () => {
 
     // --- HANDLER: DRAW UPDATE ---
     // --- DRAW UPDATE: DYNAMIC ATTRIBUTES ---
+    // --- HANDLER: DRAW UPDATE ---
     const handleDrawUpdate = (featureCollection) => {
         if (!featureCollection) return;
 
-        const enrichedFeatures = featureCollection.features.map(feature => {
-            // 1. Calculate Measurement
-            let sMeasurement = "0";
-            if (feature.geometry.type === 'Polygon') sMeasurement = (turf.area(feature) / 1000000).toFixed(3) + " km²";
-            else if (feature.geometry.type === 'LineString') sMeasurement = turf.length(feature, {units: 'kilometers'}).toFixed(3) + " km";
+        // FIX: Use the 'prev' state so we can compare incoming map data with our saved React edits
+        setAoFeatures(prevFeatures => {
+            const enrichedFeatures = featureCollection.features.map(feature => {
+                // 1. Calculate Measurement
+                let sMeasurement = "0";
+                if (feature.geometry.type === 'Polygon') sMeasurement = (turf.area(feature) / 1000000).toFixed(3) + " km²";
+                else if (feature.geometry.type === 'LineString') sMeasurement = turf.length(feature, {units: 'kilometers'}).toFixed(3) + " km";
 
-            // 2. Setup Properties
-            // If it's a NEW feature (no annotator yet), we initialize values
-            if (!feature.properties.annotator) {
+                // 2. Check if we already have this feature saved in React state
+                const existingFeature = prevFeatures.find(f => f.id === feature.id);
 
-                // A. Initialize Dynamic Attributes based on Template
-                const dynamicProps = {};
-                if (oLabelTemplate && oLabelTemplate.attributes) {
-                    oLabelTemplate.attributes.forEach(attr => {
-                        if (attr.type === 'integer' || attr.type === 'float') {
-                            dynamicProps[attr.name] = 0;
-                        } else {
-                            dynamicProps[attr.name] = "N/A"; // string or category default
+                if (existingFeature) {
+                    // FEATURE EXISTS: Keep the custom edits, just update the geometry/measurements
+                    return {
+                        ...feature,
+                        properties: {
+                            ...existingFeature.properties, // Preserve the manual edits!
+                            measurement: sMeasurement
                         }
-                    });
+                    };
+                } else {
+                    // NEW FEATURE: Initialize from Template
+                    const dynamicProps = {};
+                    if (oLabelTemplate && oLabelTemplate.attributes) {
+                        oLabelTemplate.attributes.forEach(attr => {
+                            if (attr.type === 'integer' || attr.type === 'float') {
+                                dynamicProps[attr.name] = 0;
+                            } else {
+                                dynamicProps[attr.name] = "N/A";
+                            }
+                        });
+                    }
+
+                    const initialColor = (oLabelTemplate?.isSingleColorStyle && oLabelTemplate?.featureColor)
+                        ? oLabelTemplate.featureColor : sDrawingColor;
+
+                    return {
+                        ...feature,
+                        properties: {
+                            ...feature.properties,
+                            id: feature.id,
+                            annotator: sCurrentUser,
+                            status: "Pending",
+                            timestamp: new Date().toISOString(),
+                            measurement: sMeasurement,
+                            portColor: initialColor,
+                            ...dynamicProps
+                        }
+                    };
                 }
+            });
 
-                // B. determine color (Single style or default)
-                // If template is single color, use that. Else use picker.
-                const initialColor = (oLabelTemplate?.isSingleColorStyle && oLabelTemplate?.featureColor)
-                    ? oLabelTemplate.featureColor
-                    : sDrawingColor;
-
-                return {
-                    ...feature,
-                    properties: {
-                        ...feature.properties,
-                        id: feature.id,
-                        annotator: sCurrentUser,
-                        status: "Pending",
-                        timestamp: new Date().toISOString(),
-                        measurement: sMeasurement,
-                        portColor: initialColor,
-                        // SPREAD DYNAMIC PROPS
-                        ...dynamicProps
-                    }
-                };
-            } else {
-                return {
-                    ...feature,
-                    properties: {
-                        ...feature.properties,
-                        measurement: sMeasurement,
-                        portColor: feature.properties.portColor || sDrawingColor
-                    }
-                };
-            }
+            return enrichedFeatures;
         });
-        setAoFeatures(enrichedFeatures);
     };
 
     const handleDeleteFeature = (id) => {
@@ -300,21 +304,49 @@ const EditProject = () => {
             setAoFeatures(prev => prev.filter(f => f.id !== id));
         }
     };
-// --- HELPER: EDIT ATTRIBUTE VALUE (Simple Prompt for Demo) ---
-    const handleEditAttribute = (featureId, attrName, currentValue) => {
-        const newValue = prompt(`Edit ${attrName}:`, currentValue);
-        if (newValue !== null) {
+    // --- IN-PLACE EDITING HANDLERS ---
+    const startEditing = (featureId, attrName, currentValue, e) => {
+        e.stopPropagation(); // Prevent row selection
+        setEditingCell({ featureId, attrName });
+        setEditValue(currentValue || "");
+    };
+
+    const saveEdit = () => {
+        if (oEditingCell.featureId && oEditingCell.attrName) {
             setAoFeatures(prev => prev.map(f => {
-                if (f.id === featureId) {
+                if (f.id === oEditingCell.featureId) {
                     return {
                         ...f,
-                        properties: { ...f.properties, [attrName]: newValue }
+                        properties: { ...f.properties, [oEditingCell.attrName]: sEditValue }
                     };
                 }
                 return f;
             }));
         }
+        // Close the input
+        setEditingCell({ featureId: null, attrName: null });
     };
+
+    const handleEditKeyDown = (e) => {
+        if (e.key === 'Enter') saveEdit();
+        if (e.key === 'Escape') setEditingCell({ featureId: null, attrName: null }); // Cancel edit
+    };
+
+// --- HELPER: EDIT ATTRIBUTE VALUE (Simple Prompt for Demo) ---
+//     const handleEditAttribute = (featureId, attrName, currentValue) => {
+//         const newValue = prompt(`Edit ${attrName}:`, currentValue);
+//         if (newValue !== null) {
+//             setAoFeatures(prev => prev.map(f => {
+//                 if (f.id === featureId) {
+//                     return {
+//                         ...f,
+//                         properties: { ...f.properties, [attrName]: newValue }
+//                     };
+//                 }
+//                 return f;
+//             }));
+//         }
+//     };
     // --- FILTER LOGIC ---
     const filteredLabels = aoFeatures.filter(feature => {
         const props = feature.properties || {};
@@ -642,26 +674,65 @@ const EditProject = () => {
                                     </td>
 
                                     {/* DYNAMIC CELLS */}
-                                    {oLabelTemplate?.attributes?.map(attr => (
-                                        <td
-                                            key={attr.name}
-                                            style={{...tdStyle, cursor: 'text'}}
-                                            title="Click to edit"
-                                            // Simple Click-to-Edit for Demo
-                                            onClick={(e) => {
-                                                e.stopPropagation(); // Prevent row select
-                                                handleEditAttribute(feature.id, attr.name, feature.properties[attr.name]);
-                                            }}
-                                        >
-                                            {feature.properties[attr.name]}
-                                            <span style={{marginLeft:'5px', color:'#ccc', fontSize:'10px'}}>✎</span>
-                                        </td>
-                                    ))}
+                                    {/* DYNAMIC CELLS (In-Place Edit) */}
+                                    {oLabelTemplate?.attributes?.map(attr => {
+                                        const bIsEditing = oEditingCell.featureId === feature.id && oEditingCell.attrName === attr.name;
+
+                                        return (
+                                            <td
+                                                key={attr.name}
+                                                style={{...tdStyle, cursor: bIsEditing ? 'default' : 'text'}}
+                                                title={bIsEditing ? "" : "Click to edit"}
+                                                onClick={(e) => {
+                                                    if (!bIsEditing) startEditing(feature.id, attr.name, feature.properties[attr.name], e);
+                                                }}
+                                            >
+                                                {bIsEditing ? (
+                                                    <input
+                                                        autoFocus
+                                                        value={sEditValue}
+                                                        onChange={(e) => setEditValue(e.target.value)}
+                                                        onBlur={saveEdit} // Saves when user clicks outside
+                                                        onKeyDown={handleEditKeyDown} // Saves on Enter, cancels on Esc
+                                                        onClick={(e) => e.stopPropagation()} // Don't trigger row selection while typing
+                                                        style={{
+                                                            width: '100%',
+                                                            padding: '4px',
+                                                            boxSizing: 'border-box',
+                                                            border: '2px solid #1890ff',
+                                                            borderRadius: '4px',
+                                                            outline: 'none'
+                                                        }}
+                                                    />
+                                                ) : (
+                                                    <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+                                                        <span>{feature.properties[attr.name]}</span>
+                                                        <span style={{color:'#ccc', fontSize:'12px'}}>✎</span>
+                                                    </div>
+                                                )}
+                                            </td>
+                                        );
+                                    })}
 
                                     <td style={tdStyle}>{feature.properties.measurement}</td>
                                     <td style={tdStyle}>{feature.properties.annotator}</td>
                                     <td style={tdStyle}>
-                                        <button style={{color:'#f30909'}} >X</button>
+                                        <button
+                                            style={{
+                                                color:'#f30909',
+                                                background: 'none',
+                                                border: 'none',
+                                                cursor: 'pointer',
+                                                fontWeight: 'bold',
+                                                fontSize: '14px'
+                                            }}
+                                            onClick={(e) => {
+                                                e.stopPropagation(); // Prevents row selection
+                                                handleDeleteFeature(feature.id);
+                                            }}
+                                        >
+                                            ❌
+                                        </button>
                                     </td>
                                 </tr>
                             ))}

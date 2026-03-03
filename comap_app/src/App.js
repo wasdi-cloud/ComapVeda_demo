@@ -16,7 +16,6 @@ import EditImageStyle from "./views/edit-image-style";
 import ExportProject from "./views/export-project";
 import Layout from "./views/layout";
 import ProjectRequests from "./views/project-requests";
-import ProjectProperties from "./views/project-properties";
 import ProjectPropertiesPage from "./views/project-properties";
 
 function App() {
