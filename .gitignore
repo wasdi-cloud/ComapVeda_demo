@@ -27,7 +27,7 @@ comap_server/.venv/
 comap_server/__pycache__/
 comap_server/.vscode/
 *.pyc
-
+__pycache__
 .env
 
 /postgres_data
