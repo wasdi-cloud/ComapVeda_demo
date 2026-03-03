@@ -31,3 +31,6 @@ comap_server/.vscode/
 .env
 
 /postgres_data
+comap_server/baresoil-flood.tif
+comap_server/s2.tif
+comap_server/TCI.tif
