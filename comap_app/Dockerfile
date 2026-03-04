@@ -2,9 +2,13 @@
 FROM node:24-alpine AS build
 WORKDIR /app
 
-# Accept build argument for API URL
+# Accept build arguments for environment variables
 ARG REACT_APP_API_URL
+ARG REACT_APP_MAPBOX_TOKEN
+
+# Set as environment variables for the build
 ENV REACT_APP_API_URL=$REACT_APP_API_URL
+ENV REACT_APP_MAPBOX_TOKEN=$REACT_APP_MAPBOX_TOKEN
 
 COPY package*.json ./
 RUN npm install

@@ -217,11 +217,15 @@ All database credentials and configuration are stored in the `.env` file at the 
   - This only affects external access from the host machine
 - **DATABASE_URL** - Connection string for backend (always uses internal port `5432`)
 - **REACT_APP_API_URL** - Frontend API endpoint (default: `/api/` for Docker, proxied by Traefik)
+- **REACT_APP_MAPBOX_TOKEN** - Mapbox API access token (required for map functionality)
+  - Get your token from: https://account.mapbox.com/access-tokens/
+  - Sign up at: https://www.mapbox.com/ (free tier available)
 
 **Important**: 
 - The `.env` file is ignored by Git for security. Always use `.env.example` as a template.
 - `POSTGRES_PORT` is for **external** access only (host → container mapping)
 - Inside Docker, PostgreSQL always runs on port **5432** (hardcoded in `DATABASE_URL`)
+- Mapbox token must be set before building the client container
 
 ### API URL Configuration
 
