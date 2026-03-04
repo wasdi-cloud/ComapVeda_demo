@@ -10,6 +10,7 @@ class User(Base):
     name = Column(String, nullable=False)
     surname = Column(String, nullable=False)
     password_hash = Column(String, nullable=False)
+    role = Column(String, default="user", nullable=False)
     confirmed = Column(Boolean, default=False, nullable=False)
     registration_otp = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

@@ -108,6 +108,9 @@ async def confirmRegistration(oOtpModel: OtpModel, db: DBSession = Depends(get_d
         return {
             "message": "Registration confirmed successfully",
             "email": user.email,
+            "name": user.name,
+            "surname": user.surname,
+            "role": user.role,
             "session_token": session_token,
             "expires_at": new_session.expires_at.isoformat()
         }
@@ -161,6 +164,7 @@ async def login(oLoginModel: LoginModel, db: DBSession = Depends(get_db)):
             "email": user.email,
             "name": user.name,
             "surname": user.surname,
+            "role": user.role,
             "session_token": session_token,
             "expires_at": new_session.expires_at.isoformat()
         }
