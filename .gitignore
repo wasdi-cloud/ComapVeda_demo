@@ -34,3 +34,4 @@ __pycache__
 comap_server/baresoil-flood.tif
 comap_server/s2.tif
 comap_server/TCI.tif
+node_modules
