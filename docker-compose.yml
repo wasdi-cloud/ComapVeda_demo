@@ -1,4 +1,5 @@
 version: '3.8'
+
 services:
   db:
     image: postgis/postgis:16-3.4
@@ -12,14 +13,12 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - comap-network
+      - comap-network # The DB stays private to the comap internal network
 
   server:
     build:
       context: ./comap_server
       dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
     depends_on:
       - db
     environment:
@@ -28,19 +27,33 @@ services:
       - ./comap_server:/app
     networks:
       - comap-network
+      - net-wasdi # Joins Traefik's world
     restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      # Change 'api.comap.local' to your actual API subdomain
+      - "traefik.http.routers.comap-server.rule=Host(`api.comap.local`)"
+      - "traefik.http.routers.comap-server.entrypoints=web" # or websecure
+      - "traefik.http.services.comap-server.loadbalancer.server.port=8000"
 
   client:
     build:
       context: ./comap_app
       dockerfile: Dockerfile
-    ports:
-      - "3000:80"
+      args:
+        - REACT_APP_API_URL=${REACT_APP_API_URL}
     depends_on:
       - server
     networks:
       - comap-network
+      - net-wasdi # Joins Traefik's world
     restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      # Change 'comap.local' to your actual frontend subdomain
+      - "traefik.http.routers.comap-client.rule=Host(`comap.wasdi.net`)"
+      - "traefik.http.routers.comap-client.entrypoints=web"
+      - "traefik.http.services.comap-client.loadbalancer.server.port=80" # Inside port is 80 (Nginx/Apache)
 
 volumes:
   postgres_data:
@@ -49,3 +62,5 @@ volumes:
 networks:
   comap-network:
     driver: bridge
+  net-wasdi:
+    external: true

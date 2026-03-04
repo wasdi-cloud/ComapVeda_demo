@@ -1,6 +1,7 @@
 import {getToken} from "./session";
 
-const BASE_URL = "http://localhost:8000/"; // Your Backend URL
+// Use environment variable or fallback to localhost
+const BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000/";
 
 // Helper function to handle Headers and Errors
 const request = async (endpoint, options = {}) => {

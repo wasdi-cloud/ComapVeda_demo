@@ -92,17 +92,26 @@ docker-compose down -v
 - **Port**: 3000 (mapped from container port 80)
 - **Features**:
   - Mapbox and Leaflet integration
-  - API proxy configured to `/api/` → backend server
-  - Production-optimized build
+  - API proxy configured via nginx (`/api/*` → backend server)
+  - API URL configurable via `REACT_APP_API_URL` in root `.env`
+  - Production-optimized multi-stage build
 
 ## API Proxy Configuration
 
-The frontend is configured to proxy API requests to the backend:
+The React app is configured via `REACT_APP_API_URL` environment variable (set in root `.env` file).
 
-- Frontend URL: `http://localhost:3000/api/*`
-- Proxied to: `http://server:8000/*`
+In Docker, nginx automatically proxies API requests:
+- **Frontend request**: `fetch('/api/projects')` from `http://localhost:3000`
+- **Nginx proxies to**: `http://server:8000/projects` (backend container)
 
-This means your React app should make API calls to `/api/endpoint` instead of `http://localhost:8000/endpoint`.
+Your React code should use relative URLs like:
+```javascript
+const BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000/";
+// In Docker: BASE_URL = "/api/"
+// Locally: BASE_URL = "http://localhost:8000/"
+```
+
+This configuration is already set up in `comap_app/src/services/api.js`.
 
 ## Development Workflow
 
@@ -162,8 +171,20 @@ All database credentials and configuration are stored in the `.env` file at the 
 - **POSTGRES_DB** - Database name (default: `comapdb`)
 - **POSTGRES_PORT** - Database port (default: `5432`)
 - **DATABASE_URL** - Full connection string (automatically constructed)
+- **REACT_APP_API_URL** - Frontend API endpoint (default: `/api/` for Docker, proxied by nginx)
 
 **Important**: The `.env` file is ignored by Git for security. Always use `.env.example` as a template.
+
+### API URL Configuration
+
+In Docker, the React app uses `/api/` as the base URL, which is proxied by nginx to the backend server:
+- Browser makes request to: `http://localhost:3000/api/endpoint`
+- Nginx proxies it to: `http://server:8000/endpoint`
+
+For local development outside Docker, create `comap_app/.env.local` and set:
+```env
+REACT_APP_API_URL=http://localhost:8000/
+```
 
 ### Additional Server Configuration
 
