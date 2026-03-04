@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 from database import get_db
 from entities.DatasetProject import DatasetProjectEntity
 from entities.ImageStyle import ImageStyleEntity
+from entities.User import User
+from utils.auth_dependencies import get_current_user
 from viewmodels.projects.InviteCollaborator import InviteCollaborator
 # Import your Pydantic Models
 from viewmodels.projects.ProjectViewModel import ProjectViewModel
@@ -19,10 +21,12 @@ oRouter = APIRouter(prefix="/projects")
 @oRouter.post("/create")
 async def create(
         oProjectData: ProjectViewModel,
-        oDB: Session = Depends(get_db)
+        oDB: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
 ):
     """
     Create a new project and its associated ImageStyle.
+    Requires authentication via X-Session-Token header.
     """
     try:
         oData = oProjectData.model_dump()
