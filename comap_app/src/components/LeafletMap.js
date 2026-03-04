@@ -119,7 +119,7 @@ const LeafletMap = ({markers, initialView, activeGeoTIFF}) => {
     const center = [initialView.latitude, initialView.longitude];
 
     // 1. FIX: Removed 'TCI.tif' from here. Now it is a clean Base URL.
-    const TILE_API_BASE = "http://127.0.0.1:8000/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=";
+    const TILE_API_BASE = `${process.env.REACT_APP_API_URL}tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=`;
 
     return (
         <MapContainer

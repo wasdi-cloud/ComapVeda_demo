@@ -280,7 +280,7 @@ const MapboxMap = ({
             }
             if (sActiveGeoTIFF) {
                 const uniqueId = `geotiff-${Date.now()}`;
-                const sTileUrl = `http://127.0.0.1:8000/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=${sActiveGeoTIFF}`;
+                const sTileUrl = `${process.env.REACT_APP_API_URL}tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=${sActiveGeoTIFF}`;
                 try {
                     map.addSource(uniqueId, { type: 'raster', tiles: [sTileUrl], tileSize: 256 });
                     const layers = map.getStyle().layers;
