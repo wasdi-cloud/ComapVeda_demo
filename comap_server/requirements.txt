@@ -16,3 +16,4 @@ SQLAlchemy~=2.0.46
 python-dotenv~=1.2.1
 GeoAlchemy2~=0.18.1
 psycopg2==2.9.11
+passlib[bcrypt]~=1.7.4
