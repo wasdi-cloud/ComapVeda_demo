@@ -82,12 +82,17 @@ docker-compose down -v
 ### Database Service
 
 - **Image**: postgis/postgis:16-3.4
-- **Port**: Configured via `POSTGRES_PORT` in `.env` (default: 5432)
+- **External Port**: Configured via `POSTGRES_PORT` in `.env` (default: 5432)
+  - Maps `${POSTGRES_PORT}:5432` (e.g., host port 5433 → container port 5432)
+  - Allows external tools (pgAdmin, DBeaver) to connect from host machine
+- **Internal Port**: Always 5432 (used by backend service via Docker network)
 - **Credentials**: Configured in `.env` file:
   - User: `POSTGRES_USER`
   - Password: `POSTGRES_PASSWORD`
   - Database: `POSTGRES_DB`
 - **Data Persistence**: Volume mounted at `postgres_data`
+
+**Port Conflict Resolution**: If you have another PostgreSQL on your server, set `POSTGRES_PORT=5433` in `.env` to use a different external port.
 
 ### Backend Server Service
 
@@ -207,11 +212,16 @@ All database credentials and configuration are stored in the `.env` file at the 
 - **POSTGRES_USER** - Database username (default: `root`)
 - **POSTGRES_PASSWORD** - Database password (default: `multipass`)
 - **POSTGRES_DB** - Database name (default: `comapdb`)
-- **POSTGRES_PORT** - Database port (default: `5432`)
-- **DATABASE_URL** - Full connection string (automatically constructed)
-- **REACT_APP_API_URL** - Frontend API endpoint (default: `/api/` for Docker, proxied by nginx)
+- **POSTGRES_PORT** - External port on host machine (default: `5432`)
+  - Change to `5433` if you have another PostgreSQL on your server
+  - This only affects external access from the host machine
+- **DATABASE_URL** - Connection string for backend (always uses internal port `5432`)
+- **REACT_APP_API_URL** - Frontend API endpoint (default: `/api/` for Docker, proxied by Traefik)
 
-**Important**: The `.env` file is ignored by Git for security. Always use `.env.example` as a template.
+**Important**: 
+- The `.env` file is ignored by Git for security. Always use `.env.example` as a template.
+- `POSTGRES_PORT` is for **external** access only (host → container mapping)
+- Inside Docker, PostgreSQL always runs on port **5432** (hardcoded in `DATABASE_URL`)
 
 ### API URL Configuration
 
@@ -245,6 +255,22 @@ No separate DNS entry needed for the API - it's on the same domain with `/api/` 
 For server-specific environment variables, create a `.env` file in `comap_server/` directory.
 
 ## Troubleshooting
+
+### Database Connection Issues
+
+**Error**: `connection to server at "db", port 5433 failed: Connection refused`
+
+**Cause**: The `DATABASE_URL` is using `${POSTGRES_PORT}` which refers to the external port, but containers communicate via internal ports.
+
+**Solution**: In [.env](.env), the `DATABASE_URL` should always use port `5432`:
+```env
+POSTGRES_PORT=5433  # External port (for host access)
+DATABASE_URL=postgresql://root:multipass@db:5432/comapdb  # Internal port!
+```
+
+**Remember**: 
+- `POSTGRES_PORT` → External access from host machine
+- Port `5432` in `DATABASE_URL` → Internal Docker network communication
 
 ### Port Conflicts
 
@@ -347,7 +373,9 @@ To enable HTTPS, update the entrypoints in [docker-compose.yml](docker-compose.y
 
 ## Data Persistence
 
-Database data is persisted in the `postgres_data` Docker volume. To backup:
+Database data is persisted in the `postgres_data` Docker volume. 
+
+### Backup Commands:
 
 ```bash
 # Export database (use credentials from your .env file)
@@ -358,3 +386,17 @@ docker-compose exec -T db psql -U root comapdb < backup.sql
 ```
 
 **Note**: Replace `root` and `comapdb` with your actual `POSTGRES_USER` and `POSTGRES_DB` values from `.env`.
+
+### External Database Access:
+
+To connect from external tools (pgAdmin, DBeaver, etc.) on the host machine:
+- **Host**: `localhost` (or your server IP)
+- **Port**: Use the value from `POSTGRES_PORT` in `.env` (e.g., `5433` if changed)
+- **Database**: Value from `POSTGRES_DB` (e.g., `comapdb`)
+- **User**: Value from `POSTGRES_USER` (e.g., `root`)
+- **Password**: Value from `POSTGRES_PASSWORD`
+
+Example connection string for external access:
+```
+postgresql://root:multipass@localhost:5433/comapdb
+```

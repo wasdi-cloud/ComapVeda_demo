@@ -33,7 +33,9 @@ services:
       - "traefik.enable=true"
       # Route API requests to backend: comap.wasdi.net/api/*
       - "traefik.http.routers.comap-server.rule=Host(`comap.wasdi.net`) && PathPrefix(`/api`)"
-      - "traefik.http.routers.comap-server.entrypoints=web" # or websecure for HTTPS
+      - "traefik.http.routers.comap-server.entrypoints=websecure"
+      - "traefik.http.routers.comap-server.tls=true"
+      - "traefik.http.routers.comap-server.priority=2"
       - "traefik.http.services.comap-server.loadbalancer.server.port=8000"
       # Strip /api prefix before sending to FastAPI
       - "traefik.http.middlewares.comap-strip-api.stripprefix.prefixes=/api"
@@ -55,11 +57,10 @@ services:
       - "traefik.enable=true"
       # Route frontend requests (excluding /api/*) to client
       - "traefik.http.routers.comap-client.rule=Host(`comap.wasdi.net`)"
-      - "traefik.http.routers.comap-client.entrypoints=web"
-      - "traefik.http.services.comap-client.loadbalancer.server.port=80"
-      # Lower priority than server so /api gets matched first
+      - "traefik.http.routers.comap-client.entrypoints=websecure"
+      - "traefik.http.routers.comap-client.tls=true"
       - "traefik.http.routers.comap-client.priority=1"
-      - "traefik.http.routers.comap-server.priority=2"
+      - "traefik.http.services.comap-client.loadbalancer.server.port=80"
 
 volumes:
   postgres_data:
