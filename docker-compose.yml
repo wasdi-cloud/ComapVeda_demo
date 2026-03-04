@@ -31,10 +31,13 @@ services:
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
-      # Change 'api.comap.local' to your actual API subdomain
-      - "traefik.http.routers.comap-server.rule=Host(`api.comap.local`)"
-      - "traefik.http.routers.comap-server.entrypoints=web" # or websecure
+      # Route API requests to backend: comap.wasdi.net/api/*
+      - "traefik.http.routers.comap-server.rule=Host(`comap.wasdi.net`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.comap-server.entrypoints=web" # or websecure for HTTPS
       - "traefik.http.services.comap-server.loadbalancer.server.port=8000"
+      # Strip /api prefix before sending to FastAPI
+      - "traefik.http.middlewares.comap-strip-api.stripprefix.prefixes=/api"
+      - "traefik.http.routers.comap-server.middlewares=comap-strip-api"
 
   client:
     build:
@@ -50,10 +53,13 @@ services:
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
-      # Change 'comap.local' to your actual frontend subdomain
+      # Route frontend requests (excluding /api/*) to client
       - "traefik.http.routers.comap-client.rule=Host(`comap.wasdi.net`)"
       - "traefik.http.routers.comap-client.entrypoints=web"
-      - "traefik.http.services.comap-client.loadbalancer.server.port=80" # Inside port is 80 (Nginx/Apache)
+      - "traefik.http.services.comap-client.loadbalancer.server.port=80"
+      # Lower priority than server so /api gets matched first
+      - "traefik.http.routers.comap-client.priority=1"
+      - "traefik.http.routers.comap-server.priority=2"
 
 volumes:
   postgres_data:

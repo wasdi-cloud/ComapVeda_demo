@@ -4,13 +4,20 @@ Complete Docker setup for the COMAP application with database, backend server, a
 
 ## Architecture
 
-The application consists of three services:
+The application consists of three services deployed with **Traefik reverse proxy**:
 
-1. **Database (db)** - PostGIS/PostgreSQL database on port 5432
-2. **Backend Server (server)** - FastAPI application on port 8000
-3. **Frontend Client (client)** - React application served by Nginx on port 3000
+1. **Database (db)** - PostGIS/PostgreSQL database (internal only)
+2. **Backend Server (server)** - FastAPI application at `comap.wasdi.net/api/*`
+3. **Frontend Client (client)** - React application at `comap.wasdi.net`
 
-All services communicate over a Docker network called `comap-network`.
+All services communicate over Docker networks:
+- `comap-network` - Internal network for database connectivity
+- `net-wasdi` - External network with Traefik for public access
+
+### Public Access Points:
+- **Frontend**: https://comap.wasdi.net
+- **Backend API**: https://comap.wasdi.net/api/*
+- **API Docs**: https://comap.wasdi.net/api/docs
 
 ## Prerequisites
 
@@ -49,6 +56,12 @@ docker-compose up -d --build
 
 ### 3. Access the Application
 
+Once deployed with Traefik:
+- **Frontend**: https://comap.wasdi.net
+- **Backend API**: https://comap.wasdi.net/api/
+- **API Docs**: https://comap.wasdi.net/api/docs
+
+For local development without Traefik:
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:8000
 - **API Docs**: http://localhost:8000/docs
@@ -79,36 +92,61 @@ docker-compose down -v
 ### Backend Server Service
 
 - **Technology**: FastAPI with Python
-- **Port**: 8000
+- **Public URL**: https://comap.wasdi.net/api/*
+- **Internal Port**: 8000
 - **Features**:
   - RESTful API endpoints
   - Geospatial data processing (GDAL, Rasterio)
   - Database integration with SQLAlchemy
   - Auto-reload for development
+  - Traefik strips `/api` prefix automatically
 
 ### Frontend Client Service
 
 - **Technology**: React with Nginx
-- **Port**: 3000 (mapped from container port 80)
+- **Public URL**: https://comap.wasdi.net
+- **Internal Port**: 80
 - **Features**:
   - Mapbox and Leaflet integration
-  - API proxy configured via nginx (`/api/*` → backend server)
+  - API calls to `/api/*` routed by Traefik to backend
   - API URL configurable via `REACT_APP_API_URL` in root `.env`
   - Production-optimized multi-stage build
 
-## API Proxy Configuration
+## Traefik Reverse Proxy Configuration
 
-The React app is configured via `REACT_APP_API_URL` environment variable (set in root `.env` file).
+The application uses **Traefik** for path-based routing on the same domain:
 
-In Docker, nginx automatically proxies API requests:
-- **Frontend request**: `fetch('/api/projects')` from `http://localhost:3000`
-- **Nginx proxies to**: `http://server:8000/projects` (backend container)
+### How Routing Works:
 
-Your React code should use relative URLs like:
+```
+User Request: https://comap.wasdi.net
+    ↓
+Traefik (reverse proxy)
+    ├─ comap.wasdi.net/         → client service (React app)
+    └─ comap.wasdi.net/api/*    → server service (FastAPI)
+```
+
+### Traefik Labels Explained:
+
+**Backend (server)**:
+- Routes: `Host(comap.wasdi.net) && PathPrefix(/api)`
+- Strips `/api` prefix before forwarding to FastAPI
+- Priority: 2 (matches first)
+
+**Frontend (client)**:
+- Routes: `Host(comap.wasdi.net)`
+- Serves React app for all other paths
+- Priority: 1 (matches after /api)
+
+### React API Configuration:
+
+Your React app uses `REACT_APP_API_URL=/api/` (set in root `.env`):
+
 ```javascript
 const BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000/";
-// In Docker: BASE_URL = "/api/"
-// Locally: BASE_URL = "http://localhost:8000/"
+// In production: BASE_URL = "/api/"
+// Browser requests: https://comap.wasdi.net/api/projects
+// Traefik routes to: http://server:8000/projects (inside Docker)
 ```
 
 This configuration is already set up in `comap_app/src/services/api.js`.
@@ -177,14 +215,30 @@ All database credentials and configuration are stored in the `.env` file at the 
 
 ### API URL Configuration
 
-In Docker, the React app uses `/api/` as the base URL, which is proxied by nginx to the backend server:
-- Browser makes request to: `http://localhost:3000/api/endpoint`
-- Nginx proxies it to: `http://server:8000/endpoint`
+The React app uses `REACT_APP_API_URL=/api/` for production with Traefik:
 
-For local development outside Docker, create `comap_app/.env.local` and set:
+**Production Flow**:
+1. Browser loads React app from `https://comap.wasdi.net`
+2. React makes API call: `fetch('/api/projects')`
+3. Browser resolves to: `https://comap.wasdi.net/api/projects`
+4. Traefik receives request and matches `/api` PathPrefix rule
+5. Traefik strips `/api` and forwards to backend: `http://server:8000/projects`
+6. FastAPI processes request and returns response
+
+**Local Development** (outside Docker):
+Create `comap_app/.env.local`:
 ```env
 REACT_APP_API_URL=http://localhost:8000/
 ```
+
+### DNS Configuration
+
+Ensure your DNS points to your server:
+```
+comap.wasdi.net → YOUR_SERVER_IP
+```
+
+No separate DNS entry needed for the API - it's on the same domain with `/api/` path.
 
 ### Additional Server Configuration
 
@@ -245,22 +299,51 @@ docker system prune -a --volumes
 
 ## Production Deployment
 
-For production deployment:
+For production deployment with Traefik:
 
 1. **Update credentials**: Edit `.env` file with strong passwords
-2. Remove volume mounting for server code (in `docker-compose.yml`)
-3. Disable auto-reload in server
-4. Add health checks
-5. Configure proper CORS settings
-6. Use environment-specific configuration
-7. Enable HTTPS with reverse proxy (e.g., Traefik, Nginx)
+2. **Configure HTTPS**: Change entrypoints from `web` to `websecure` in docker-compose.yml
+3. **Add TLS certificates**: Ensure Traefik has SSL certificates configured (Let's Encrypt recommended)
+4. **Update domain**: Replace `comap.wasdi.net` with your actual domain in docker-compose.yml
+5. **Remove dev volumes**: Comment out volume mounting for server code in docker-compose.yml
+6. **Disable auto-reload**: Remove `--reload` from FastAPI command in Dockerfile
+7. **Configure CORS**: Update CORS settings in FastAPI to allow your domain
+8. **Database backups**: Set up automated database backup routine
+9. **Monitoring**: Add health checks and monitoring (Prometheus/Grafana)
+
+### Enable HTTPS:
+```yaml
+labels:
+  - "traefik.http.routers.comap-server.entrypoints=websecure"
+  - "traefik.http.routers.comap-server.tls=true"
+  - "traefik.http.routers.comap-server.tls.certresolver=letsencrypt"
+```
 
 ## Network Configuration
 
-All services are connected via `comap-network` bridge network, allowing services to communicate using their service names:
-- `db` - Database service
-- `server` - Backend service  
+The application uses two Docker networks:
+
+### Internal Network (`comap-network`)
+Private bridge network for inter-service communication:
+- `db` - Database service (not externally accessible)
+- `server` - Backend service
 - `client` - Frontend service
+
+### External Network (`net-wasdi`)
+Traefik's external network for public access:
+- `server` - Exposed at `comap.wasdi.net/api/*`
+- `client` - Exposed at `comap.wasdi.net`
+
+### Traefik Requirements
+This setup assumes you have Traefik running with:
+- An external network named `net-wasdi`
+- Entry points configured (typically `web` for HTTP and `websecure` for HTTPS)
+
+To enable HTTPS, update the entrypoints in [docker-compose.yml](docker-compose.yml):
+```yaml
+- "traefik.http.routers.comap-server.entrypoints=websecure"
+- "traefik.http.routers.comap-client.entrypoints=websecure"
+```
 
 ## Data Persistence
 
