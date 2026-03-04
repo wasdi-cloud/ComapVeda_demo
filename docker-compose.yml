@@ -31,6 +31,7 @@ services:
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=net-wasdi"
       # Route API requests to backend: comap.wasdi.net/api/*
       - "traefik.http.routers.comap-server.rule=Host(`comap.wasdi.net`) && PathPrefix(`/api`)"
       - "traefik.http.routers.comap-server.entrypoints=websecure"
@@ -55,6 +56,7 @@ services:
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=net-wasdi"
       # Route frontend requests (excluding /api/*) to client
       - "traefik.http.routers.comap-client.rule=Host(`comap.wasdi.net`)"
       - "traefik.http.routers.comap-client.entrypoints=websecure"
