@@ -1,4 +1,9 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+from sqlalchemy.orm import Session
+
+from database import get_db
+from entities.DatasetImage import DatasetImageEntity
+from entities.DatasetProject import DatasetProjectEntity
 from viewmodels.images.ImageItem import ImageItem
 from viewmodels.images.ImageImport import ImageImport
 
@@ -30,6 +35,7 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
         i = 0
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error processing template data: {str(oE)}')
+
 
 
 @oRouter.post("/import")

@@ -1,13 +1,15 @@
 import json
+import time
 
 import aiofiles
 import morecantile
-from fastapi import FastAPI, Request, HTTPException, Query
+from fastapi import FastAPI, Request, HTTPException, Query, Depends
 from fastapi.responses import Response
 from rasterio import RasterioIOError
 from rio_tiler.errors import TileOutsideBounds
 from rio_tiler.io import Reader
 from rio_tiler.types import BBox
+from sqlalchemy.orm import Session
 from starlette.middleware.cors import CORSMiddleware
 from titiler.core.factory import TilerFactory
 
@@ -18,12 +20,10 @@ from api.LabelsResource import oRouter as oLabelsRouter
 from api.ProjectResource import oRouter as oProjectRouter
 from api.TemplateResource import oRouter as oTemplateRouter
 from database import Base, engine
-# Import ALL entities here to register them
-from entities.LabellingTemplate import LabellingTemplateEntity
-from entities.DatasetProject import DatasetProjectEntity
+from database import get_db
 from entities.DatasetImage import DatasetImageEntity
-from entities.ImageStyle import ImageStyleEntity
-from entities.Label import LabelEntity
+# Import ALL entities here to register them
+from entities.DatasetProject import DatasetProjectEntity
 
 print("Building database tables...")
 Base.metadata.create_all(bind=engine)
@@ -202,6 +202,55 @@ async def read_label():
         raise
     except Exception as oE:
         raise HTTPException(status_code=500, detail=str(oE))
+
+
+@oApp.get("/seed-demo-images")  # Put this in main.py, or use @oRouter.get if in ImageResource.py
+async def seed_demo_images(oDB: Session = Depends(get_db)):
+    """
+    Run this ONCE to populate the DB with your 3 hardcoded images.
+    It attaches them to the first existing project it finds.
+    """
+    try:
+        # 1. Check if we already seeded (Idempotency)
+        if oDB.query(DatasetImageEntity).filter(DatasetImageEntity.id == "1").first():
+            return {"message": "Images already exist in DB! No action taken."}
+
+        # 2. Find ANY existing project to attach these images to
+        oProject = oDB.query(DatasetProjectEntity).first()
+        if not oProject:
+            return {"status": "error",
+                    "message": "No projects found! Please go to the UI and create at least one project first."}
+
+        # 3. Create your 3 Hardcoded Images linking to the real project
+        images = [
+            DatasetImageEntity(
+                id="1",
+                projectId=oProject.id,
+                fileName="s2.tif",
+                date=int(time.time() * 1000)
+            ),
+            DatasetImageEntity(
+                id="2",
+                projectId=oProject.id,
+                fileName="TCI.tif",
+                date=int(time.time() * 1000)
+            ),
+            DatasetImageEntity(
+                id="3",
+                projectId=oProject.id,
+                fileName="TCI.tif",
+                date=int(time.time() * 1000)
+            )
+        ]
+
+        oDB.add_all(images)
+        oDB.commit()
+
+        return {"status": "success",
+                "message": f"Demo images successfully injected and linked to Project: {oProject.name}"}
+    except Exception as e:
+        oDB.rollback()
+        return {"status": "error", "error": str(e)}
 
 
 if __name__ == "__main__":
