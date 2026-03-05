@@ -90,7 +90,10 @@ async def getPublic(oDB: Session = Depends(get_db)):
     try:
         # Fetch where isPublic = True
         aoPublicProjects = oDB.query(DatasetProjectEntity) \
-            .filter(DatasetProjectEntity.isPublic == True) \
+            .filter(
+            DatasetProjectEntity.isPublic == True,
+            DatasetProjectEntity.approved == True
+        )\
             .order_by(desc(DatasetProjectEntity.creationDate)) \
             .all()
 
@@ -126,7 +129,7 @@ async def getByUser(
     try:
         # Fetching all projects for demo purposes.
         # In reality, filter where user_id is in owners, annotators, or reviewers lists.
-        aoUserProjects = oDB.query(DatasetProjectEntity).all()
+        aoUserProjects = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.approved==True).all()
 
         oResult = []
         for oProject in aoUserProjects:
