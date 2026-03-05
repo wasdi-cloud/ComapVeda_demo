@@ -67,3 +67,11 @@ export const getTileUrl = (sImageId) => {
     const BASE_TILE_URL = "http://localhost:8000/tiles";
     return `${BASE_TILE_URL}/WebMercatorQuad/{z}/{x}/{y}.png?url=${sImageId}`;
 };
+
+
+export const seedDemoImages = async () => {
+    // Assuming your endpoint is at /seed-demo-images
+    return await request(`seed-demo-images`, {
+        method: 'GET'
+    });
+};

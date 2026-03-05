@@ -7,15 +7,15 @@ import AppDropdown from '../components/app-dropdown-input';
 import AppButton from '../components/app-button';
 import AppCard from '../components/app-card';
 
-// Import the new service methods
-import { getPublicProjects, getProjectsByUser, deleteProject, leaveProject } from "../services/project-service";
+// Import the new service methods + the new seedDemoImages function!
+import { getPublicProjects, getProjectsByUser, deleteProject, leaveProject} from "../services/project-service";
+import {seedDemoImages} from "../services/images-service";
 
 const HomePage = () => {
     const navigate = useNavigate();
     const oHomeMapView = { latitude: 20, longitude: 0, zoom: 1.5 };
 
     // --- MOCK AUTH STATE ---
-    // Change this toggle to test Guest vs Logged In views
     const [bIsLoggedIn, setIsLoggedIn] = useState(false);
     const sCurrentUserId = "jihed_admin"; // Fake logged-in user
 
@@ -24,6 +24,7 @@ const HomePage = () => {
     const [aoProjects, setProjects] = useState([]);
     const [bIsLoading, setIsLoading] = useState(true);
     const [sError, setError] = useState(null);
+    const [bIsSeeding, setIsSeeding] = useState(false); // Track seeding state
 
     // --- SEARCH STATE ---
     const [sSearchText, setSearchText] = useState("");
@@ -37,10 +38,8 @@ const HomePage = () => {
 
             let oData;
             if (bIsLoggedIn) {
-                // Fetch user's specific projects
                 oData = await getProjectsByUser(sCurrentUserId);
             } else {
-                // Fetch only public projects
                 oData = await getPublicProjects();
             }
 
@@ -55,7 +54,6 @@ const HomePage = () => {
         }
     };
 
-    // Re-run the fetch whenever the login state changes
     useEffect(() => {
         loadProjects();
     }, [bIsLoggedIn]);
@@ -76,18 +74,16 @@ const HomePage = () => {
 
     // --- USE CASE: LEAVE PROJECT ---
     const handleLeaveProject = async (project) => {
-        // UC Rule: If user is the only owner, they cannot leave.
         if (project.userRole === 'OWNER' && project.ownersCount <= 1) {
             alert("Action Denied: You are the only owner of this project. Please invite a co-owner before leaving, or delete the project entirely.");
             return;
         }
 
-        // Otherwise, ask for confirmation
         if (window.confirm(`Are you sure you want to leave ${project.name}? You will be removed from the collaborators.`)) {
             try {
                 await leaveProject(project.id, sCurrentUserId);
                 alert("You have successfully left the project.");
-                loadProjects(); // Refresh the list
+                loadProjects();
             } catch (err) {
                 alert("Failed to leave project: " + err.message);
             }
@@ -100,14 +96,30 @@ const HomePage = () => {
             try {
                 await deleteProject(project.id);
                 alert("Project deleted successfully. An email has been sent to all collaborators.");
-                loadProjects(); // Refresh the list
+                loadProjects();
             } catch (err) {
                 alert("Failed to delete project: " + err.message);
             }
         }
     };
 
-    // Helper to color-code roles
+    // --- DEV TOOL: SEED IMAGES ---
+    const handleSeedImages = async () => {
+        setIsSeeding(true);
+        try {
+            const response = await seedDemoImages();
+            if (response && response.status === 'error') {
+                alert("⚠️ Seeding failed: " + response.message);
+            } else {
+                alert("✅ " + (response?.message || "Images seeded successfully!"));
+            }
+        } catch (error) {
+            alert("❌ Server Error: Could not seed images. Make sure the backend endpoint exists.");
+        } finally {
+            setIsSeeding(false);
+        }
+    };
+
     const getRoleBadge = (role) => {
         if (!role) return null;
         const sRoleStr = role.toUpperCase();
@@ -122,9 +134,22 @@ const HomePage = () => {
             {/* --- MOCK AUTH TOGGLE --- */}
             <div style={{ background: '#333', color: 'white', padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: '0 0 8px 8px', marginBottom: '20px' }}>
                 <span style={{ fontSize: '13px' }}>Dev Tool: Testing Login States</span>
-                <AppButton sVariant={bIsLoggedIn ? "danger" : "success"} fnOnClick={() => setIsLoggedIn(!bIsLoggedIn)} oStyle={{ padding: '4px 10px', fontSize: '12px' }}>
-                    {bIsLoggedIn ? "Log Out (Guest Mode)" : "Log In (User Mode)"}
-                </AppButton>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                    {/* NEW SEED BUTTON */}
+                    <AppButton
+                        sVariant="outline"
+                        fnOnClick={handleSeedImages}
+                        disabled={bIsSeeding}
+                        oStyle={{ padding: '4px 10px', fontSize: '12px', background: 'white', color: '#333', border: '1px solid #ccc' }}
+                    >
+                        {bIsSeeding ? "⏳ Seeding..." : "🌱 Seed Demo Images"}
+                    </AppButton>
+
+                    <AppButton sVariant={bIsLoggedIn ? "danger" : "success"} fnOnClick={() => setIsLoggedIn(!bIsLoggedIn)} oStyle={{ padding: '4px 10px', fontSize: '12px' }}>
+                        {bIsLoggedIn ? "Log Out (Guest Mode)" : "Log In (User Mode)"}
+                    </AppButton>
+                </div>
             </div>
 
             {/* --- HEADER --- */}
