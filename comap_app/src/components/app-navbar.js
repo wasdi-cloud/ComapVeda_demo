@@ -33,8 +33,8 @@ const AppNavbar = () => {
 
             {/* LINKS SECTION */}
             <div style={{ display: 'flex', gap: '25px', alignItems: 'center' }}>
-                <Link to="/login" style={{ textDecoration: 'none' }}>
-                    <span style={{ color: 'white', fontSize: '14px', fontWeight: '500' }}>My Account</span>
+                <Link to="/" style={{ textDecoration: 'none' }}>
+                    <span style={{ color: 'white', fontSize: '14px', fontWeight: '500' }}>Home</span>
                 </Link>
                 {/* Note: Ensure this path matches your Route path for "ApproveProject" */}
                 <Link to="/project-requests" style={{ textDecoration: 'none' }}>
@@ -46,9 +46,10 @@ const AppNavbar = () => {
                 <Link to="/new-project" style={{ textDecoration: 'none' }}>
                     <span style={{ color: 'white', fontSize: '14px', fontWeight: '500' }}>New Project</span>
                 </Link>
-                <Link to="/" style={{ textDecoration: 'none' }}>
-                    <span style={{ color: 'white', fontSize: '14px', fontWeight: '500' }}>Home</span>
+                <Link to="/login" style={{ textDecoration: 'none' }}>
+                    <span style={{ color: 'white', fontSize: '14px', fontWeight: '500' }}>My Account</span>
                 </Link>
+
             </div>
         </nav>
     );

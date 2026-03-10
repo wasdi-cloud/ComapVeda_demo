@@ -53,14 +53,28 @@ const ProjectRequests = () => {
     };
 
     const handleReject = async (projectId) => {
-        if(window.confirm("Are you sure you want to reject this project?")) {
-            try {
-                await rejectProject(projectId);
-                alert("Project Rejected!");
-                loadRequests(); // Refresh the table
-            } catch (error) {
-                alert("Failed to reject: " + error.message);
-            }
+        // Use window.prompt to ask for a reason.
+        // It returns the text if they click OK, or null if they click Cancel.
+        const sAdminNote = window.prompt("Please provide a reason for rejecting this project:");
+
+        // 1. If the user clicked "Cancel", stop the function
+        if (sAdminNote === null) {
+            return;
+        }
+
+        // 2. Enforce the required note rule
+        if (sAdminNote.trim() === "") {
+            alert("Action cancelled: A rejection note is required.");
+            return;
+        }
+
+        // 3. Proceed with rejection, passing the note to the service
+        try {
+            await rejectProject(projectId, sAdminNote); // <-- Passed the note here!
+            alert("Project Rejected!");
+            loadRequests(); // Refresh the table
+        } catch (error) {
+            alert("Failed to reject: " + error.message);
         }
     };
 
