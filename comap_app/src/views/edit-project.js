@@ -627,7 +627,12 @@ const EditProject = () => {
                         onFeatureSelect={(id) => setSelectedFeatureId(id)}
                         aoFeatures={filteredLabels}
                         iImageOpacity={iImageOpacity / 100}
-
+                        bHasPolygons={
+                            oLabelTemplate?.geometryTypes?.some(t => t.toLowerCase().includes('polygon')) ?? true
+                        }
+                        bHasLines={
+                            oLabelTemplate?.geometryTypes?.some(t => t.toLowerCase().includes('line')) ?? true
+                        }
                         // --- UPDATED ZOOM LOGIC: Image takes priority, otherwise use Project BBox ---
                         oZoomToBBox={oSelectedImage?.bbox || oProjectBBox}
 

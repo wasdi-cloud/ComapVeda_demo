@@ -138,7 +138,9 @@ const MapboxMap = ({
                        aoFeatures = [],
                        iImageOpacity = 1,
                        oZoomToBBox = null,
-                       sCurrentDrawColor = "#3b82f6"
+                       sCurrentDrawColor = "#3b82f6",
+                       bHasPolygons = true,
+                       bHasLines = true,
                    }) => {
 
     const [oSelectedMarker, setSelectedMarker] = useState(null);
@@ -171,7 +173,11 @@ const MapboxMap = ({
         if (bEnableDraw) {
             const oDraw = new MapboxDraw({
                 displayControlsDefault: false,
-                controls: { polygon: true, trash: true, line_string: true },
+                controls: {
+                    polygon: bHasPolygons,
+                    line_string: bHasLines,
+                    trash: true // Always leave trash enabled so they can delete mistakes
+                },
                 defaultMode: 'simple_select',
                 userProperties: true,
                 styles: CUSTOM_DRAW_STYLES

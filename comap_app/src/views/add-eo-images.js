@@ -89,7 +89,7 @@ const AddEoImages = () => {
                 {/* HEADER */}
                 <div style={{padding: '15px 20px', background: 'white', borderBottom: '1px solid #ddd'}}>
                     <div style={{display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px'}}>
-                        <button onClick={() => navigate('/edit-project')} style={{
+                        <button onClick={() => navigate(-1)} style={{
                             border: 'none',
                             background: 'transparent',
                             cursor: 'pointer',
