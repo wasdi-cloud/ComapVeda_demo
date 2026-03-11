@@ -6,6 +6,7 @@ import MapboxMap from "../components/MapboxMap";
 import {getProject} from "../services/project-service";
 import {getLabelTemplateById, getLabelTemplateByProject} from "../services/labelling-template-service";
 import {getLabelsByImage, syncLabels} from "../services/labels-service";
+import {getProjectImages} from "../services/images-service";
 
 
 const MOCK_COLLABS = [
@@ -23,33 +24,35 @@ const EditProject = () => {
     const sProjectId = oLocation.state?.projectId || null;
     const sCurrentUser = "Jihed";
 
-    // --- DATA ---
-    const [aoImages] = useState([
-        {
-            id: 1,
-            name: "Sentinel-2 - 2023-10-01",
-            date: "2023-10-01",
-            annotator: "Jihed",
-            filename: "s2.tif",
-            bbox: [3.35, 50.75, 7.22, 53.55]
-        },
-        {
-            id: 2,
-            name: "Landsat-8 - 2023-09-15",
-            date: "2023-09-15",
-            annotator: "Jihed",
-            filename: "TCI.tif",
-            bbox: [21.80, 8.70, 38.50, 22.20]
-        },
-        {
-            id: 3,
-            name: "Sentinel-2 - 2023-08-20",
-            date: "2023-08-20",
-            annotator: "Jihed",
-            filename: "TCI.tif",
-            bbox: [21.80, 8.70, 38.50, 22.20]
-        },
-    ]);
+    // // --- DATA ---
+    // const [aoImages] = useState([
+    //     {
+    //         id: 1,
+    //         name: "Sentinel-2 - 2023-10-01",
+    //         date: "2023-10-01",
+    //         annotator: "Jihed",
+    //         filename: "s2.tif",
+    //         bbox: [3.35, 50.75, 7.22, 53.55]
+    //     },
+    //     {
+    //         id: 2,
+    //         name: "Landsat-8 - 2023-09-15",
+    //         date: "2023-09-15",
+    //         annotator: "Jihed",
+    //         filename: "TCI.tif",
+    //         bbox: [21.80, 8.70, 38.50, 22.20]
+    //     },
+    //     {
+    //         id: 3,
+    //         name: "Sentinel-2 - 2023-08-20",
+    //         date: "2023-08-20",
+    //         annotator: "Jihed",
+    //         filename: "TCI.tif",
+    //         bbox: [21.80, 8.70, 38.50, 22.20]
+    //     },
+    // ]);
+
+    const [aoImages, setAoImages] = useState([]);
 
     // --- UI STATE ---
     const [aoFeatures, setAoFeatures] = useState([]);
@@ -103,8 +106,28 @@ const EditProject = () => {
     }, [iSelectedImageId, sProjectId]);
 
     // --- SAVE LABELS HANDLER ---
+    // --- SAVE LABELS HANDLER ---
     const handleSaveLabels = async () => {
         if (!iSelectedImageId) return;
+
+        // --- 1. NEW VALIDATION CHECK ---
+        if (oLabelTemplate && oLabelTemplate.attributes) {
+            const requiredAttrs = oLabelTemplate.attributes.filter(a => !a.isOptional);
+
+            for (const feature of aoFeatures) {
+                for (const attr of requiredAttrs) {
+                    const val = feature.properties[attr.name];
+
+                    // If the field is empty, null, or undefined, BLOCK THE SAVE!
+                    if (val === "" || val === null || val === undefined) {
+                        alert(`🛑 Cannot save! The field "${attr.name}" is required. Please check your attribute table and fill in the missing values.`);
+                        return; // Stops the function immediately
+                    }
+                }
+            }
+        }
+
+        // --- 2. PROCEED WITH SAVING ---
         setIsSavingLabels(true);
 
         try {
@@ -205,6 +228,19 @@ const EditProject = () => {
                         console.log(parsedBox);
                         setProjectBBox(parsedBox);
                     }
+
+                    const aoProjectImages = await getProjectImages(sProjectId);
+
+                    if (aoProjectImages && aoProjectImages.length > 0) {
+                        // Optional: Format the UNIX timestamp date from the backend so it looks nice in the UI
+                        const aoFormattedImages = aoProjectImages.map(img => ({
+                            ...img,
+                            date: img.date ? new Date(img.date).toLocaleDateString() : "Unknown Date"
+                        }));
+
+                        setAoImages(aoFormattedImages);
+                        // setISelectedImageId(aoFormattedImages[0].id); // Auto-select the first image!
+                    }
                 }
             } catch (error) {
                 console.log("Error loading project data:", error);
@@ -268,11 +304,9 @@ const EditProject = () => {
                     const dynamicProps = {};
                     if (oLabelTemplate && oLabelTemplate.attributes) {
                         oLabelTemplate.attributes.forEach(attr => {
-                            if (attr.type === 'integer' || attr.type === 'float') {
-                                dynamicProps[attr.name] = 0;
-                            } else {
-                                dynamicProps[attr.name] = "N/A";
-                            }
+                            // Instead of "N/A" or 0, we set everything to an empty string.
+                            // This forces the user to interact with the field if it's required!
+                            dynamicProps[attr.name] = "";
                         });
                     }
 
@@ -315,9 +349,31 @@ const EditProject = () => {
         if (oEditingCell.featureId && oEditingCell.attrName) {
             setAoFeatures(prev => prev.map(f => {
                 if (f.id === oEditingCell.featureId) {
+
+                    // 1. Update the actual attribute value (e.g., setting "a" to "1")
+                    const updatedProperties = { ...f.properties, [oEditingCell.attrName]: sEditValue };
+
+                    // 2. --- MAGIC COLOR SYNC ---
+                    // Check if this project uses Category-based colors AND if the field we just edited is the color-driver
+                    if (oLabelTemplate && !oLabelTemplate.isSingleColorStyle && oLabelTemplate.colourAttributeName === oEditingCell.attrName) {
+
+                        // Find this specific attribute in the template rules
+                        const colorAttr = oLabelTemplate.attributes.find(attr => attr.name === oEditingCell.attrName);
+
+                        if (colorAttr && colorAttr.categoryValues) {
+                            // Find the matching category object (e.g., value: "1")
+                            const selectedCategory = colorAttr.categoryValues.find(cat => cat.value === sEditValue);
+
+                            if (selectedCategory && selectedCategory.color) {
+                                // Inject the new hex color into Mapbox's portColor property!
+                                updatedProperties.portColor = selectedCategory.color;
+                            }
+                        }
+                    }
+
                     return {
                         ...f,
-                        properties: { ...f.properties, [oEditingCell.attrName]: sEditValue }
+                        properties: updatedProperties
                     };
                 }
                 return f;
@@ -678,7 +734,6 @@ const EditProject = () => {
                                         <div style={{width:'15px', height:'15px', borderRadius:'50%', background: feature.properties.portColor}}></div>
                                     </td>
 
-                                    {/* DYNAMIC CELLS */}
                                     {/* DYNAMIC CELLS (In-Place Edit) */}
                                     {oLabelTemplate?.attributes?.map(attr => {
                                         const bIsEditing = oEditingCell.featureId === feature.id && oEditingCell.attrName === attr.name;
@@ -693,25 +748,52 @@ const EditProject = () => {
                                                 }}
                                             >
                                                 {bIsEditing ? (
-                                                    <input
-                                                        autoFocus
-                                                        value={sEditValue}
-                                                        onChange={(e) => setEditValue(e.target.value)}
-                                                        onBlur={saveEdit} // Saves when user clicks outside
-                                                        onKeyDown={handleEditKeyDown} // Saves on Enter, cancels on Esc
-                                                        onClick={(e) => e.stopPropagation()} // Don't trigger row selection while typing
-                                                        style={{
-                                                            width: '100%',
-                                                            padding: '4px',
-                                                            boxSizing: 'border-box',
-                                                            border: '2px solid #1890ff',
-                                                            borderRadius: '4px',
-                                                            outline: 'none'
-                                                        }}
-                                                    />
+                                                    // --- DYNAMIC INPUT RENDERING ---
+                                                    attr.type === "category" && attr.categoryValues ? (
+                                                        // 1. DROPDOWN FOR CATEGORIES
+                                                        <select
+                                                            autoFocus
+                                                            value={sEditValue}
+                                                            onChange={(e) => setEditValue(e.target.value)}
+                                                            onBlur={saveEdit}
+                                                            onKeyDown={handleEditKeyDown}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            style={editInputStyle}
+                                                        >
+                                                            <option value="" disabled={!attr.isOptional}>-- Select --</option>
+                                                            {attr.categoryValues.map(cat => (
+                                                                <option key={cat.value} value={cat.value}>
+                                                                    {cat.value}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    ) : (
+                                                        // 2. NUMBER OR TEXT INPUT
+                                                        <input
+                                                            type={attr.type === 'float' || attr.type === 'integer' ? 'number' : 'text'}
+                                                            step={attr.type === 'float' ? 'any' : '1'}
+                                                            autoFocus
+                                                            value={sEditValue}
+                                                            onChange={(e) => setEditValue(e.target.value)}
+                                                            onBlur={saveEdit}
+                                                            onKeyDown={handleEditKeyDown}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            placeholder={attr.isOptional ? "Optional" : "Required"}
+                                                            style={{
+                                                                ...editInputStyle,
+                                                                border: (!attr.isOptional && !sEditValue) ? '2px solid red' : '2px solid #1890ff'
+                                                            }}
+                                                        />
+                                                    )
                                                 ) : (
+                                                    // --- READ-ONLY VIEW ---
                                                     <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
-                                                        <span>{feature.properties[attr.name]}</span>
+                                                        <span style={{
+                                                            color: (!feature.properties[attr.name] && !attr.isOptional) ? 'red' : 'inherit',
+                                                            fontStyle: !feature.properties[attr.name] ? 'italic' : 'normal'
+                                                        }}>
+                                                            {feature.properties[attr.name] || (attr.isOptional ? "N/A" : "Missing!")}
+                                                        </span>
                                                         <span style={{color:'#ccc', fontSize:'12px'}}>✎</span>
                                                     </div>
                                                 )}
@@ -752,5 +834,8 @@ const EditProject = () => {
 
 const thStyle = {padding: '10px 15px', borderBottom: '1px solid #eee'};
 const tdStyle = {padding: '10px 15px'};
-
+const editInputStyle = {
+    width: '100%', padding: '4px', boxSizing: 'border-box',
+    border: '2px solid #1890ff', borderRadius: '4px', outline: 'none'
+};
 export default EditProject;

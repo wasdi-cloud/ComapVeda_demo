@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom'; // <-- 1. Import useNavigate
 
 // REUSABLE COMPONENTS
 import AppCard from '../components/app-card';
@@ -8,6 +9,7 @@ import AppTextArea from '../components/app-text-area';
 import AppButton from '../components/app-button';
 
 const ProjectCollaborators = () => {
+    const navigate = useNavigate(); // <-- 2. Initialize navigate
 
     // --- 1. DUMMY DATA (Existing Team) ---
     const [aoCollaborators, setAoCollaborators] = useState([
@@ -60,9 +62,31 @@ const ProjectCollaborators = () => {
             <div style={{ width: '100%', maxWidth: '900px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
                 {/* HEADER */}
-                <div>
-                    <h2 style={{ margin: 0, color: '#333' }}>👥 Project Collaborators</h2>
-                    <p style={{ margin: '5px 0 0 0', color: '#666' }}>Manage access and roles for your team.</p>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
+                    {/* --- 3. THE BACK BUTTON --- */}
+                    <button
+                        onClick={() => navigate(-1)}
+                        style={{
+                            border: '1px solid #ccc',
+                            background: 'white',
+                            cursor: 'pointer',
+                            fontSize: '20px',
+                            padding: '4px 12px',
+                            borderRadius: '6px',
+                            color: '#555',
+                            marginTop: '2px', // Aligns it nicely with the title
+                            transition: 'background 0.2s'
+                        }}
+                        onMouseOver={(e) => e.currentTarget.style.background = '#eee'}
+                        onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                        title="Go Back"
+                    >
+                        ←
+                    </button>
+                    <div>
+                        <h2 style={{ margin: 0, color: '#333' }}>👥 Project Collaborators</h2>
+                        <p style={{ margin: '5px 0 0 0', color: '#666' }}>Manage access and roles for your team.</p>
+                    </div>
                 </div>
 
                 {/* --- 1. INVITATION FORM --- */}

@@ -40,8 +40,9 @@ export const get = async (sImageId) => {
  * Get list of all images associated with a specific project.
  * @param {String} sProjectId
  */
-export const getListByProject = async (sProjectId) => {
-    return await request(`/projects/${sProjectId}/images`, {
+export const getProjectImages = async (sProjectId) => {
+    // Make sure the URL matches the prefix of your router!
+    return await request(`images/getListByProject/${sProjectId}`, {
         method: 'GET'
     });
 };
