@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from shapely import wkt, errors
 
-class ImageItem(BaseModel):
+class SearchImageItem(BaseModel):
 
     title: str = Field(..., description="Title of the image item")
 
