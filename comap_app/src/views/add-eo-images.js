@@ -86,7 +86,7 @@ const AddEoImages = () => {
                 start_date: sStartDate,
                 end_date: sEndDate,
                 platform: sSatellitePlatform,
-                product_type: sProductType,
+                product_level: sProductType,
                 max_cloud_cover: parseFloat(sCloudCoverage) || 100.0
             };
 
