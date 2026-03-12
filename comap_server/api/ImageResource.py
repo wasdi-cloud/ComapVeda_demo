@@ -19,7 +19,7 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
                  start_date: str = Query(..., description="Start date with YYYY-MM-DD) format"),
                  end_date: str = Query(..., description="End date with YYYY-MM-DD format"),
                  platform: str = Query(None, description="Satellite platform to search for"),
-                 product_type: str = Query(None, description="Type of product to search for"),
+                 product_level: str = Query(None, description="Product level to search for"),
                  max_cloud_cover: float = Query(0.0, description="Maximum cloud cover percentage")):
     """
     Search images
