@@ -1,5 +1,6 @@
 import React, {useState} from 'react';
 import {useNavigate} from 'react-router-dom';
+import * as turf from '@turf/turf'; // <-- IMPORT TURF FOR BBOX CALCULATIONS
 
 // REUSABLE COMPONENTS
 import MapboxMap from '../components/MapboxMap';
@@ -7,29 +8,37 @@ import AppCard from '../components/app-card';
 import AppDateInput from '../components/app-date-input';
 import AppSelect from '../components/app-dropdown-input';
 import AppButton from '../components/app-button';
-import AppTextInput from '../components/app-text-input'; // Needed for Cloud/Product Name
+import AppTextInput from '../components/app-text-input';
+import AppNotification from '../dialogues/app-notifications'; // <-- IMPORT NOTIFICATION
+
+// SERVICES
+import { searchImages } from '../services/images-service'; // <-- IMPORT REAL API
 
 const AddEoImages = () => {
     const navigate = useNavigate();
 
+    // --- NOTIFICATION STATE ---
+    const [oNotification, setNotification] = useState({ show: false, message: '', type: 'info' });
+    const showNotif = (message, type = 'info') => {
+        setNotification({ show: true, message, type });
+    };
+
     // --- 1. MOCK DATA ---
-    const aoAlreadyImportedIds = [2];
+    const aoAlreadyImportedIds = ["180b33ba-3be1-4d5b-b864-25de076b6b4b"]; // Use a real ID format for mock checks
 
     // --- 2. SEARCH FORM STATE ---
-    // Section A: Provides
     const [sProvider, setSProvider] = useState("Copernicus");
     const [sProductName, setSProductName] = useState("");
-    const [bUseCrontab, setBUseCrontab] = useState(false);
-    const [sStartDate, setSStartDate] = useState("2023-01-01");
-    const [sEndDate, setSEndDate] = useState("2023-01-31");
+    const [sStartDate, setSStartDate] = useState("2026-03-01");
+    const [sEndDate, setSEndDate] = useState("2026-03-31");
 
-    // Section B: Mission
     const [sMissionType, setSMissionType] = useState("Optical");
     const [sSatellitePlatform, setSSatellitePlatform] = useState("Sentinel-2");
-    const [sProductType, setSProductType] = useState("L2A");
-    const [sCloudCoverage, setSCloudCoverage] = useState(""); // Text input now
+    const [sProductType, setSProductType] = useState("S2MSI1C");
+    const [sCloudCoverage, setSCloudCoverage] = useState("20");
 
-    const [oAoiGeometry, setOAoiGeometry] = useState(null);
+    // --- MAP DRAWING STATE ---
+    const [aoFeatures, setAoFeatures] = useState([]); // Stores drawn AOIs
 
     // --- 3. RESULTS & SELECTION ---
     const [bIsSearching, setBIsSearching] = useState(false);
@@ -37,23 +46,67 @@ const AddEoImages = () => {
     const [aoSelectedIds, setAoSelectedIds] = useState([]);
 
     // --- HANDLERS ---
-    const handleSearch = (e) => {
+
+    // Captures the shapes drawn on the map
+    const handleDrawUpdate = (featureCollection) => {
+        if (featureCollection && featureCollection.features) {
+            setAoFeatures(featureCollection.features);
+        }
+    };
+
+    // Converts the drawn Mapbox GeoJSON into a WKT Polygon String
+    const getBboxWkt = () => {
+        if (!aoFeatures || aoFeatures.length === 0) return null;
+
+        // Use turf to get the bounding box of the first drawn shape
+        const box = turf.bbox(aoFeatures[0]);
+        const [minX, minY, maxX, maxY] = box;
+
+        // Format as WKT Polygon
+        return `POLYGON((${minX} ${minY}, ${minX} ${maxY}, ${maxX} ${maxY}, ${maxX} ${minY}, ${minX} ${minY}))`;
+    };
+
+    const handleSearch = async (e) => {
         e.preventDefault();
+
+        // 1. Get the AOI from the map
+        const sWktBbox = getBboxWkt();
+        if (!sWktBbox) {
+            return showNotif("Please draw an Area of Interest (AOI) on the map first using the polygon tool.", "warning");
+        }
+
         setBIsSearching(true);
         setAoSearchResults([]);
         setAoSelectedIds([]);
 
-        // Simulate API call
-        setTimeout(() => {
-            const mockResults = [
-                {id: 1, name: "S2B_MSIL2A_20230115_T31UDQ", date: "2023-01-15", cloud: 2.5, thumbColor: "#1e3c72"},
-                {id: 2, name: "S2A_MSIL2A_20230110_T31UDQ", date: "2023-01-10", cloud: 8.1, thumbColor: "#2a5298"},
-                {id: 3, name: "S2B_MSIL2A_20230105_T31UDQ", date: "2023-01-05", cloud: 0.1, thumbColor: "#1e3c72"},
-                {id: 4, name: "S2A_MSIL2A_20230101_T31UDQ", date: "2023-01-01", cloud: 12.4, thumbColor: "#2a5298"},
-            ];
-            setAoSearchResults(mockResults);
+        try {
+            // 2. Build Query Params matching Python backend
+            const queryParams = {
+                bbox: sWktBbox,
+                start_date: sStartDate,
+                end_date: sEndDate,
+                platform: sSatellitePlatform,
+                product_type: sProductType,
+                max_cloud_cover: parseFloat(sCloudCoverage) || 100.0
+            };
+
+            // 3. Call the real API!
+            const results = await searchImages(queryParams);
+
+            if (results && results.length > 0) {
+                setAoSearchResults(results);
+                showNotif(`Found ${results.length} images matching your criteria.`, "success");
+            } else {
+                setAoSearchResults([]);
+                showNotif("No images found for this area and date range.", "info");
+            }
+
+        } catch (error) {
+            console.error("Search Error:", error);
+            showNotif("Failed to fetch images from the server. Check console.", "error");
+        } finally {
             setBIsSearching(false);
-        }, 1000);
+        }
     };
 
     const handleToggleSelect = (id) => {
@@ -65,13 +118,26 @@ const AddEoImages = () => {
     };
 
     const handleImport = () => {
-        if (aoSelectedIds.length === 0) return alert("Please select at least one image.");
-        alert(`Importing ${aoSelectedIds.length} images...`);
-        navigate('/edit-project');
+        if (aoSelectedIds.length === 0) return showNotif("Please select at least one image to import.", "warning");
+
+        showNotif(`Successfully imported ${aoSelectedIds.length} images! Redirecting...`, "success");
+
+        // Wait briefly so they see the success message
+        setTimeout(() => {
+            navigate(-1); // Go back to Editor
+        }, 1500);
     };
 
     return (
         <div style={{display: 'flex', height: '100vh', width: '100%', overflow: 'hidden'}}>
+
+            {/* FLOATING NOTIFICATION */}
+            <AppNotification
+                show={oNotification.show}
+                message={oNotification.message}
+                type={oNotification.type}
+                onClose={() => setNotification(prev => ({ ...prev, show: false }))}
+            />
 
             {/* --- LEFT PANEL (30%) --- */}
             <div style={{
@@ -156,7 +222,7 @@ const AddEoImages = () => {
                                         sLabel="Sat. Platform"
                                         sValue={sSatellitePlatform}
                                         fnOnChange={(e) => setSSatellitePlatform(e.target.value)}
-                                        aoOptions={["Sentinel-2", "Sentinel-1", "Landsat 8"]}
+                                        aoOptions={["Sentinel-2", "Sentinel-2C", "Sentinel-1", "Landsat 8"]}
                                         oStyle={{width: '100%'}}
                                     />
                                 </div>
@@ -166,20 +232,21 @@ const AddEoImages = () => {
                                     sLabel="Product Type"
                                     sValue={sProductType}
                                     fnOnChange={(e) => setSProductType(e.target.value)}
-                                    aoOptions={["L1C (Top of Atmosphere)", "L2A (Bottom of Atmosphere)"]}
+                                    aoOptions={["S2MSI1C", "L1C", "L2A"]}
                                     oStyle={{width: '100%'}}
                                 />
 
-                                {/* Cloud Coverage (Text Input) */}
+                                {/* Cloud Coverage */}
                                 <AppTextInput
-                                    sLabel="Cloud Coverage"
-                                    sPlaceholder="e.g 0 to 9.4"
+                                    sLabel="Max Cloud Coverage (%)"
+                                    sPlaceholder="e.g 20"
                                     sValue={sCloudCoverage}
+                                    type="number"
                                     fnOnChange={(e) => setSCloudCoverage(e.target.value)}
                                 />
 
                                 <div style={{marginTop: '10px'}}>
-                                    <AppButton sVariant="primary" oStyle={{width: '100%'}} fnOnClick={handleSearch}>
+                                    <AppButton sVariant="primary" oStyle={{width: '100%'}} fnOnClick={handleSearch} disabled={bIsSearching}>
                                         {bIsSearching ? "Searching..." : "🔍 Search Images"}
                                     </AppButton>
                                 </div>
@@ -199,9 +266,12 @@ const AddEoImages = () => {
                                     found.</div>
                             ) : (
                                 <div style={{display: 'flex', flexDirection: 'column', gap: '10px'}}>
-                                    {aoSearchResults.map(img => {
+                                    {aoSearchResults.map((img, idx) => {
                                         const bIsAlreadyImported = aoAlreadyImportedIds.includes(img.id);
                                         const bIsSelected = aoSelectedIds.includes(img.id);
+
+                                        // Alternating colors for visual variety since we don't have real thumbnails yet
+                                        const thumbColor = idx % 2 === 0 ? "#1e3c72" : "#2a5298";
 
                                         return (
                                             <div key={img.id} style={{
@@ -229,7 +299,7 @@ const AddEoImages = () => {
                                                 <div style={{
                                                     width: '50px',
                                                     height: '50px',
-                                                    background: img.thumbColor,
+                                                    background: thumbColor,
                                                     borderRadius: '4px',
                                                     flexShrink: 0
                                                 }}></div>
@@ -240,13 +310,14 @@ const AddEoImages = () => {
                                                         whiteSpace: 'nowrap',
                                                         overflow: 'hidden',
                                                         textOverflow: 'ellipsis'
-                                                    }}>{img.name}</div>
+                                                    }} title={img.title}>{img.title}</div>
+
+                                                    {/* Real API Data Rendered Here */}
                                                     <div style={{
                                                         fontSize: '12px',
                                                         color: '#666',
                                                         marginTop: '2px'
-                                                    }}>📅 {img.date} • ☁️ {img.cloud}%
-                                                    </div>
+                                                    }}>📅 {img.date.split('T')[0]} • ☁️ {img.cloudCover.toFixed(1)}%</div>
                                                 </div>
                                             </div>
                                         );
@@ -275,7 +346,7 @@ const AddEoImages = () => {
                             <span style={{
                                 fontSize: '12px',
                                 color: '#666'
-                            }}>Est. Size: {aoSelectedIds.length * 800} MB</span>
+                            }}>Ready to inject</span>
                         </div>
                         <AppButton sVariant="success" oStyle={{width: '100%'}} fnOnClick={handleImport}>
                             ⬇️ Import Selected
@@ -288,9 +359,13 @@ const AddEoImages = () => {
             <div style={{flex: 1, height: '100%', position: 'relative'}}>
                 <MapboxMap
                     aoMarkers={[]}
-                    oInitialView={{latitude: 48.8566, longitude: 2.3522, zoom: 8}}
+                    oInitialView={{latitude: 45.0, longitude: 8.0, zoom: 6}} // Centered near the python example coords
                     bEnableDraw={true}
                     bEnableGeocoder={true}
+
+                    // --- NEW: WIRING MAPBOX DRAW TO OUR AOI STATE ---
+                    onDrawUpdate={handleDrawUpdate}
+                    aoFeatures={aoFeatures} // Ensures the polygon stays on screen
                 />
             </div>
 

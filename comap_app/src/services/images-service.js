@@ -6,11 +6,12 @@ import request from './api';
  * Search for available EO images (Sentinel, Landsat, etc.) from external providers.
  * @param {Object} oQueryParams - { startDate, endDate, cloudCover, productType, aoi, etc. }
  */
-export const search = async (oQueryParams) => {
-    // We usually send complex search params (like geometry) via POST to avoid URL length limits
-    return await request('/images/search', {
-        method: 'POST',
-        body: JSON.stringify(oQueryParams)
+export const searchImages = async (oQueryParams) => {
+    // Convert the object into a URL query string (e.g., ?bbox=...&start_date=...)
+    const queryString = new URLSearchParams(oQueryParams).toString();
+
+    return await request(`images/search?${queryString}`, {
+        method: 'GET'
     });
 };
 
