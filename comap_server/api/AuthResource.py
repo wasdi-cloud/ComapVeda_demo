@@ -75,7 +75,7 @@ async def confirmRegistration(oOtpModel: OtpModel, db: DBSession = Depends(get_d
     """
     try:
         # Find user by email (username)
-        user = db.query(User).filter(User.email == oOtpModel.username).first()
+        user = db.query(User).filter(User.email == oOtpModel.email).first()
         
         if not user:
             raise HTTPException(status_code=404, detail="User not found")

@@ -1,75 +1,61 @@
 import request from './api';
-import {clearSession, setSession} from "./session";
+import { clearSession, setSession } from "./session";
 
 // --- 1. AUTHENTICATION API CALLS ---
 
-/**
- * Register a new user
- * @param {Object} oUserData - { name, surname, email, password, etc. }
- */
 export const register = async (oUserData) => {
-    return await request('/auth/register', {
+    return await request('auth/register', {
         method: 'POST',
         body: JSON.stringify(oUserData)
     });
 };
 
-/**
- * Confirm registration via OTP or Token
- * @param {Object} oPayload - { email, code }
- */
-
-
 export const confirmRegistration = async (oPayload) => {
-    return await request('/auth/confirm-registration', {
+    const response = await request('auth/confirmRegistration', {
         method: 'POST',
         body: JSON.stringify(oPayload)
     });
+
+    // Auto-login if backend provides the token!
+    if (response && response.session_token) {
+        setSession(response.session_token, response);
+    }
+    return response;
 };
 
-/**
- * Login user and receive Token
- * @param {Object} oCredentials - { email, password }
- */
 export const login = async (oCredentials) => {
-    const response = await request('/auth/login', {
+    const response = await request('auth/login', {
         method: 'POST',
         body: JSON.stringify(oCredentials)
     });
 
-    // Check if your backend sends the token in the body
-    if (response.token) {
-        setSession(response.token, response.user);
+    // Save token to localStorage using your session utility
+    if (response && response.session_token) {
+        setSession(response.session_token, response);
     }
-
     return response;
 };
 
-/**
- * Request a password reset link (Forgot Password)
- * @param {String} sEmail
- */
 export const recoverPassword = async (sEmail) => {
-    return await request('/auth/recover-password', {
+    return await request('auth/recoverPassword', {
         method: 'POST',
-        body: JSON.stringify({email: sEmail})
+        body: JSON.stringify({ email: sEmail })
     });
 };
 
-/**
- * Change password (usually requires old password or reset token)
- * @param {Object} oPayload - { oldPassword, newPassword } OR { token, newPassword }
- */
 export const changePassword = async (oPayload) => {
-    return await request('/auth/change-password', {
+    return await request('auth/changePassword', {
         method: 'POST',
         body: JSON.stringify(oPayload)
     });
 };
 
-export const logout = () => {
+export const logout = async () => {
+    try {
+        await request('auth/logout', { method: 'POST' });
+    } catch (e) {
+        console.error("Logout API failed, clearing local session anyway.");
+    }
     clearSession();
     window.location.href = '/login';
 };
-
-
