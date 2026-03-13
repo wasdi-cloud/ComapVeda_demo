@@ -17,16 +17,14 @@ export const searchImages = async (oQueryParams) => {
 
 /**
  * Import selected images into a specific project.
- * @param {String} sProjectId
- * @param {Array} aoImages - List of image objects or IDs to import
+ * @param oImageImportPayload
  */
-export const importImages = async (sProjectId, aoImages) => {
-    return await request(`/projects/${sProjectId}/images`, {
+export const importImage = async (oImageImportPayload) => {
+    return await request('images/import', {
         method: 'POST',
-        body: JSON.stringify({ images: aoImages })
+        body: JSON.stringify(oImageImportPayload)
     });
 };
-
 /**
  * Get details of a specific image (Metadata, bands, etc.)
  * @param {String} sImageId

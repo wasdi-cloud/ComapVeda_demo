@@ -1,6 +1,6 @@
 import React, {useState} from 'react';
-import {useNavigate} from 'react-router-dom';
-import * as turf from '@turf/turf'; // <-- IMPORT TURF FOR BBOX CALCULATIONS
+import {useNavigate, useLocation} from 'react-router-dom'; // <-- 1. IMPORT useLocation
+import * as turf from '@turf/turf';
 
 // REUSABLE COMPONENTS
 import MapboxMap from '../components/MapboxMap';
@@ -9,13 +9,17 @@ import AppDateInput from '../components/app-date-input';
 import AppSelect from '../components/app-dropdown-input';
 import AppButton from '../components/app-button';
 import AppTextInput from '../components/app-text-input';
-import AppNotification from '../dialogues/app-notifications'; // <-- IMPORT NOTIFICATION
+import AppNotification from '../dialogues/app-notifications';
 
 // SERVICES
-import { searchImages } from '../services/images-service'; // <-- IMPORT REAL API
+import { searchImages, importImage } from '../services/images-service'; // <-- 2. IMPORT importImage
 
 const AddEoImages = () => {
     const navigate = useNavigate();
+    const location = useLocation(); // <-- 3. INIT location
+
+    // --- GRAB PROJECT ID FROM ROUTER ---
+    const sProjectId = location.state?.projectId || null;
 
     // --- NOTIFICATION STATE ---
     const [oNotification, setNotification] = useState({ show: false, message: '', type: 'info' });
@@ -23,10 +27,9 @@ const AddEoImages = () => {
         setNotification({ show: true, message, type });
     };
 
-    // --- 1. MOCK DATA ---
-    const aoAlreadyImportedIds = ["180b33ba-3be1-4d5b-b864-25de076b6b4b"]; // Use a real ID format for mock checks
+    const aoAlreadyImportedIds = [];
 
-    // --- 2. SEARCH FORM STATE ---
+    // --- SEARCH FORM STATE ---
     const [sProvider, setSProvider] = useState("Copernicus");
     const [sProductName, setSProductName] = useState("");
     const [sStartDate, setSStartDate] = useState("2026-03-01");
@@ -37,32 +40,25 @@ const AddEoImages = () => {
     const [sProductType, setSProductType] = useState("S2MSI1C");
     const [sCloudCoverage, setSCloudCoverage] = useState("20");
 
-    // --- MAP DRAWING STATE ---
-    const [aoFeatures, setAoFeatures] = useState([]); // Stores drawn AOIs
+    const [aoFeatures, setAoFeatures] = useState([]);
 
-    // --- 3. RESULTS & SELECTION ---
+    // --- RESULTS & SELECTION ---
     const [bIsSearching, setBIsSearching] = useState(false);
+    const [bIsImporting, setBIsImporting] = useState(false); // <-- NEW IMPORTING STATE
     const [aoSearchResults, setAoSearchResults] = useState(null);
     const [aoSelectedIds, setAoSelectedIds] = useState([]);
 
     // --- HANDLERS ---
-
-    // Captures the shapes drawn on the map
     const handleDrawUpdate = (featureCollection) => {
         if (featureCollection && featureCollection.features) {
             setAoFeatures(featureCollection.features);
         }
     };
 
-    // Converts the drawn Mapbox GeoJSON into a WKT Polygon String
     const getBboxWkt = () => {
         if (!aoFeatures || aoFeatures.length === 0) return null;
-
-        // Use turf to get the bounding box of the first drawn shape
         const box = turf.bbox(aoFeatures[0]);
         const [minX, minY, maxX, maxY] = box;
-
-        // Format as WKT Polygon
         return `POLYGON((${minX} ${minY}, ${minX} ${maxY}, ${maxX} ${maxY}, ${maxX} ${minY}, ${minX} ${minY}))`;
     };
 
@@ -80,11 +76,16 @@ const AddEoImages = () => {
         setAoSelectedIds([]);
 
         try {
+            // --- NEW: ISO 8601 UTC DATE FORMATTING ---
+            // Append the exact UTC time to the YYYY-MM-DD string, then safely convert to ISO String
+            const isoStartDate = new Date(`${sStartDate}T00:00:00Z`).toISOString();
+            const isoEndDate = new Date(`${sEndDate}T23:59:59Z`).toISOString();
+
             // 2. Build Query Params matching Python backend
             const queryParams = {
                 bbox: sWktBbox,
-                start_date: sStartDate,
-                end_date: sEndDate,
+                start_date: isoStartDate, // <-- Passed as ISO 8601 UTC
+                end_date: isoEndDate,     // <-- Passed as ISO 8601 UTC
                 platform: sSatellitePlatform,
                 product_level: sProductType,
                 max_cloud_cover: parseFloat(sCloudCoverage) || 100.0
@@ -117,15 +118,42 @@ const AddEoImages = () => {
         }
     };
 
-    const handleImport = () => {
+    // --- REAL IMPORT HANDLER ---
+    const handleImport = async () => {
         if (aoSelectedIds.length === 0) return showNotif("Please select at least one image to import.", "warning");
+        if (!sProjectId) return showNotif("Project ID is missing! Please go back and reopen the project.", "error");
 
-        showNotif(`Successfully imported ${aoSelectedIds.length} images! Redirecting...`, "success");
+        setBIsImporting(true);
 
-        // Wait briefly so they see the success message
-        setTimeout(() => {
-            navigate(-1); // Go back to Editor
-        }, 1500);
+        try {
+            // Because your backend endpoint processes ONE image at a time, we loop through the selections
+            for (const sImageId of aoSelectedIds) {
+
+                // Find the full image data from our search results
+                const oFullImage = aoSearchResults.find(img => img.id === sImageId);
+
+                // --- THE FIX: PERFECTLY MATCH THE PYDANTIC MODEL ---
+                const oPayload = {
+                    projectId: sProjectId,
+                    imageUrl: oFullImage.link,     // Map 'link' to 'imageUrl'
+                    imageName: oFullImage.title    // Map 'title' to 'imageName'
+                };
+
+                // Send to backend
+                await importImage(oPayload);
+            }
+
+            showNotif(`Successfully imported ${aoSelectedIds.length} images! Redirecting...`, "success");
+
+            setTimeout(() => {
+                navigate(-1); // Go back to Editor!
+            }, 1500);
+
+        } catch (error) {
+            console.error("Import Error:", error);
+            showNotif("Failed to import some images. Check console.", "error");
+            setBIsImporting(false);
+        }
     };
 
     return (
@@ -173,10 +201,9 @@ const AddEoImages = () => {
                     <AppCard>
                         {/* --- SECTION 1: PROVIDES --- */}
                         <div style={{marginBottom: '20px', paddingBottom: '20px', borderBottom: '1px solid #eee'}}>
-                            <h3 style={{...headerStyle, marginBottom: '15px'}}>Provides</h3>
+                            <h3 style={{...headerStyle, marginBottom: '15px'}}>Providers</h3>
 
                             <div style={{display: 'flex', flexDirection: 'column', gap: '15px'}}>
-                                {/* Provider */}
                                 <AppSelect
                                     sLabel="Provider"
                                     sValue={sProvider}
@@ -185,7 +212,6 @@ const AddEoImages = () => {
                                     oStyle={{width: '100%'}}
                                 />
 
-                                {/* Product Name */}
                                 <AppTextInput
                                     sLabel="Product Name"
                                     sPlaceholder="e.g. S2_MSI_L2A"
@@ -193,8 +219,6 @@ const AddEoImages = () => {
                                     fnOnChange={(e) => setSProductName(e.target.value)}
                                 />
 
-
-                                {/* Dates */}
                                 <div style={gridStyle}>
                                     <AppDateInput sLabel="From Date" sName="start" sValue={sStartDate}
                                                   fnOnChange={(e) => setSStartDate(e.target.value)}/>
@@ -209,7 +233,6 @@ const AddEoImages = () => {
                             <h3 style={{...headerStyle, marginBottom: '15px'}}>Select Mission</h3>
 
                             <div style={{display: 'flex', flexDirection: 'column', gap: '15px'}}>
-                                {/* Mission Type & Platform */}
                                 <div style={gridStyle}>
                                     <AppSelect
                                         sLabel="Mission Type"
@@ -227,7 +250,6 @@ const AddEoImages = () => {
                                     />
                                 </div>
 
-                                {/* Product Type */}
                                 <AppSelect
                                     sLabel="Product Type"
                                     sValue={sProductType}
@@ -236,7 +258,6 @@ const AddEoImages = () => {
                                     oStyle={{width: '100%'}}
                                 />
 
-                                {/* Cloud Coverage */}
                                 <AppTextInput
                                     sLabel="Max Cloud Coverage (%)"
                                     sPlaceholder="e.g 20"
@@ -269,8 +290,6 @@ const AddEoImages = () => {
                                     {aoSearchResults.map((img, idx) => {
                                         const bIsAlreadyImported = aoAlreadyImportedIds.includes(img.id);
                                         const bIsSelected = aoSelectedIds.includes(img.id);
-
-                                        // Alternating colors for visual variety since we don't have real thumbnails yet
                                         const thumbColor = idx % 2 === 0 ? "#1e3c72" : "#2a5298";
 
                                         return (
@@ -312,7 +331,6 @@ const AddEoImages = () => {
                                                         textOverflow: 'ellipsis'
                                                     }} title={img.title}>{img.title}</div>
 
-                                                    {/* Real API Data Rendered Here */}
                                                     <div style={{
                                                         fontSize: '12px',
                                                         color: '#666',
@@ -348,8 +366,8 @@ const AddEoImages = () => {
                                 color: '#666'
                             }}>Ready to inject</span>
                         </div>
-                        <AppButton sVariant="success" oStyle={{width: '100%'}} fnOnClick={handleImport}>
-                            ⬇️ Import Selected
+                        <AppButton sVariant="success" oStyle={{width: '100%'}} fnOnClick={handleImport} disabled={bIsImporting}>
+                            {bIsImporting ? "⏳ Importing..." : "⬇️ Import Selected"}
                         </AppButton>
                     </div>
                 )}
@@ -359,13 +377,11 @@ const AddEoImages = () => {
             <div style={{flex: 1, height: '100%', position: 'relative'}}>
                 <MapboxMap
                     aoMarkers={[]}
-                    oInitialView={{latitude: 45.0, longitude: 8.0, zoom: 6}} // Centered near the python example coords
+                    oInitialView={{latitude: 45.0, longitude: 8.0, zoom: 6}}
                     bEnableDraw={true}
                     bEnableGeocoder={true}
-
-                    // --- NEW: WIRING MAPBOX DRAW TO OUR AOI STATE ---
                     onDrawUpdate={handleDrawUpdate}
-                    aoFeatures={aoFeatures} // Ensures the polygon stays on screen
+                    aoFeatures={aoFeatures}
                 />
             </div>
 

@@ -464,7 +464,7 @@ const EditProject = () => {
                 }}>
                     <div style={{padding: '15px', borderBottom: '1px solid #ddd', background: 'white'}}>
                         <h3 style={{margin: '0 0 10px 0', fontSize: '16px'}}>Images ({aoImages.length})</h3>
-                        <AppButton fnOnClick={() => oNavigate('/add-eo')} sVariant="primary"
+                        <AppButton fnOnClick={() => oNavigate('/add-eo', { state: { projectId: sProjectId } })} sVariant="primary"
                                    oStyle={{width: '100%', fontSize: '12px', marginBottom: '10px'}}>+ Add
                             Image</AppButton>
                         <AppButton fnOnClick={() => oNavigate('/image-styling')} sVariant="secondary"
