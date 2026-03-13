@@ -9,6 +9,7 @@ import AppSelect from '../components/app-dropdown-input';
 import AppCheckbox from '../components/app-checkbox';
 import AppRadioButton from '../components/app-radiobutton';
 import AppButton from '../components/app-button';
+import AppNotification from '../dialogues/app-notifications'; // <-- IMPORTED
 
 import {createTemplate, getLabelTemplateById, updateLabelTemplate} from "../services/labelling-template-service";
 
@@ -52,10 +53,17 @@ const NewLabelTemplate = () => {
     const navigate = useNavigate();
     const location = useLocation();
 
-    // --- NEW: ROUTER STATE ---
+    // --- ROUTER STATE ---
     const sTemplateId = location.state?.templateId || null;
     const sMode = location.state?.mode || 'create'; // 'create', 'edit', or 'view'
     const bIsViewMode = sMode === 'view';
+
+    // --- NEW: NOTIFICATION STATE ---
+    const [oNotification, setNotification] = useState({ show: false, message: '', type: 'info' });
+
+    const showNotif = (message, type = 'info') => {
+        setNotification({ show: true, message, type });
+    };
 
     // --- 1. MAIN TEMPLATE STATE ---
     const [sName, setSName] = useState("");
@@ -76,27 +84,24 @@ const NewLabelTemplate = () => {
     const [sSelectedCategoryAttr, setSSelectedCategoryAttr] = useState("");
     const [oCategoryColors, setOCategoryColors] = useState({});
 
-    // --- NEW: LOAD EXISTING DATA ---
+    // --- LOAD EXISTING DATA ---
     useEffect(() => {
         const loadExistingTemplate = async () => {
             if (!sTemplateId) return;
 
             try {
-                // Fetch the template from your backend
                 const data = await getLabelTemplateById(sTemplateId);
 
                 if (data) {
                     setSName(data.name);
                     setSDescription(data.description || "");
 
-                    // Map Geometries (Handling both List format and Boolean format depending on your API)
                     setOGeometries({
                         polygon: data.geometryTypes?.includes('polygon'),
                         polyline: data.geometryTypes?.includes('polyline'),
                         point: data.geometryTypes?.includes('point')
                     });
 
-                    // Map Attributes & Colors backwards
                     const loadedAttributes = [];
                     const loadedColors = {};
 
@@ -109,9 +114,9 @@ const NewLabelTemplate = () => {
                             });
                         }
                         loadedAttributes.push({
-                            id: idx, // Assign temp ID for UI editing
+                            id: idx,
                             name: attr.name,
-                            type: attr.type.charAt(0).toUpperCase() + attr.type.slice(1).toLowerCase(), // "String"
+                            type: attr.type.charAt(0).toUpperCase() + attr.type.slice(1).toLowerCase(),
                             mandatory: !attr.isOptional,
                             options: options
                         });
@@ -119,14 +124,13 @@ const NewLabelTemplate = () => {
 
                     setAoAttributes(loadedAttributes);
                     setOCategoryColors(loadedColors);
-
-                    // Map Style
                     setSStyleType(data.isSingleColorStyle ? 'single' : 'category');
                     setSSingleColor(data.featureColor || '#FF0000');
                     setSSelectedCategoryAttr(data.colourAttributeName || "");
                 }
             } catch (error) {
                 console.error("Failed to load template data", error);
+                showNotif("Failed to load existing template data.", "error");
             }
         };
 
@@ -134,14 +138,16 @@ const NewLabelTemplate = () => {
     }, [sTemplateId]);
 
 
-    // --- HANDLERS (Unchanged, just added View Mode guards) ---
+    // --- HANDLERS ---
     const handleSaveAttribute = () => {
-        if (!sNewAttrName) return alert("Please enter an attribute name");
+        if (!sNewAttrName) return showNotif("Please enter an attribute name.", "warning");
+
         let aoOptions = [];
         if (sNewAttrType === "Category") {
             aoOptions = sNewAttrCategories.split(',').map(s => s.trim()).filter(s => s !== "");
-            if (aoOptions.length === 0) return alert("Please enter category values");
+            if (aoOptions.length === 0) return showNotif("Please enter at least one category value.", "warning");
         }
+
         const oAttributeData = {
             id: iEditingId || Date.now(),
             name: sNewAttrName,
@@ -184,7 +190,7 @@ const NewLabelTemplate = () => {
         if (oGeometries.polyline) aoGeometryTypes.push("polyline");
         if (oGeometries.point) aoGeometryTypes.push("point");
 
-        if (aoGeometryTypes.length === 0) return alert("Please select at least one geometry type.");
+        if (aoGeometryTypes.length === 0) return showNotif("Please select at least one geometry type.", "error");
 
         const formattedAttributes = aoAttributes.map(attr => {
             let categoryValuesList = null;
@@ -215,21 +221,24 @@ const NewLabelTemplate = () => {
         };
 
         try {
-            // --- NEW: Handle Edit vs Create ---
             if (sMode === 'edit') {
                 await updateLabelTemplate(sTemplateId, oPayload);
-                alert("Template Updated Successfully!");
+                showNotif("Template Updated Successfully!", "success");
             } else {
                 await createTemplate(oPayload);
-                alert("Template Saved Successfully!");
+                showNotif("Template Saved Successfully!", "success");
             }
-            navigate('/label-templates');
+
+            // Wait 1.5 seconds before navigating so the user can read the success message!
+            setTimeout(() => {
+                navigate('/label-templates');
+            }, 1500);
+
         } catch (error) {
-            alert("Error: " + (error.message || "Unknown error"));
+            showNotif("Error: " + (error.message || "Unknown error occurred"), "error");
         }
     };
 
-    // Helper Title
     const pageTitle = sMode === 'view' ? '🔍 View Template' : sMode === 'edit' ? '✏️ Edit Template' : '🎨 New Label Template';
 
     return (
@@ -238,8 +247,18 @@ const NewLabelTemplate = () => {
             background: '#f4f6f8',
             minHeight: '100vh',
             display: 'flex',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            position: 'relative' // Added for absolute positioning context
         }}>
+
+            {/* --- RENDER NOTIFICATION HERE --- */}
+            <AppNotification
+                show={oNotification.show}
+                message={oNotification.message}
+                type={oNotification.type}
+                onClose={() => setNotification(prev => ({ ...prev, show: false }))}
+            />
+
             <div style={{width: '100%', maxWidth: '900px', display: 'flex', flexDirection: 'column', gap: '20px'}}>
 
                 <div style={{marginBottom: '10px'}}>
@@ -478,7 +497,7 @@ const NewLabelTemplate = () => {
 
                 {/* FOOTER */}
                 <div style={{display: 'flex', justifyContent: 'flex-end', gap: '15px'}}>
-                    <AppButton sVariant="outline" fnOnClick={() => navigate('/label-templates')}>
+                    <AppButton sVariant="outline" fnOnClick={() => navigate(-1)}>
                         {bIsViewMode ? 'Go Back' : 'Cancel'}
                     </AppButton>
                     {!bIsViewMode && (
@@ -492,13 +511,7 @@ const NewLabelTemplate = () => {
     );
 };
 
-const headerStyle = {
-    margin: '0 0 15px 0',
-    fontSize: '18px',
-    color: '#444',
-    borderBottom: '1px solid #eee',
-    paddingBottom: '10px'
-};
+const headerStyle = { margin: '0 0 15px 0', fontSize: '18px', color: '#444', borderBottom: '1px solid #eee', paddingBottom: '10px' };
 const subLabelStyle = {fontWeight: 'bold', fontSize: '13px', color: '#555'};
 
 export default NewLabelTemplate;

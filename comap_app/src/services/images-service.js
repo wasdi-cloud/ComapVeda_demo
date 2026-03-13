@@ -6,26 +6,25 @@ import request from './api';
  * Search for available EO images (Sentinel, Landsat, etc.) from external providers.
  * @param {Object} oQueryParams - { startDate, endDate, cloudCover, productType, aoi, etc. }
  */
-export const search = async (oQueryParams) => {
-    // We usually send complex search params (like geometry) via POST to avoid URL length limits
-    return await request('/images/search', {
-        method: 'POST',
-        body: JSON.stringify(oQueryParams)
+export const searchImages = async (oQueryParams) => {
+    // Convert the object into a URL query string (e.g., ?bbox=...&start_date=...)
+    const queryString = new URLSearchParams(oQueryParams).toString();
+
+    return await request(`images/search?${queryString}`, {
+        method: 'GET'
     });
 };
 
 /**
  * Import selected images into a specific project.
- * @param {String} sProjectId
- * @param {Array} aoImages - List of image objects or IDs to import
+ * @param oImageImportPayload
  */
-export const importImages = async (sProjectId, aoImages) => {
-    return await request(`/projects/${sProjectId}/images`, {
+export const importImage = async (oImageImportPayload) => {
+    return await request('images/import', {
         method: 'POST',
-        body: JSON.stringify({ images: aoImages })
+        body: JSON.stringify(oImageImportPayload)
     });
 };
-
 /**
  * Get details of a specific image (Metadata, bands, etc.)
  * @param {String} sImageId
@@ -40,8 +39,9 @@ export const get = async (sImageId) => {
  * Get list of all images associated with a specific project.
  * @param {String} sProjectId
  */
-export const getListByProject = async (sProjectId) => {
-    return await request(`/projects/${sProjectId}/images`, {
+export const getProjectImages = async (sProjectId) => {
+    // Make sure the URL matches the prefix of your router!
+    return await request(`images/getListByProject/${sProjectId}`, {
         method: 'GET'
     });
 };
@@ -66,4 +66,12 @@ export const getTileUrl = (sImageId) => {
     // Adjust based on your actual Tiler URL (e.g., TiTiler)
     const BASE_TILE_URL = "http://localhost:8000/tiles";
     return `${BASE_TILE_URL}/WebMercatorQuad/{z}/{x}/{y}.png?url=${sImageId}`;
+};
+
+
+export const seedDemoImages = async () => {
+    // Assuming your endpoint is at /seed-demo-images
+    return await request(`seed-demo-images`, {
+        method: 'GET'
+    });
 };

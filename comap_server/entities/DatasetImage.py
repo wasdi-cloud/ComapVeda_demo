@@ -15,6 +15,5 @@ class DatasetImageEntity(Base):
     bbox = Column(String, nullable=True)
     date = Column(BigInteger, nullable=True)
 
-    # --- FIX: COMMENT THIS OUT FOR THE DEMO HACK ---
-    # labels = relationship("LabelEntity", backref="dataset_image", cascade="all, delete-orphan")
-    # -----------------------------------------------
+    # RESTORED: This tells SQLAlchemy how to link Images and Labels
+    labels = relationship("LabelEntity", backref="dataset_image", cascade="all, delete-orphan")

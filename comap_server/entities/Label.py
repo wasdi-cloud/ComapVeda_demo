@@ -8,10 +8,7 @@ class LabelEntity(Base):
 
     id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
 
-    # --- DEMO HACK: REMOVED ForeignKey('dataset_images.id') ---
-    # This allows us to use mock Image IDs like "1", "2", "3" without crashing Postgres
-    datasetImageId = Column(String, nullable=False, index=True)
-    # ----------------------------------------------------------
+    datasetImageId = Column(String, ForeignKey('dataset_images.id'), nullable=False, index=True)
 
     # Geometry (The shape)
     geometry = Column(Geometry('GEOMETRY', srid=4326), nullable=False)
