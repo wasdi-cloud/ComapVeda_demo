@@ -1,4 +1,4 @@
-from comap_server.viewmodels.search.SearchQueryParameters import SearchQueryParameters
+from viewmodels.search.SearchQueryParameters import SearchQueryParameters
 
 class QueryExecutorCopernicusDataspace:
 

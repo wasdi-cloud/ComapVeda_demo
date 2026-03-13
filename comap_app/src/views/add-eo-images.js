@@ -135,6 +135,7 @@ const AddEoImages = () => {
                 // --- THE FIX: PERFECTLY MATCH THE PYDANTIC MODEL ---
                 const oPayload = {
                     projectId: sProjectId,
+                    platform: oFullImage.platform, 
                     imageUrl: oFullImage.link,     // Map 'link' to 'imageUrl'
                     imageName: oFullImage.title    // Map 'title' to 'imageName'
                 };

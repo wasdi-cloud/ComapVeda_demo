@@ -1,8 +1,12 @@
+from datetime import datetime
+
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
-
-from viewmodels.images.SearchResultItem import SearchResultItem
+from dataproviders.copernicus_dataspace.QueryExecutorCopernicusDataspace import QueryExecutorCopernicusDataspace
 from database import get_db
+
+from viewmodels.search.SearchQueryParameters import SearchQueryParameters
+from viewmodels.images.SearchResultItem import SearchResultItem
 from entities.DatasetImage import DatasetImageEntity
 from entities.DatasetProject import DatasetProjectEntity
 from viewmodels.images.ProjectImageItem import ProjectImageResponse
@@ -33,6 +37,42 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
     :return: dict containing list of image IDs matching the search criteria
     """
     try:
+
+        # TODO: here we probably miss all the checks about user permissions.
+
+        # check the inputs 
+        if not bbox or not start_date or not end_date or not platform or not product_level:
+            raise HTTPException(status_code=400, detail="Missing required query parameters: bbox, start_date, end_date, platform")
+        
+        if not bbox.startswith("POLYGON"):
+            raise HTTPException(status_code=400, detail="Invalid bbox format. Expected WKT POLYGON format.")
+        
+        if platform != "Sentinel-2":
+            raise HTTPException(status_code=400, detail="Invalid platform.")
+        
+        if product_level not in ["L1C", "L2A"]:
+            raise HTTPException(status_code=400, detail="Invalid product level.")
+        
+        if max_cloud_cover < 0 or max_cloud_cover > 100:
+            raise HTTPException(status_code=400, detail="Invalid cloud cover percentage. Must be between 0 and 100.")
+        
+        try:
+            datetime.strptime(start_date, "%Y-%m-%dT%H:%M:%S.%fZ")
+            datetime.strptime(end_date, "%Y-%m-%dT%H:%M:%S.%fZ")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DD.")
+
+        oSearchQueryParameters = SearchQueryParameters(
+            sPlatform = platform,
+            sStartDate = start_date + "T00:00:00.000Z",
+            sEndDate = end_date + "T23:59:59.999Z",
+            sBoundingBox = bbox,
+            sProductLevel = product_level,
+            fCloudCover = str(max_cloud_cover)
+        )
+        
+        oQueryExecutor = QueryExecutorCopernicusDataspace()
+        oQueryExecutor.executeQuery(oSearchQueryParameters)
         oResults = []
 
         oItem1 = SearchResultItem(
@@ -84,7 +124,7 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
 
 
 @oRouter.post("/import")
-async def import_image(oImageImport: ImageImport):
+async def import_image(aoImageImport: ImageImport, response_model=ImageImport):
     """
     Import an image by its unique name.
 
@@ -92,8 +132,12 @@ async def import_image(oImageImport: ImageImport):
     :return: dict confirming the import of the image
     """
     try:
-        # todo
-        i = 0
+        oImageImport = ImageImport(
+            projectId=aoImageImport[0].projectId,
+            imageUrl="",
+            imageName=aoImageImport[0].imageName
+        )
+        return oImageImport
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error importing image: {str(oE)}')
 
