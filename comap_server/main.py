@@ -1,5 +1,6 @@
 import json
 import time
+import logging
 
 import aiofiles
 import morecantile
@@ -24,6 +25,9 @@ from database import get_db
 from entities.DatasetImage import DatasetImageEntity
 # Import ALL entities here to register them
 from entities.DatasetProject import DatasetProjectEntity
+
+# setting the level of the logger
+logging.basicConfig(level=logging.DEBUG)
 
 print("Building database tables...")
 Base.metadata.create_all(bind=engine)

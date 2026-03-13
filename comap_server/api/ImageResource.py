@@ -60,19 +60,21 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
             datetime.strptime(start_date, "%Y-%m-%dT%H:%M:%S.%fZ")
             datetime.strptime(end_date, "%Y-%m-%dT%H:%M:%S.%fZ")
         except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DD.")
+            raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DDTHH:MM:SS.sssZ.")
 
         oSearchQueryParameters = SearchQueryParameters(
             sPlatform = platform,
-            sStartDate = start_date + "T00:00:00.000Z",
-            sEndDate = end_date + "T23:59:59.999Z",
+            sStartDate = start_date,
+            sEndDate = end_date,
             sBoundingBox = bbox,
             sProductLevel = product_level,
             fCloudCover = str(max_cloud_cover)
         )
         
         oQueryExecutor = QueryExecutorCopernicusDataspace()
-        oQueryExecutor.executeQuery(oSearchQueryParameters)
+        oResults = oQueryExecutor.executeQuery(oSearchQueryParameters)
+
+        """
         oResults = []
 
         oItem1 = SearchResultItem(
@@ -115,6 +117,7 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
 
         oResults.append(oItem1)
         oResults.append(oItem2)
+        """
 
         return oResults
 
