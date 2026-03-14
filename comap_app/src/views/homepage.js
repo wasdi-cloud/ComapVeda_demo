@@ -1,35 +1,58 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import MapboxMap from '../components/MapboxMap';
 
+// REUSABLE COMPONENTS
+import MapboxMap from '../components/MapboxMap';
 import AppTextInput from '../components/app-text-input';
 import AppDropdown from '../components/app-dropdown-input';
 import AppButton from '../components/app-button';
 import AppCard from '../components/app-card';
+import AppNotification from '../dialogues/app-notifications'; // <-- Added Notification
 
-// Import the new service methods + the new seedDemoImages function!
-import { getPublicProjects, getProjectsByUser, deleteProject, leaveProject} from "../services/project-service";
-import {seedDemoImages} from "../services/images-service";
+// SERVICES
+import { getPublicProjects, getProjectsByUser, deleteProject, leaveProject } from "../services/project-service";
+import { seedDemoImages } from "../services/images-service";
+import { isAuthenticated, getUser } from '../services/session'; // <-- Import Real Auth
 
 const HomePage = () => {
     const navigate = useNavigate();
     const oHomeMapView = { latitude: 20, longitude: 0, zoom: 1.5 };
 
-    // --- MOCK AUTH STATE ---
-    const [bIsLoggedIn, setIsLoggedIn] = useState(false);
-    const sCurrentUserId = "jihed_admin"; // Fake logged-in user
+    // --- REAL AUTH STATE ---
+    const bIsLoggedIn = isAuthenticated();
+    const oUser = getUser();
+    // Assuming your backend uses email as the user identifier
+    const sCurrentUserId = oUser?.email || null;
+
+    // --- NOTIFICATION STATE ---
+    const [oNotification, setNotification] = useState({ show: false, message: '', type: 'info' });
+    const showNotif = (message, type = 'info') => setNotification({ show: true, message, type });
 
     // --- DATA STATE ---
     const [aoAllProjects, setAllProjects] = useState([]);
     const [aoProjects, setProjects] = useState([]);
     const [bIsLoading, setIsLoading] = useState(true);
     const [sError, setError] = useState(null);
-    const [bIsSeeding, setIsSeeding] = useState(false); // Track seeding state
 
     // --- SEARCH STATE ---
     const [sSearchText, setSearchText] = useState("");
     const [sSelectedMission, setSelectedMission] = useState("");
     const [sSelectedTask, setSelectedTask] = useState("");
+
+    // --- AUTOMATIC SEEDING ON LOAD ---
+    useEffect(() => {
+        const autoSeedImages = async () => {
+            try {
+                // Silently seed images in the background so the backend always has data
+                await seedDemoImages();
+                console.log("Demo images seeded automatically.");
+            } catch (error) {
+                console.error("Auto-seeding failed. Backend might be unreachable.", error);
+            }
+        };
+
+        autoSeedImages();
+    }, []); // Empty dependency array means it runs exactly once when the homepage loads
 
     const loadProjects = async () => {
         try {
@@ -37,7 +60,8 @@ const HomePage = () => {
             setError(null);
 
             let oData;
-            if (bIsLoggedIn) {
+            // Fetch personal projects if logged in, otherwise public projects
+            if (bIsLoggedIn && sCurrentUserId) {
                 oData = await getProjectsByUser(sCurrentUserId);
             } else {
                 oData = await getPublicProjects();
@@ -56,7 +80,7 @@ const HomePage = () => {
 
     useEffect(() => {
         loadProjects();
-    }, [bIsLoggedIn]);
+    }, [bIsLoggedIn, sCurrentUserId]);
 
     // --- FILTER LOGIC ---
     const handleSearchClick = () => {
@@ -75,17 +99,16 @@ const HomePage = () => {
     // --- USE CASE: LEAVE PROJECT ---
     const handleLeaveProject = async (project) => {
         if (project.userRole === 'OWNER' && project.ownersCount <= 1) {
-            alert("Action Denied: You are the only owner of this project. Please invite a co-owner before leaving, or delete the project entirely.");
-            return;
+            return showNotif("Action Denied: You are the only owner of this project. Please invite a co-owner before leaving, or delete the project entirely.", "warning");
         }
 
         if (window.confirm(`Are you sure you want to leave ${project.name}? You will be removed from the collaborators.`)) {
             try {
                 await leaveProject(project.id, sCurrentUserId);
-                alert("You have successfully left the project.");
+                showNotif("You have successfully left the project.", "success");
                 loadProjects();
             } catch (err) {
-                alert("Failed to leave project: " + err.message);
+                showNotif("Failed to leave project: " + err.message, "error");
             }
         }
     };
@@ -95,28 +118,11 @@ const HomePage = () => {
         if (window.confirm(`⚠️ WARNING: Are you sure you want to completely delete "${project.name}"? This action cannot be undone and will notify all collaborators.`)) {
             try {
                 await deleteProject(project.id);
-                alert("Project deleted successfully. An email has been sent to all collaborators.");
+                showNotif("Project deleted successfully.", "success");
                 loadProjects();
             } catch (err) {
-                alert("Failed to delete project: " + err.message);
+                showNotif("Failed to delete project: " + err.message, "error");
             }
-        }
-    };
-
-    // --- DEV TOOL: SEED IMAGES ---
-    const handleSeedImages = async () => {
-        setIsSeeding(true);
-        try {
-            const response = await seedDemoImages();
-            if (response && response.status === 'error') {
-                alert("⚠️ Seeding failed: " + response.message);
-            } else {
-                alert("✅ " + (response?.message || "Images seeded successfully!"));
-            }
-        } catch (error) {
-            alert("❌ Server Error: Could not seed images. Make sure the backend endpoint exists.");
-        } finally {
-            setIsSeeding(false);
         }
     };
 
@@ -131,31 +137,14 @@ const HomePage = () => {
     return (
         <div style={{ maxWidth: '1000px', margin: '0 auto', paddingBottom: '50px' }}>
 
-            {/* --- MOCK AUTH TOGGLE --- */}
-            <div style={{ background: '#333', color: 'white', padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: '0 0 8px 8px', marginBottom: '20px' }}>
-                <span style={{ fontSize: '13px' }}>Dev Tool: Testing Login States</span>
-
-                <div style={{ display: 'flex', gap: '10px' }}>
-                    {/* NEW SEED BUTTON */}
-                    <AppButton
-                        sVariant="outline"
-                        fnOnClick={handleSeedImages}
-                        disabled={bIsSeeding}
-                        oStyle={{ padding: '4px 10px', fontSize: '12px', background: 'white', color: '#333', border: '1px solid #ccc' }}
-                    >
-                        {bIsSeeding ? "⏳ Seeding..." : "🌱 Seed Demo Images"}
-                    </AppButton>
-
-                    <AppButton sVariant={bIsLoggedIn ? "danger" : "success"} fnOnClick={() => setIsLoggedIn(!bIsLoggedIn)} oStyle={{ padding: '4px 10px', fontSize: '12px' }}>
-                        {bIsLoggedIn ? "Log Out (Guest Mode)" : "Log In (User Mode)"}
-                    </AppButton>
-                </div>
-            </div>
+            <AppNotification show={oNotification.show} message={oNotification.message} type={oNotification.type} onClose={() => setNotification(prev => ({ ...prev, show: false }))} />
 
             {/* --- HEADER --- */}
-            <div style={{ textAlign: 'center', marginBottom: '30px' }}>
+            <div style={{ textAlign: 'center', marginBottom: '30px', marginTop: '30px' }}>
                 <h1 style={{ color: '#2c3e50', marginBottom: '5px' }}>Welcome to COMAP</h1>
-                <p style={{ color: '#7f8c8d' }}>Explore and manage your geospatial projects</p>
+                <p style={{ color: '#7f8c8d' }}>
+                    {bIsLoggedIn ? `Hello ${oUser?.name || ''}, explore and manage your geospatial projects.` : "Explore and manage your geospatial projects. Please log in to create your own!"}
+                </p>
             </div>
 
             {/* --- SEARCH SECTION --- */}

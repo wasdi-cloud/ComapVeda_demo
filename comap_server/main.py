@@ -15,6 +15,7 @@ from titiler.core.factory import TilerFactory
 
 from GeoJsonRequest import GeoJsonRequest
 from api.AuthResource import oRouter as oAuthRouter
+from api.UserResource import oRouter as oUserRouter
 from api.ImageResource import oRouter as oImageRouter
 from api.LabelsResource import oRouter as oLabelsRouter
 from api.ProjectResource import oRouter as oProjectRouter
@@ -24,6 +25,7 @@ from database import get_db
 from entities.DatasetImage import DatasetImageEntity
 # Import ALL entities here to register them
 from entities.DatasetProject import DatasetProjectEntity
+
 
 print("Building database tables...")
 Base.metadata.create_all(bind=engine)
@@ -81,6 +83,7 @@ oApp.include_router(oTemplateRouter, tags=["Template Management"])
 oApp.include_router(oImageRouter, tags=["Image Management"])
 oApp.include_router(oLabelsRouter, tags=["Label Management"])
 oApp.include_router(oAuthRouter, tags=["Authentication"])
+oApp.include_router(oUserRouter, tags=["User"])
 
 s_WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
 

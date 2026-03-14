@@ -45,3 +45,9 @@ export const clearSession = () => {
     // Optional: Force reload to clear React state
     // window.location.href = '/login';
 };
+
+export const isAuthenticated = () => {
+    // If a token exists in local storage, we assume they are logged in!
+    // (Note: The !! forces it to return a true/false boolean)
+    return !!localStorage.getItem(TOKEN_KEY);
+};
