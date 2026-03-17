@@ -127,7 +127,7 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
 
 
 @oRouter.post("/import")
-async def import_image(aoImageImport: ImageImport, response_model=ImageImport):
+async def import_image(oImageImport: ImageImport, response_model=ImageImport):
     """
     Import an image by its unique name.
 
@@ -135,12 +135,17 @@ async def import_image(aoImageImport: ImageImport, response_model=ImageImport):
     :return: dict confirming the import of the image
     """
     try:
-        oImageImport = ImageImport(
-            projectId=aoImageImport[0].projectId,
-            imageUrl="",
-            imageName=aoImageImport[0].imageName
+        oQueryExecutor = QueryExecutorCopernicusDataspace()
+        sDownloadedFilePath = oQueryExecutor.downloadProduct(
+            sProductName = oImageImport.imageName,
+            sDownloadLink = oImageImport.imageUrl,
+            sPlatform = oImageImport.platform,
+            sProjectId = oImageImport.projectId
         )
-        return oImageImport
+        if sDownloadedFilePath is None:
+            raise HTTPException(status_code=500, detail=f'Failed to download image from {oImageImport.imageUrl}')
+        
+        return sDownloadedFilePath
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error importing image: {str(oE)}')
 

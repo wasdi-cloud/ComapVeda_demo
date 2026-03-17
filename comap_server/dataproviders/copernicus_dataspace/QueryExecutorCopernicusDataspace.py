@@ -1,5 +1,6 @@
 import json
 
+import os
 import urllib
 import logging
 
@@ -124,6 +125,58 @@ class QueryExecutorCopernicusDataspace:
             return oSearchResultsList
         except Exception as oE:
             logging.error(f"QueryExecutorCopernicusDataspace.parseODataResponse.Error: An error occurred while parsing OData response: {str(oE)}")
+        
+        return None
+
+    def downloadProduct(self, sProductName: str, sDownloadLink: str, sPlatform: str, sProjectId: str):
+        """
+        Download a product from the Copernicus Data Space API using the provided download link.
+        """
+
+        if sProjectId is None or sProjectId == "":
+            logging.error("QueryExecutorCopernicusDataspace.downloadProduct.Error: Project ID is missing. Cannot download product.")
+            return None
+        
+        if sDownloadLink is None or sDownloadLink == "":
+            logging.error("QueryExecutorCopernicusDataspace.downloadProduct.Error: Download link is missing. Cannot download product.")
+            return None
+        
+        if sProductName is None or sProductName == "":
+            logging.error("QueryExecutorCopernicusDataspace.downloadProduct.Error: Product name is missing. Cannot download product.")
+            return None
+        
+        sDownloadBasePath = "" # TODO define a path for the download and put it in an env variable. For now, we will download to the current directory.
+
+        sDownloadFolderPath = os.path.join(sDownloadBasePath, sProjectId)
+
+        if not os.path.exists(sDownloadFolderPath):
+            try:
+                os.makedirs(sDownloadFolderPath)
+                logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct: Created download folder at {sDownloadFolderPath}.")
+            except Exception as oE:
+                logging.error(f"QueryExecutorCopernicusDataspace.downloadProduct.Error: Failed to create download folder at {sDownloadFolderPath}: {str(oE)}")
+                return None
+        
+        sFileName = sProductName + ".zip"
+        sFullFilePath = os.path.join(sDownloadFolderPath, sFileName)
+
+        try:
+            with urllib.request.urlopen(sDownloadLink) as oResponse:
+                iStatusCode = oResponse.getcode()
+                if iStatusCode == 200:
+                    with open(sFullFilePath, 'wb') as oFile:
+                        while True:
+                            oChunk = oResponse.read(1024 * 1024)
+                            if not oChunk:
+                                break
+                            oFile.write(oChunk)
+                    logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct: Successfully downloaded product {sProductName} to {sFullFilePath}.")
+                    return sFullFilePath
+                else:
+                    logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct.Error: Received status code {iStatusCode} when trying to download product {sProductId}.")
+        
+        except Exception as oE:
+            logging.error(f"QueryExecutorCopernicusDataspace.downloadProduct.Error: An error occurred while downloading product {sProductId}: {str(oE)}")
         
         return None
 
