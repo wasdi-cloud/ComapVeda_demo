@@ -3,7 +3,10 @@ import json
 import os
 import urllib
 import logging
+import requests
 
+from pathlib import Path
+from dataproviders.copernicus_dataspace.CopernicusDataspaceAuth import CopernicusDataspaceAuth
 from viewmodels.images.SearchResultItem import SearchResultItem
 from viewmodels.search.SearchQueryParameters import SearchQueryParameters
 
@@ -11,6 +14,9 @@ class QueryExecutorCopernicusDataspace:
 
     s_sAPI_BASE_URL = "https://catalogue.dataspace.copernicus.eu/odata/v1/Products?"
     s_sEq = "eq"
+
+    def __init__(self):
+        self.oCopernicusAuth = CopernicusDataspaceAuth()
 
     def executeQuery(self, oQuery: SearchQueryParameters):
         """
@@ -60,7 +66,7 @@ class QueryExecutorCopernicusDataspace:
         return None
 
 
-    def getAttr(self, oItem, sAttrName):
+    def _getAttr(self, oItem, sAttrName):
         """
         From an OData item, get the value of a specific attribute by name. 
         The attributes are in `oItem["Attributes"]` and each has a "Name" and a "Value".
@@ -71,7 +77,7 @@ class QueryExecutorCopernicusDataspace:
         return None
 
 
-    def parseODataResponse(self, oData: str) -> list[SearchResultItem]:
+    def _parseODataResponse(self, oData: str) -> list[SearchResultItem]:
         """
         Parse the OData response from the Copernicus Data Space API and convert it into a list of `SearchResultItem` objects.
         """
@@ -131,6 +137,10 @@ class QueryExecutorCopernicusDataspace:
     def downloadProduct(self, sProductName: str, sDownloadLink: str, sPlatform: str, sProjectId: str):
         """
         Download a product from the Copernicus Data Space API using the provided download link.
+        :param sProductName: The name of the product to download (used for naming the file).
+        :param sDownloadLink: The URL to download the product from.
+        :param sPlatform: The platform of the product (e.g., "SENTINEL-2").
+        :param sProjectId: The ID of the CoMap project to which this product has to be stored.
         """
 
         if sProjectId is None or sProjectId == "":
@@ -145,38 +155,49 @@ class QueryExecutorCopernicusDataspace:
             logging.error("QueryExecutorCopernicusDataspace.downloadProduct.Error: Product name is missing. Cannot download product.")
             return None
         
-        sDownloadBasePath = "" # TODO define a path for the download and put it in an env variable. For now, we will download to the current directory.
+        sDownloadBasePath = os.environ.get("COMAP_PROJECTS_BASE_PATH")
 
-        sDownloadFolderPath = os.path.join(sDownloadBasePath, sProjectId)
+        if sDownloadBasePath is None:
+            logging.error("QueryExecutorCopernicusDataspace.downloadProduct.Error: Base path for CoMap projects is not set. Cannot download product. Set the COMAP_PROJECTS_BASE_PATH environment variable.")
+            return None
 
-        if not os.path.exists(sDownloadFolderPath):
-            try:
-                os.makedirs(sDownloadFolderPath)
-                logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct: Created download folder at {sDownloadFolderPath}.")
-            except Exception as oE:
-                logging.error(f"QueryExecutorCopernicusDataspace.downloadProduct.Error: Failed to create download folder at {sDownloadFolderPath}: {str(oE)}")
-                return None
-        
-        sFileName = sProductName + ".zip"
-        sFullFilePath = os.path.join(sDownloadFolderPath, sFileName)
+        oDownloadFolderPath = Path(sDownloadBasePath) / sProjectId
 
         try:
-            with urllib.request.urlopen(sDownloadLink) as oResponse:
-                iStatusCode = oResponse.getcode()
-                if iStatusCode == 200:
-                    with open(sFullFilePath, 'wb') as oFile:
-                        while True:
-                            oChunk = oResponse.read(1024 * 1024)
-                            if not oChunk:
-                                break
-                            oFile.write(oChunk)
-                    logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct: Successfully downloaded product {sProductName} to {sFullFilePath}.")
-                    return sFullFilePath
-                else:
-                    logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct.Error: Received status code {iStatusCode} when trying to download product {sProductId}.")
+            oDownloadFolderPath.mkdir(parents=False, exist_ok=True)
+        except Exception as oE:
+            logging.error(f"QueryExecutorCopernicusDataspace.downloadProduct.Error: An error occurred while creating the download folder: {str(oE)}")
+            return None
+        
+
+        oFullFilePath = oDownloadFolderPath / (sProductName + ".zip")
+        
+        try:
+            with requests.Session() as oSession:
+                oSession.headers.update(self.oCopernicusAuth.getHeader())
+                oResponse = oSession.get(sDownloadLink, stream=True)
+
+                if (oResponse.status_code == 401):
+                    # If we get a 401 Unauthorized, it likely means the access token has expired. In that case, we attempt to refresh the token and retry the download once.
+                    logging.warning("QueryExecutorCopernicusDataspace.downloadProduct: Received 401 Unauthorized. Attempting to refresh token and retry")
+                    oResponse.close() 
+                    self.oCopernicusAuth.refreshToken()
+                    oSession.headers.update(self.oCopernicusAuth.getHeader())
+                    oResponse = oSession.get(sDownloadLink, stream=True)
+
+                with oResponse:
+                    oResponse.raise_for_status()
+
+                    with open(oFullFilePath, 'wb') as oFile:
+                        for oChunk in oResponse.iter_content(chunk_size=8192):
+                            if oChunk:  # Filter out keep-alive chunks
+                                oFile.write(oChunk)
+
+            logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct: Successfully downloaded product '{sProductName}' to '{oFullFilePath}'.")
+            return str(oDownloadFolderPath)
         
         except Exception as oE:
-            logging.error(f"QueryExecutorCopernicusDataspace.downloadProduct.Error: An error occurred while downloading product {sProductId}: {str(oE)}")
+            logging.error(f"QueryExecutorCopernicusDataspace.downloadProduct.Error: An error occurred while downloading product {sProductName}: {str(oE)}")
         
         return None
 
