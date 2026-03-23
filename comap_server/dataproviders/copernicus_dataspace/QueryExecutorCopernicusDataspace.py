@@ -200,7 +200,7 @@ class QueryExecutorCopernicusDataspace:
                                 oFile.write(oChunk)
 
             logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct: Successfully downloaded product '{sProductName}' to '{oFullFilePath}'.")
-            return str(oDownloadFolderPath)
+            return str(oFullFilePath)
         
         except Exception as oE:
             logging.error(f"QueryExecutorCopernicusDataspace.downloadProduct.Error: An error occurred while downloading product {sProductName}: {str(oE)}")
