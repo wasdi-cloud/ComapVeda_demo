@@ -55,7 +55,7 @@ class QueryExecutorCopernicusDataspace:
                     sResponseBody = oResponse.read().decode('utf-8')
                     oJson = json.loads(sResponseBody)
                     logging.debug(f"QueryExecutorCopernicusDataspace.executeQuery: Received response with {len(oJson.get('value', []))} items.")
-                    oResultList = self.parseODataResponse(oJson)
+                    oResultList = self._parseODataResponse(oJson)
                     return oResultList
                 else:
                     logging.debug(f"QueryExecutorCopernicusDataspace.executeQuery.Error: Received status code {iStatusCode} from API.")
@@ -92,18 +92,24 @@ class QueryExecutorCopernicusDataspace:
 
                 sTitle = oItem.get("Name", "")
                 sDownloadLink = "https://download.dataspace.copernicus.eu/odata/v1/Products(" + oItem.get("Id", "") + ")/$value"
-                sFootprint = self.getAttr(oItem, "coordinates")
+                sFootprint = self._getAttr(oItem, "coordinates")
+                if not sFootprint:
+                    logging.debug(f"QueryExecutorCopernicusDataspace.parseODataResponse: No footprint found for item {sId}. Trying to recover it from another attribute")
+                    sFootprint = oItem.get("Footprint", "")
+                    if sFootprint.startswith("geography'SRID=4326;POLYGON"):
+                        sFootprint = sFootprint[len("geography'SRID=4326;"):-1]  # Remove the prefix and the trailing quote
+                        logging.debug(f"QueryExecutorCopernicusDataspace.parseODataResponse: Recovered footprint for item {sId} from 'Footprint' attribute.")
                 sDate = oItem.get("ContentDate", {}).get("Start", "")
                 sStartDate = oItem.get("ContentDate", {}).get("Start", "")
                 sEndDate = oItem.get("ContentDate", {}).get("End", "")
-                sPlatform = self.getAttr(oItem, "platformShortName")
-                sProductType = self.getAttr(oItem, "productType")
-                sProductLevel = self.getAttr(oItem, "processingLevel")
-                sInstrument = self.getAttr(oItem, "instrumentShortName")
-                sSensorOperationalMode = self.getAttr(oItem, "sensorOperationalMode")
-                sCloudCover = float(self.getAttr(oItem, "cloudCover"))
-                sOrbitNumber = int(self.getAttr(oItem, "orbitNumber"))
-                sRelativeOrbitNumber = int(self.getAttr(oItem, "relativeOrbitNumber"))
+                sPlatform = self._getAttr(oItem, "platformShortName")
+                sProductType = self._getAttr(oItem, "productType")
+                sProductLevel = self._getAttr(oItem, "processingLevel")
+                sInstrument = self._getAttr(oItem, "instrumentShortName")
+                sSensorOperationalMode = self._getAttr(oItem, "sensorOperationalMode")
+                sCloudCover = float(self._getAttr(oItem, "cloudCover"))
+                sOrbitNumber = int(self._getAttr(oItem, "orbitNumber"))
+                sRelativeOrbitNumber = int(self._getAttr(oItem, "relativeOrbitNumber"))
                 sSize = str(oItem.get("ContentLength", ""))
 
                 oSearchResultItem = SearchResultItem(
