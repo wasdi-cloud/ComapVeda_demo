@@ -1,20 +1,22 @@
 import logging
 
 from datetime import datetime
+import os
+import re
 
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
-from comap_server.dataproviders.copernicus_dataspace import S2GeoTIFFTranslator
-from comap_server.entities import DatasetProject
+from dataproviders.copernicus_dataspace.S2GeoTIFFTranslatorRasterio import S2GeoTIFFTranslatorRasterio
+# from dataproviders.copernicus_dataspace.S2GeoTIFFTranslator import S2GeoTIFFTranslator
 from dataproviders.copernicus_dataspace.QueryExecutorCopernicusDataspace import QueryExecutorCopernicusDataspace
 from database import get_db
 
 from viewmodels.search.SearchQueryParameters import SearchQueryParameters
 from viewmodels.images.SearchResultItem import SearchResultItem
 from entities.DatasetImage import DatasetImageEntity
-from entities.DatasetProject import DatasetProjectEntity
+# from entities.DatasetProject import DatasetProjectEntity
 from viewmodels.images.ProjectImageItem import ProjectImageResponse
-from viewmodels.images.SearchImageItem import SearchImageItem
+# from viewmodels.images.SearchImageItem import SearchImageItem
 from viewmodels.images.ImageImport import ImageImport
 
 
@@ -95,10 +97,11 @@ async def import_image(oImageImport: ImageImport, oDB: Session = Depends(get_db)
     """
     try:
         # TODO: verify that the project ID exists and that the user has permissions to add images to it
-        oProject = oDB.query(DatasetProject).filter(DatasetProject.id == oImageImport.projectId).first()
+        """
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == oImageImport.projectId).first()
         if not oProject:
             raise HTTPException(status_code=404, detail=f'Project with ID {oImageImport.projectId} not found')
-
+        """
         oQueryExecutor = QueryExecutorCopernicusDataspace()
         sDownloadedFilePath = oQueryExecutor.downloadProduct(
             sProductName = oImageImport.imageName,
@@ -111,37 +114,33 @@ async def import_image(oImageImport: ImageImport, oDB: Session = Depends(get_db)
         
         logging.debug(f"ImageResource.import_image: Image downloaded successfully to {sDownloadedFilePath}")
 
-        if not sDownloadedFilePath.endswith(".SAFE.zip"):
-            raise HTTPException(status_code=500, detail=f'Unexpected file format for downloaded image: {sDownloadedFilePath}')
+        # extract the Copernicus Dataspace product id from the download url
+        oMatch = re.search(r"Products\((.*?)\)", oImageImport.imageUrl)
+
+        sProductId = None
+        if oMatch:
+            sProductId = oMatch.group(1)
+            logging.debug(f"ImageResource.import_image: Extracted product ID: {sProductId}")
+
+        if sProductId is None:
+            logging.warning("ImageResource.import_image: Could not extract product ID from URL.")
+            raise HTTPException(status_code=500, detail=f'Error importing image: {str(oE)}')
         
-        # return sDownloadedFilePath
-        logging.debug(f"ImageResource.import_image: converting image to GeoTIFF")
+        # with the product Id, we query again Copernicus Dataspace to get the metadata of the product, in order to extract the bbox and the date
+        oJsonMetadataData = oQueryExecutor.searchProductDetails(sProductId)
 
-        sOutputGeoTIFFPath = sDownloadedFilePath.removesuffix(".SAFE.zip") + ".tif"
+        sFootprint =oJsonMetadataData.get("Footprint", "")
+        if sFootprint.startswith("geography'SRID=4326;POLYGON"):
+            sFootprint = sFootprint[len("geography'SRID=4326;"):-1]
 
-        asBandSuffixes = [
-        "B01", "B02", "B03", "B04", "B05", "B06", 
-        "B07", "B08", "B8A", "B09", "B11", "B12"
-        ]
-
-        sOutputFilePath = S2GeoTIFFTranslator.getGeoTiff(
-            sZipPath = sDownloadedFilePath, 
-            sGeoTIFFOutputPath = sOutputGeoTIFFPath,
-            asTargetBandSuffixes = asBandSuffixes
-        )
-
-        if sOutputFilePath is None:
-            raise HTTPException(status_code=500, detail=f'Failed to convert image to GeoTIFF format.')
-        
-        logging.debug(f"ImageResource.import_image: Image converted to GeoTIFF successfully at {sOutputFilePath}")
-
+        oNow = datetime.now()
         # now we need to store the image in the database
         oDatasetImage = DatasetImageEntity(
             projectId=oImageImport.projectId,
-            fileName=oImageImport.imageName,  # or extract from the downloaded file
-            link=oImageImport.imageUrl,
-            # bbox=...  # You may need to extract this from the GeoTIFF metadata
-            # date=...  # You may need to extract this from the image metadata
+            fileName=os.path.basename(sDownloadedFilePath),
+            link=sDownloadedFilePath,
+            bbox=sFootprint,
+            date=int(oNow.timestamp() * 1000)
         )
         
         oDB.add(oDatasetImage)
@@ -150,7 +149,8 @@ async def import_image(oImageImport: ImageImport, oDB: Session = Depends(get_db)
         
         logging.debug(f"ImageResource.import_image: Image stored in database with ID: {oDatasetImage.id}")
         
-        return oImageImport  # TODO: or return the created entity details
+        return oImageImport 
+        
 
     except Exception as oE:
         oDB.rollback()  # Important: rollback on error

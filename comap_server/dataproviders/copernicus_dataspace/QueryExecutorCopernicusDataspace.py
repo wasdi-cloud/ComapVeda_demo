@@ -140,6 +140,37 @@ class QueryExecutorCopernicusDataspace:
         
         return None
 
+
+    def searchProductDetails(self, sProductId: str):
+        """
+        Search for the details of a specific product by its ID using the Copernicus Data Space API.
+        """
+
+        if sProductId is None or sProductId == "":
+            logging.error("QueryExecutorCopernicusDataspace.searchProductDetails.Error: Product ID is missing. Cannot search for product details.")
+            return None
+        
+        sUrl = f"https://catalogue.dataspace.copernicus.eu/odata/v1/Products({sProductId})?$expand=Attributes"
+
+        logging.debug(f"QueryExecutorCopernicusDataspace.searchProductDetails: Fetching product details from URL: {sUrl}")
+
+        try:
+            with urllib.request.urlopen(sUrl) as oResponse:
+                iStatusCode = oResponse.getcode()
+                if iStatusCode == 200:
+                    sResponseBody = oResponse.read().decode('utf-8')
+                    oJson = json.loads(sResponseBody)
+                    logging.debug(f"QueryExecutorCopernicusDataspace.searchProductDetails: Received product details for product ID {sProductId}.")
+                    return oJson
+                else:
+                    logging.error(f"QueryExecutorCopernicusDataspace.searchProductDetails.Error: Received status code {iStatusCode} from API when fetching product details for product ID {sProductId}.")
+            
+        except Exception as oE:
+            logging.error(f"QueryExecutorCopernicusDataspace.searchProductDetails.Error: An error occurred while fetching product details for product ID {sProductId}: {str(oE)}")
+        
+        return None
+
+
     def downloadProduct(self, sProductName: str, sDownloadLink: str, sPlatform: str, sProjectId: str):
         """
         Download a product from the Copernicus Data Space API using the provided download link.
@@ -177,6 +208,10 @@ class QueryExecutorCopernicusDataspace:
         
 
         oFullFilePath = oDownloadFolderPath / (sProductName + ".zip")
+
+        if os.path.exists(oFullFilePath):
+            logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct: File '{oFullFilePath}' already exists. Skipping download.")
+            return str(oFullFilePath)
         
         try:
             with requests.Session() as oSession:
