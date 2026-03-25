@@ -695,7 +695,7 @@ const EditProject = () => {
                         <MapboxMap
                             aoMarkers={[]}
                             oInitialView={{latitude: 48.8566, longitude: 2.3522, zoom: 12}}
-                            sActiveGeoTIFF={oSelectedImage ? oSelectedImage.filename : null}
+                            sActiveGeoTIFF={oSelectedImage ? oSelectedImage.id : null}
                             bEnableGeocoder={true}
                             bEnableDraw={true}
                             onDrawUpdate={handleDrawUpdate}

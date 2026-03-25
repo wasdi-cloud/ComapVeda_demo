@@ -1,6 +1,8 @@
 import json
 import time
 import logging
+import rasterio
+import numpy
 
 import aiofiles
 import morecantile
@@ -12,14 +14,20 @@ from rio_tiler.io import Reader
 from rio_tiler.types import BBox
 from sqlalchemy.orm import Session
 from starlette.middleware.cors import CORSMiddleware
-from titiler.core.factory import TilerFactory
+from titiler.core.factory import MultiBaseTilerFactory, TilerFactory
 
 from GeoJsonRequest import GeoJsonRequest
+
 from api.AuthResource import oRouter as oAuthRouter
 from api.ImageResource import oRouter as oImageRouter
 from api.LabelsResource import oRouter as oLabelsRouter
 from api.ProjectResource import oRouter as oProjectRouter
+
 from api.TemplateResource import oRouter as oTemplateRouter
+
+from api.DatasetPathParams import DatasetPathParams
+from dataproviders.copernicus_dataspace.Sentinel2ZipReader import Sentinel2ZipReader
+from dataproviders.copernicus_dataspace.S2GeoTIFFTranslatorRasterio import S2GeoTIFFTranslatorRasterio
 from database import Base, engine
 from database import get_db
 from entities.DatasetImage import DatasetImageEntity
@@ -75,9 +83,11 @@ oApp.add_middleware(
 
 # Tiler factory instance
 oCog = TilerFactory()
+oSentinelRouter = MultiBaseTilerFactory(reader=Sentinel2ZipReader, path_dependency=DatasetPathParams)
 
-# Register all the COG endpoints automatically
+# Register TiTiler endpoints
 oApp.include_router(oCog.router, tags=["Cloud Optimized GeoTIFF"])
+oApp.include_router(oSentinelRouter.router, prefix="/sentinel", tags=["Sentinel-2 ZIP Tiler"])
 
 # Register endpoints for business logic
 oApp.include_router(oProjectRouter, tags=["Project Management"])
