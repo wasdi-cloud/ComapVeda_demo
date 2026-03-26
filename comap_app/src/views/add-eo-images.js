@@ -212,7 +212,7 @@ const AddEoImages = () => {
                                     sLabel="Provider"
                                     sValue={sProvider}
                                     fnOnChange={(e) => setSProvider(e.target.value)}
-                                    aoOptions={["Copernicus", "USGS", "Planet"]}
+                                    aoOptions={["Copernicus"/*, "USGS", "Planet"*/]}
                                     oStyle={{width: '100%'}}
                                 />
 
@@ -238,6 +238,7 @@ const AddEoImages = () => {
 
                             <div style={{display: 'flex', flexDirection: 'column', gap: '15px'}}>
                                 <div style={gridStyle}>
+                                    {/*
                                     <AppSelect
                                         sLabel="Mission Type"
                                         sValue={sMissionType}
@@ -245,11 +246,12 @@ const AddEoImages = () => {
                                         aoOptions={["Optical", "SAR", "Thermal"]}
                                         oStyle={{width: '100%'}}
                                     />
+                                    */}
                                     <AppSelect
                                         sLabel="Sat. Platform"
                                         sValue={sSatellitePlatform}
                                         fnOnChange={(e) => setSSatellitePlatform(e.target.value)}
-                                        aoOptions={["Sentinel-2", "Sentinel-1", "Landsat 8"]}
+                                        aoOptions={["Sentinel-2"/*, "Sentinel-1", "Landsat 8"*/]}
                                         oStyle={{width: '100%'}}
                                     />
                                 </div>
