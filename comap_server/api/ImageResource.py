@@ -1,22 +1,16 @@
 import logging
-
+import asyncio
 from datetime import datetime
-import os
-import re
 
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
-from dataproviders.copernicus_dataspace.S2GeoTIFFTranslatorRasterio import S2GeoTIFFTranslatorRasterio
-# from dataproviders.copernicus_dataspace.S2GeoTIFFTranslator import S2GeoTIFFTranslator
 from dataproviders.copernicus_dataspace.QueryExecutorCopernicusDataspace import QueryExecutorCopernicusDataspace
 from database import get_db
 
 from viewmodels.search.SearchQueryParameters import SearchQueryParameters
 from viewmodels.images.SearchResultItem import SearchResultItem
 from entities.DatasetImage import DatasetImageEntity
-# from entities.DatasetProject import DatasetProjectEntity
 from viewmodels.images.ProjectImageItem import ProjectImageResponse
-# from viewmodels.images.SearchImageItem import SearchImageItem
 from viewmodels.images.ImageImport import ImageImport
 
 
@@ -96,6 +90,7 @@ async def import_image(oImageImport: ImageImport, oDB: Session = Depends(get_db)
     :return: dict confirming the import of the image
     """
     try:
+
         # TODO: verify that the project ID exists and that the user has permissions to add images to it
         """
         oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == oImageImport.projectId).first()
@@ -103,57 +98,21 @@ async def import_image(oImageImport: ImageImport, oDB: Session = Depends(get_db)
             raise HTTPException(status_code=404, detail=f'Project with ID {oImageImport.projectId} not found')
         """
         oQueryExecutor = QueryExecutorCopernicusDataspace()
-        sDownloadedFilePath = oQueryExecutor.downloadProduct(
+
+        # Schedule async task to run in background without blocking response
+        asyncio.create_task(oQueryExecutor.downloadProduct(
             sProductName = oImageImport.imageName,
             sDownloadLink = oImageImport.imageUrl,
             sPlatform = oImageImport.platform,
             sProjectId = oImageImport.projectId
-        )
-        if sDownloadedFilePath is None:
-            raise HTTPException(status_code=500, detail=f'Failed to download image from {oImageImport.imageUrl}')
-        
-        logging.debug(f"ImageResource.import_image: Image downloaded successfully to {sDownloadedFilePath}")
+        ))
 
-        # extract the Copernicus Dataspace product id from the download url
-        oMatch = re.search(r"Products\((.*?)\)", oImageImport.imageUrl)
-
-        sProductId = None
-        if oMatch:
-            sProductId = oMatch.group(1)
-            logging.debug(f"ImageResource.import_image: Extracted product ID: {sProductId}")
-
-        if sProductId is None:
-            logging.warning("ImageResource.import_image: Could not extract product ID from URL.")
-            raise HTTPException(status_code=500, detail=f'Error importing image: {str(oE)}')
-        
-        # with the product Id, we query again Copernicus Dataspace to get the metadata of the product, in order to extract the bbox and the date
-        oJsonMetadataData = oQueryExecutor.searchProductDetails(sProductId)
-
-        sFootprint =oJsonMetadataData.get("Footprint", "")
-        if sFootprint.startswith("geography'SRID=4326;POLYGON"):
-            sFootprint = sFootprint[len("geography'SRID=4326;"):-1]
-
-        oNow = datetime.now()
-        # now we need to store the image in the database
-        oDatasetImage = DatasetImageEntity(
-            projectId=oImageImport.projectId,
-            fileName=os.path.basename(sDownloadedFilePath),
-            link=sDownloadedFilePath,
-            bbox=sFootprint,
-            date=int(oNow.timestamp() * 1000)
-        )
-        
-        oDB.add(oDatasetImage)
-        oDB.commit()
-        oDB.refresh(oDatasetImage)  # Optional: refresh to get the generated ID
-        
-        logging.debug(f"ImageResource.import_image: Image stored in database with ID: {oDatasetImage.id}")
-        
+        logging.debug(f"ImageResource.import_image: Scheduled background task to download image {oImageImport.imageName} for project {oImageImport.projectId}")
         return oImageImport 
         
 
     except Exception as oE:
-        oDB.rollback()  # Important: rollback on error
+        # oDB.rollback()  # Important: rollback on error
         raise HTTPException(status_code=500, detail=f'Error importing image: {str(oE)}')
 
 

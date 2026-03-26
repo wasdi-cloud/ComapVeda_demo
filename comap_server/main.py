@@ -1,12 +1,8 @@
-import json
 import time
 import logging
-import rasterio
-import numpy
-
-import aiofiles
 import morecantile
-from fastapi import FastAPI, Request, HTTPException, Query, Depends
+
+from fastapi import FastAPI, Request, HTTPException, Query, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from rasterio import RasterioIOError
 from rio_tiler.errors import TileOutsideBounds
@@ -15,24 +11,18 @@ from rio_tiler.types import BBox
 from sqlalchemy.orm import Session
 from starlette.middleware.cors import CORSMiddleware
 from titiler.core.factory import MultiBaseTilerFactory, TilerFactory
-
-from GeoJsonRequest import GeoJsonRequest
-
 from api.AuthResource import oRouter as oAuthRouter
 from api.ImageResource import oRouter as oImageRouter
 from api.LabelsResource import oRouter as oLabelsRouter
 from api.ProjectResource import oRouter as oProjectRouter
-
 from api.TemplateResource import oRouter as oTemplateRouter
-
 from api.DatasetPathParams import DatasetPathParams
 from dataproviders.copernicus_dataspace.Sentinel2ZipReader import Sentinel2ZipReader
-from dataproviders.copernicus_dataspace.S2GeoTIFFTranslatorRasterio import S2GeoTIFFTranslatorRasterio
 from database import Base, engine
 from database import get_db
 from entities.DatasetImage import DatasetImageEntity
-# Import ALL entities here to register them
 from entities.DatasetProject import DatasetProjectEntity
+from utils.WebsocketManager import oWsManager
 
 # setting the level of the logger
 logging.basicConfig(level=logging.DEBUG)
@@ -85,11 +75,11 @@ oApp.add_middleware(
 oCog = TilerFactory()
 oSentinelRouter = MultiBaseTilerFactory(reader=Sentinel2ZipReader, path_dependency=DatasetPathParams)
 
-# Register TiTiler endpoints
+# TiTiler endpoints
 oApp.include_router(oCog.router, tags=["Cloud Optimized GeoTIFF"])
 oApp.include_router(oSentinelRouter.router, prefix="/sentinel", tags=["Sentinel-2 ZIP Tiler"])
 
-# Register endpoints for business logic
+# Endpoints for business logic
 oApp.include_router(oProjectRouter, tags=["Project Management"])
 oApp.include_router(oTemplateRouter, tags=["Template Management"])
 oApp.include_router(oImageRouter, tags=["Image Management"])
@@ -102,17 +92,6 @@ s_WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
 @oApp.get("/")
 async def root():
     return {"message": "Hello, World!"}
-
-
-@oApp.get("/get_three_points")
-async def get_three_points():
-    return {
-        "points": [
-            {"lat": 10, "lng": 20},
-            {"lat": -30, "lng": 40},
-            {"lat": 20, "lng": -7}
-        ]
-    }
 
 
 @oApp.get("/geotiff_coordinates")
@@ -173,49 +152,7 @@ async def listTiles(zoom: int = 1, url: str = "baresoil-flood.tif"):
         }
     except Exception as oE:
         return {"error": str(oE)}
-
-
-@oApp.post("/store_label")
-async def store_label(oPayload: GeoJsonRequest):
-    """Accept a raw GeoJSON object (validated by `GeoJsonRequest`) and save it.
-    The `GeoJsonRequest` model validates the raw body and stores it in `.root` or `.data`.
-    """
-    oFilename = "storage.json"
-
-    try:
-        async with aiofiles.open(oFilename, mode='w') as oFile:
-            await oFile.write(json.dumps(oPayload.root, indent=2))
-
-        return {"status": "success", "message": "GeoJSON validated and saved."}
-
-    except Exception as oE:
-        raise HTTPException(status_code=500, detail=str(oE))
-
-
-@oApp.get("/read_label")
-async def read_label():
-    """Read `storage.json` and return the stored GeoJSON object.
-    Returns 404 if the file doesn't exist or 500 if JSON parsing fails.
-    """
-
-    oFilename = "./storage.json"
-    try:
-        async with aiofiles.open(oFilename, mode='r') as oFile:
-            sContent = await oFile.read()
-            if not sContent:
-                raise HTTPException(status_code=404, detail="storage.json is empty")
-            oData = json.loads(sContent)
-
-        return oData
-
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="storage.json not found")
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=500, detail=f"Invalid JSON in storage.json: {e}")
-    except HTTPException:
-        raise
-    except Exception as oE:
-        raise HTTPException(status_code=500, detail=str(oE))
+    
 
 
 @oApp.get("/seed-demo-images")  # Put this in main.py, or use @oRouter.get if in ImageResource.py
@@ -265,6 +202,16 @@ async def seed_demo_images(oDB: Session = Depends(get_db)):
     except Exception as e:
         oDB.rollback()
         return {"status": "error", "error": str(e)}
+    
+@oApp.websocket("/ws/{sProjectId}")
+async def connectWebsocket(oWebsocket: WebSocket, sProjectId: str):
+    await oWsManager.connect(sProjectId, oWebsocket)
+    try:
+        while True:
+            # keep the connection open and listen for messages
+            sData = await oWebsocket.receive_text()
+    except WebSocketDisconnect:
+        oWsManager.disconnect(sProjectId, oWebsocket)
 
 
 if __name__ == "__main__":
@@ -274,5 +221,7 @@ if __name__ == "__main__":
     """
 
     import uvicorn
+
+    print("Starting FastAPI server")
 
     uvicorn.run("main:oApp", host="127.0.0.1", port=8000, reload=True)

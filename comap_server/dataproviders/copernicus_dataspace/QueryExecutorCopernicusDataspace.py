@@ -1,14 +1,23 @@
+from datetime import datetime
+from http.client import HTTPException
 import json
-
 import os
+import re
+import re
 import urllib
 import logging
-import requests
-
+import aiohttp
+from aiohttp import ClientTimeout
+import aiofiles
+import asyncio
 from pathlib import Path
+from database import SessionLocal
 from dataproviders.copernicus_dataspace.CopernicusDataspaceAuth import CopernicusDataspaceAuth
 from viewmodels.images.SearchResultItem import SearchResultItem
 from viewmodels.search.SearchQueryParameters import SearchQueryParameters
+from utils.WebsocketManager import oWsManager
+from entities.DatasetImage import DatasetImageEntity
+from sqlalchemy.orm import Session
 
 class QueryExecutorCopernicusDataspace:
 
@@ -169,9 +178,34 @@ class QueryExecutorCopernicusDataspace:
             logging.error(f"QueryExecutorCopernicusDataspace.searchProductDetails.Error: An error occurred while fetching product details for product ID {sProductId}: {str(oE)}")
         
         return None
+    
+
+    async def runImportTask(self, sProductId: str, sProjectId: str):
+        oDbSession = SessionLocal()
+        try:
+            logging.debug(f"runImportTask: Inizio importazione. In realta' dormiro' per 10 secondi per simulare un processo di importazione lungo...")
+            await asyncio.sleep(10)
+            logging.debug(f"runImportTask: Importazione completata. Ora invio messaggio di completamento ai client connessi al progetto {sProjectId}...")
+            await oWsManager.broadcastToProject(sProjectId, {
+                "type": "import_completed",
+                "productId": sProductId,
+                "message": f"Image {sProductId} successfully imported!",
+                "messageType": "success"
+            })
+            
+        except Exception as oE:
+            logging.error(f"runImportTask.Error: An error occurred during the import task for product ID {sProductId} and project ID {sProjectId}: {str(oE)}")
+            await oWsManager.broadcastToProject(sProjectId, {
+                "type": "import_failed",
+                "productId": sProductId,
+                "message": f"Failed to import image {sProductId}: {str(oE)}",
+                "messageType": "error"
+            })
+        finally:
+            oDbSession.close()
 
 
-    def downloadProduct(self, sProductName: str, sDownloadLink: str, sPlatform: str, sProjectId: str):
+    async def downloadProduct(self, sProductName: str, sDownloadLink: str, sPlatform: str, sProjectId: str):
         """
         Download a product from the Copernicus Data Space API using the provided download link.
         :param sProductName: The name of the product to download (used for naming the file).
@@ -179,6 +213,8 @@ class QueryExecutorCopernicusDataspace:
         :param sPlatform: The platform of the product (e.g., "SENTINEL-2").
         :param sProjectId: The ID of the CoMap project to which this product has to be stored.
         """
+
+        oDB = SessionLocal()
 
         if sProjectId is None or sProjectId == "":
             logging.error("QueryExecutorCopernicusDataspace.downloadProduct.Error: Project ID is missing. Cannot download product.")
@@ -190,6 +226,16 @@ class QueryExecutorCopernicusDataspace:
         
         if sProductName is None or sProductName == "":
             logging.error("QueryExecutorCopernicusDataspace.downloadProduct.Error: Product name is missing. Cannot download product.")
+            return None
+        
+        # extract the Copernicus Dataspace product id from the download url
+        oMatch = re.search(r"Products\((.*?)\)", sDownloadLink)
+        sProductId = None
+        if oMatch:
+            sProductId = oMatch.group(1)
+            logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct: Extracted product ID: {sProductId}")
+        else:
+            logging.warning("QueryExecutorCopernicusDataspace.downloadProduct: Could not extract product ID from URL.")
             return None
         
         sDownloadBasePath = os.environ.get("COMAP_PROJECTS_BASE_PATH")
@@ -214,33 +260,73 @@ class QueryExecutorCopernicusDataspace:
             return str(oFullFilePath)
         
         try:
-            with requests.Session() as oSession:
-                oSession.headers.update(self.oCopernicusAuth.getHeader())
-                oResponse = oSession.get(sDownloadLink, stream=True)
-
-                if (oResponse.status_code == 401):
-                    # If we get a 401 Unauthorized, it likely means the access token has expired. In that case, we attempt to refresh the token and retry the download once.
-                    logging.warning("QueryExecutorCopernicusDataspace.downloadProduct: Received 401 Unauthorized. Attempting to refresh token and retry")
-                    oResponse.close() 
-                    self.oCopernicusAuth.refreshToken()
-                    oSession.headers.update(self.oCopernicusAuth.getHeader())
-                    oResponse = oSession.get(sDownloadLink, stream=True)
-
-                with oResponse:
-                    oResponse.raise_for_status()
-
-                    with open(oFullFilePath, 'wb') as oFile:
-                        for oChunk in oResponse.iter_content(chunk_size=8192):
-                            if oChunk:  # Filter out keep-alive chunks
-                                oFile.write(oChunk)
+            oTimeout = ClientTimeout(total=1800)  # 30 minutes timeout for large downloads
+            async with aiohttp.ClientSession(headers=self.oCopernicusAuth.getHeader(), timeout=oTimeout) as session:
+                async with session.get(sDownloadLink) as response:
+                    if response.status == 401:
+                        # If we get a 401 Unauthorized, it likely means the access token has expired. In that case, we attempt to refresh the token and retry the download once.
+                        logging.warning("QueryExecutorCopernicusDataspace.downloadProduct: Received 401 Unauthorized. Attempting to refresh token and retry")
+                        self.oCopernicusAuth.refreshToken()
+                        session.headers.update(self.oCopernicusAuth.getHeader())
+                        async with session.get(sDownloadLink) as retry_response:
+                            response = retry_response
+                    
+                    response.raise_for_status()
+                    
+                    async with aiofiles.open(oFullFilePath, 'wb') as file:
+                        async for chunk in response.content.iter_chunked(8192):
+                            await file.write(chunk)
 
             logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct: Successfully downloaded product '{sProductName}' to '{oFullFilePath}'.")
-            return str(oFullFilePath)
+
+            sDownloadedFilePath = str(oFullFilePath)
+
+            if str(sDownloadedFilePath) is None:
+                raise HTTPException(status_code=500, detail=f'Failed to download image from {sDownloadLink}')
+        
+            logging.debug(f"ImageResource.import_image: Image downloaded successfully to {sDownloadedFilePath}")
+
+            # with the product Id, we query again Copernicus Dataspace to get the metadata of the product, in order to extract the bbox and the date
+            oJsonMetadataData = self.searchProductDetails(sProductId)
+
+            sFootprint =oJsonMetadataData.get("Footprint", "")
+            if sFootprint.startswith("geography'SRID=4326;POLYGON"):
+                sFootprint = sFootprint[len("geography'SRID=4326;"):-1]
+
+            oNow = datetime.now()
+            # now we need to store the image in the database
+            oDatasetImage = DatasetImageEntity(
+                projectId=sProjectId,
+                fileName=os.path.basename(sDownloadedFilePath),
+                link=sDownloadedFilePath,
+                bbox=sFootprint,
+                date=int(oNow.timestamp() * 1000)
+            )
+        
+            oDB.add(oDatasetImage)
+            oDB.commit()
+            oDB.refresh(oDatasetImage)
+        
+            logging.debug(f"ImageResource.import_image: Image stored in database with ID: {oDatasetImage.id}")
+
+            await oWsManager.broadcastToProject(sProjectId, {
+                "type": "import_completed",
+                "productId": sProductId,
+                "message": f"Image {sProductId} successfully imported!",
+                "messageType": "success"
+            })
         
         except Exception as oE:
             logging.error(f"QueryExecutorCopernicusDataspace.downloadProduct.Error: An error occurred while downloading product {sProductName}: {str(oE)}")
-        
-        return None
+            await oWsManager.broadcastToProject(sProjectId, {
+                "type": "import_failed",
+                "productId": sProductId,
+                "message": f"Failed to import image {sProductId}",
+                "messageType": "error"
+            })
+        finally:
+            oDB.close()
+
 
 
 if __name__ == "__main__":

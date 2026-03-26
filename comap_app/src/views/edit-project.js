@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useState, useContext, useCallback} from 'react';
 import * as turf from '@turf/turf';
 import {useLocation, useNavigate} from 'react-router-dom';
 import AppButton from "../components/app-button";
@@ -8,6 +8,7 @@ import {getLabelTemplateById} from "../services/labelling-template-service";
 import {getLabelsByImage, syncLabels} from "../services/labels-service";
 import {getProjectImages} from "../services/images-service";
 import AppNotification from "../dialogues/app-notifications";
+import {useNotifications} from "../contexts/NotificationContext";
 
 
 const MOCK_COLLABS = [
@@ -25,6 +26,9 @@ const EditProject = () => {
     const sProjectId = oLocation.state?.projectId || null;
     const sCurrentUser = "Jihed";
     const [oNotification, setNotification] = useState({show: false, message: '', type: 'info'});
+
+    // Use global notification context to listen for WebSocket notifications
+    const { notifications } = useNotifications();
 
     // // --- DATA ---
     // const [aoImages] = useState([
@@ -206,6 +210,22 @@ const EditProject = () => {
     };
 
     // --- LOAD PROJECT DATA ---
+    const loadImages = useCallback(async () => {
+        try {
+            const aoProjectImages = await getProjectImages(sProjectId);
+            if (aoProjectImages && aoProjectImages.length > 0) {
+                // Optional: Format the UNIX timestamp date from the backend so it looks nice in the UI
+                const aoFormattedImages = aoProjectImages.map(img => ({
+                    ...img,
+                    date: img.date ? new Date(img.date).toLocaleDateString() : "Unknown Date"
+                }));
+                setAoImages(aoFormattedImages);
+            }
+        } catch (error) {
+            console.log("Error loading images:", error);
+        }
+    }, [sProjectId]);
+
     useEffect(() => {
         const loadProject = async () => {
             // 1. Safety check: If there is no ID, send them back to home
@@ -241,18 +261,8 @@ const EditProject = () => {
                         setProjectBBox(parsedBox);
                     }
 
-                    const aoProjectImages = await getProjectImages(sProjectId);
-
-                    if (aoProjectImages && aoProjectImages.length > 0) {
-                        // Optional: Format the UNIX timestamp date from the backend so it looks nice in the UI
-                        const aoFormattedImages = aoProjectImages.map(img => ({
-                            ...img,
-                            date: img.date ? new Date(img.date).toLocaleDateString() : "Unknown Date"
-                        }));
-
-                        setAoImages(aoFormattedImages);
-                        // setISelectedImageId(aoFormattedImages[0].id); // Auto-select the first image!
-                    }
+                    // Load images
+                    await loadImages();
                 }
             } catch (error) {
                 console.log("Error loading project data:", error);
@@ -260,7 +270,21 @@ const EditProject = () => {
         }
 
         loadProject();
-    }, [sProjectId, oNavigate]); // Add dependencies here
+    }, [sProjectId, oNavigate, loadImages]); // Add dependencies here
+
+    // --- REFRESH IMAGES ON IMPORT SUCCESS NOTIFICATION ---
+    useEffect(() => {
+        if (notifications.length > 0) {
+            const latestNotification = notifications[notifications.length - 1];
+            // Check if it's a success notification about image import
+            if (latestNotification.type === 'success' && 
+                latestNotification.message && 
+                latestNotification.message.includes('successfully imported')) {
+                console.log('Import success notification received, refreshing images...');
+                loadImages();
+            }
+        }
+    }, [notifications, sProjectId, loadImages]); // Depend on notifications and projectId
 
     // --- NEW: HANDLE COLOR CHANGE ---
     const handleColorChange = (newColor) => {
@@ -282,7 +306,7 @@ const EditProject = () => {
                 setDrawingColor(selectedFeature.properties.portColor);
             }
         }
-    }, [sSelectedFeatureId]);
+    }, [sSelectedFeatureId, aoFeatures]);
 
     // --- HANDLER: DRAW UPDATE ---
     const handleDrawUpdate = (featureCollection) => {
