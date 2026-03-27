@@ -136,6 +136,9 @@ def canReadProject(
     if not oUser:
         return False
 
+    if oUser.role == "ADMIN":
+        return True;
+
     sUserEmail = oUser.email
     aoOwners = set(oProject.owners or [])
     aoAnnotators = set(oProject.annotators or [])

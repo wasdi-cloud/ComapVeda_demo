@@ -10,6 +10,7 @@ pyshp~=3.0.3
 email-validator
 argon2-cffi
 passlib
+mailjet-rest
 
 rasterio~=1.4.3
 starlette~=0.50.0
