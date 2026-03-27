@@ -285,8 +285,11 @@ const MapboxMap = ({
                 activeLayerIdRef.current = null;
             }
             if (sActiveGeoTIFF) {
+                const sAssets = "assets=B04&assets=B03&assets=B02";
+                const sParams = `dataset_id=${sActiveGeoTIFF}&${sAssets}&rescale=0,3000`;
                 const uniqueId = `geotiff-${Date.now()}`;
-                const sTileUrl = `${process.env.REACT_APP_API_URL}tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=${sActiveGeoTIFF}`;
+                // const sTileUrl = `${process.env.REACT_APP_API_URL}tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=${sActiveGeoTIFF}`;
+                const sTileUrl = `${process.env.REACT_APP_API_URL}sentinel/tiles/WebMercatorQuad/{z}/{x}/{y}.png?${sParams}`;
                 try {
                     map.addSource(uniqueId, { type: 'raster', tiles: [sTileUrl], tileSize: 256 });
                     const layers = map.getStyle().layers;

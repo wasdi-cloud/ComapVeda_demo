@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {useNavigate, useLocation} from 'react-router-dom'; // <-- 1. IMPORT useLocation
+import {useNavigate, useLocation} from 'react-router-dom';
 import * as turf from '@turf/turf';
 
 // REUSABLE COMPONENTS
@@ -9,10 +9,15 @@ import AppDateInput from '../components/app-date-input';
 import AppSelect from '../components/app-dropdown-input';
 import AppButton from '../components/app-button';
 import AppTextInput from '../components/app-text-input';
-import AppNotification from '../dialogues/app-notifications';
+// import AppNotification from '../dialogues/app-notifications'; // using global toast
+
+// CONTEXT + HOOK
+import { useNotifications } from '../contexts/NotificationContext';
+import { useProject } from '../contexts/ProjectContext';
+// import { useWebSocket } from '../hooks/useWebSocket';
 
 // SERVICES
-import { searchImages, importImage } from '../services/images-service'; // <-- 2. IMPORT importImage
+import { searchImages, importImage } from '../services/images-service';
 
 const AddEoImages = () => {
     const navigate = useNavigate();
@@ -21,11 +26,19 @@ const AddEoImages = () => {
     // --- GRAB PROJECT ID FROM ROUTER ---
     const sProjectId = location.state?.projectId || null;
 
-    // --- NOTIFICATION STATE ---
-    const [oNotification, setNotification] = useState({ show: false, message: '', type: 'info' });
-    const showNotif = (message, type = 'info') => {
-        setNotification({ show: true, message, type });
-    };
+    const { addNotification } = useNotifications();
+    const { setCurrentProjectId } = useProject();
+
+    // Set current project when component mounts
+    React.useEffect(() => {
+        if (sProjectId) {
+            setCurrentProjectId(sProjectId);
+        }
+        // Don't clear on unmount - keep WebSocket connected for notifications
+    }, [sProjectId, setCurrentProjectId]);
+
+    // websocket subscription for project updates
+    // useWebSocket(sProjectId); // Now handled globally in Layout
 
     const aoAlreadyImportedIds = [];
 
@@ -37,7 +50,7 @@ const AddEoImages = () => {
 
     const [sMissionType, setSMissionType] = useState("Optical");
     const [sSatellitePlatform, setSSatellitePlatform] = useState("Sentinel-2");
-    const [sProductType, setSProductType] = useState("S2MSI1C");
+    const [sProductType, setSProductType] = useState("L1C");
     const [sCloudCoverage, setSCloudCoverage] = useState("20");
 
     const [aoFeatures, setAoFeatures] = useState([]);
@@ -68,7 +81,7 @@ const AddEoImages = () => {
         // 1. Get the AOI from the map
         const sWktBbox = getBboxWkt();
         if (!sWktBbox) {
-            return showNotif("Please draw an Area of Interest (AOI) on the map first using the polygon tool.", "warning");
+            return addNotification("Please draw an Area of Interest (AOI) on the map first using the polygon tool.", "warning");
         }
 
         setBIsSearching(true);
@@ -96,15 +109,15 @@ const AddEoImages = () => {
 
             if (results && results.length > 0) {
                 setAoSearchResults(results);
-                showNotif(`Found ${results.length} images matching your criteria.`, "success");
+                addNotification(`Found ${results.length} images matching your criteria.`, "success");
             } else {
                 setAoSearchResults([]);
-                showNotif("No images found for this area and date range.", "info");
+                addNotification("No images found for this area and date range.", "info");
             }
 
         } catch (error) {
             console.error("Search Error:", error);
-            showNotif("Failed to fetch images from the server. Check console.", "error");
+            addNotification("Failed to fetch images from the server. Check console.", "error");
         } finally {
             setBIsSearching(false);
         }
@@ -120,8 +133,8 @@ const AddEoImages = () => {
 
     // --- REAL IMPORT HANDLER ---
     const handleImport = async () => {
-        if (aoSelectedIds.length === 0) return showNotif("Please select at least one image to import.", "warning");
-        if (!sProjectId) return showNotif("Project ID is missing! Please go back and reopen the project.", "error");
+        if (aoSelectedIds.length === 0) return addNotification("Please select at least one image to import.", "warning");
+        if (!sProjectId) return addNotification("Project ID is missing! Please go back and reopen the project.", "error");
 
         setBIsImporting(true);
 
@@ -135,6 +148,7 @@ const AddEoImages = () => {
                 // --- THE FIX: PERFECTLY MATCH THE PYDANTIC MODEL ---
                 const oPayload = {
                     projectId: sProjectId,
+                    platform: oFullImage.platform, 
                     imageUrl: oFullImage.link,     // Map 'link' to 'imageUrl'
                     imageName: oFullImage.title    // Map 'title' to 'imageName'
                 };
@@ -143,29 +157,19 @@ const AddEoImages = () => {
                 await importImage(oPayload);
             }
 
-            showNotif(`Successfully imported ${aoSelectedIds.length} images! Redirecting...`, "success");
-
-            setTimeout(() => {
-                navigate(-1); // Go back to Editor!
-            }, 1500);
+            // Notify that import has started (actual completion will come via WebSocket)
+            addNotification(`Import started for ${aoSelectedIds.length} image(s). Processing in background...`, "info");
+            setBIsImporting(false);
 
         } catch (error) {
             console.error("Import Error:", error);
-            showNotif("Failed to import some images. Check console.", "error");
+            addNotification("Failed to import some images. Check console.", "error");
             setBIsImporting(false);
         }
     };
 
     return (
         <div style={{display: 'flex', height: '100vh', width: '100%', overflow: 'hidden'}}>
-
-            {/* FLOATING NOTIFICATION */}
-            <AppNotification
-                show={oNotification.show}
-                message={oNotification.message}
-                type={oNotification.type}
-                onClose={() => setNotification(prev => ({ ...prev, show: false }))}
-            />
 
             {/* --- LEFT PANEL (30%) --- */}
             <div style={{
@@ -208,7 +212,7 @@ const AddEoImages = () => {
                                     sLabel="Provider"
                                     sValue={sProvider}
                                     fnOnChange={(e) => setSProvider(e.target.value)}
-                                    aoOptions={["Copernicus", "USGS", "Planet"]}
+                                    aoOptions={["Copernicus"/*, "USGS", "Planet"*/]}
                                     oStyle={{width: '100%'}}
                                 />
 
@@ -234,6 +238,7 @@ const AddEoImages = () => {
 
                             <div style={{display: 'flex', flexDirection: 'column', gap: '15px'}}>
                                 <div style={gridStyle}>
+                                    {/*
                                     <AppSelect
                                         sLabel="Mission Type"
                                         sValue={sMissionType}
@@ -241,11 +246,12 @@ const AddEoImages = () => {
                                         aoOptions={["Optical", "SAR", "Thermal"]}
                                         oStyle={{width: '100%'}}
                                     />
+                                    */}
                                     <AppSelect
                                         sLabel="Sat. Platform"
                                         sValue={sSatellitePlatform}
                                         fnOnChange={(e) => setSSatellitePlatform(e.target.value)}
-                                        aoOptions={["Sentinel-2", "Sentinel-2C", "Sentinel-1", "Landsat 8"]}
+                                        aoOptions={["Sentinel-2"/*, "Sentinel-1", "Landsat 8"*/]}
                                         oStyle={{width: '100%'}}
                                     />
                                 </div>
@@ -254,7 +260,7 @@ const AddEoImages = () => {
                                     sLabel="Product Type"
                                     sValue={sProductType}
                                     fnOnChange={(e) => setSProductType(e.target.value)}
-                                    aoOptions={["S2MSI1C", "L1C", "L2A"]}
+                                    aoOptions={["L1C", "L2A"]}
                                     oStyle={{width: '100%'}}
                                 />
 

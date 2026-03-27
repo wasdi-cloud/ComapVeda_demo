@@ -1,12 +1,16 @@
+import logging
+import asyncio
+from datetime import datetime
+
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
-
-from viewmodels.images.SearchResultItem import SearchResultItem
+from dataproviders.copernicus_dataspace.QueryExecutorCopernicusDataspace import QueryExecutorCopernicusDataspace
 from database import get_db
+
+from viewmodels.search.SearchQueryParameters import SearchQueryParameters
+from viewmodels.images.SearchResultItem import SearchResultItem
 from entities.DatasetImage import DatasetImageEntity
-from entities.DatasetProject import DatasetProjectEntity
 from viewmodels.images.ProjectImageItem import ProjectImageResponse
-from viewmodels.images.SearchImageItem import SearchImageItem
 from viewmodels.images.ImageImport import ImageImport
 
 
@@ -33,48 +37,42 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
     :return: dict containing list of image IDs matching the search criteria
     """
     try:
-        oResults = []
 
-        oItem1 = SearchResultItem(
-            title="S2C_MSIL1C_20260304T102921_N0512_R108_T32TMR_20260304T140806",
-            id = "180b33ba-3be1-4d5b-b864-25de076b6b4b",
-            link = "https://zipper.creodias.eu/odata/v1/Products(180b33ba-3be1-4d5b-b864-25de076b6b4b)/$value",
-            footprint= "POLYGON ((8.882253959239932 46.05225955358549, 7.706951084723532 46.0462596089832, 7.729416423067862 45.058191670236305, 8.469916935283441 45.06190917118712, 8.485059196314161 45.09861670033944, 8.487631380638613 45.104856267978775, 8.488215547780069 45.106268256683286, 8.488987956252917 45.108140711957766, 8.490854378861282 45.1126465676415, 8.547846107201718 45.25040110903268, 8.608218819819822 45.39590425011436, 8.668705527519169 45.54138664599366, 8.729217438988133 45.68682741753341, 8.789848807141269 45.83221827126314, 8.803703002987273 45.86502177746246, 8.852404999791245 45.980822232539296, 8.87117159388612 46.02557410463011, 8.882253959239932 46.05225955358549))",
-            date = "2026-03-04T10:29:21.025000Z",
-            startDate =  "2026-03-04T10:29:21.025000Z",
-            endDate = "2026-03-04T10:29:21.025000Z",
-            platform = "Sentinel-2C",
-            productType = "S2MSI1C",
-            productLevel = "S2MSI1C",
-            instrument = "MSI",
-            sensorOperationalMode = "INS-NOBS",
-            cloudCover = 63.383160184512,
-            orbitNumber = 7800,
-            relativeOrbitNumber = 108,
-            size = "544.43 MB"
+        # TODO: here we probably miss all the checks about user permissions.
+
+        # check the inputs 
+        if not bbox or not start_date or not end_date or not platform or not product_level:
+            raise HTTPException(status_code=400, detail="Missing required query parameters: bbox, start_date, end_date, platform")
+        
+        if not bbox.startswith("POLYGON"):
+            raise HTTPException(status_code=400, detail="Invalid bbox format. Expected WKT POLYGON format.")
+        
+        if platform != "Sentinel-2":
+            raise HTTPException(status_code=400, detail="Invalid platform.")
+        
+        if product_level not in ["L1C", "L2A"]:
+            raise HTTPException(status_code=400, detail="Invalid product level.")
+        
+        if max_cloud_cover < 0 or max_cloud_cover > 100:
+            raise HTTPException(status_code=400, detail="Invalid cloud cover percentage. Must be between 0 and 100.")
+        
+        try:
+            datetime.strptime(start_date, "%Y-%m-%dT%H:%M:%S.%fZ")
+            datetime.strptime(end_date, "%Y-%m-%dT%H:%M:%S.%fZ")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DDTHH:MM:SS.sssZ.")
+
+        oSearchQueryParameters = SearchQueryParameters(
+            sPlatform = platform,
+            sStartDate = start_date,
+            sEndDate = end_date,
+            sBoundingBox = bbox,
+            sProductLevel = product_level,
+            fCloudCover = str(max_cloud_cover)
         )
-
-        oItem2 =  SearchResultItem(
-            title="S2C_MSIL1C_20260304T102921_N0512_R108_T32TLR_20260304T140806",
-            id = "56407d80-90c3-4fc9-9910-c07e937f54df",
-            link = "https://zipper.creodias.eu/odata/v1/Products(56407d80-90c3-4fc9-9910-c07e937f54df)/$value",
-            footprint= "POLYGON ((6.41593487960282 46.02435339629007, 6.460785793001177 45.037023116804335, 7.854365464520267 45.05951360004942, 7.834108089722306 46.0476276229589, 6.41593487960282 46.02435339629007))",
-            date = "2026-03-04T10:29:21.025000Z",
-            startDate =  "2026-03-04T10:29:21.025000Z",
-            endDate = "2026-03-04T10:29:21.025000Z",
-            platform = "Sentinel-2C",
-            productType = "S2MSI1C",
-            productLevel = "S2MSI1C",
-            instrument = "MSI",
-            sensorOperationalMode = "INS-NOBS",
-            cloudCover = 63.383160184512,
-            orbitNumber = 7800,
-            relativeOrbitNumber = 108,
-            size = "853.02 MB"
-        )
-
-        oResults.append(oItem1)
-        oResults.append(oItem2)
+        
+        oQueryExecutor = QueryExecutorCopernicusDataspace()
+        oResults = oQueryExecutor.executeQuery(oSearchQueryParameters)
 
         return oResults
 
@@ -84,7 +82,7 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
 
 
 @oRouter.post("/import")
-async def import_image(oImageImport: ImageImport):
+async def import_image(oImageImport: ImageImport, oDB: Session = Depends(get_db), response_model=ImageImport):
     """
     Import an image by its unique name.
 
@@ -92,9 +90,29 @@ async def import_image(oImageImport: ImageImport):
     :return: dict confirming the import of the image
     """
     try:
-        # todo
-        i = 0
+
+        # TODO: verify that the project ID exists and that the user has permissions to add images to it
+        """
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == oImageImport.projectId).first()
+        if not oProject:
+            raise HTTPException(status_code=404, detail=f'Project with ID {oImageImport.projectId} not found')
+        """
+        oQueryExecutor = QueryExecutorCopernicusDataspace()
+
+        # Schedule async task to run in background without blocking response
+        asyncio.create_task(oQueryExecutor.downloadProduct(
+            sProductName = oImageImport.imageName,
+            sDownloadLink = oImageImport.imageUrl,
+            sPlatform = oImageImport.platform,
+            sProjectId = oImageImport.projectId
+        ))
+
+        logging.debug(f"ImageResource.import_image: Scheduled background task to download image {oImageImport.imageName} for project {oImageImport.projectId}")
+        return oImageImport 
+        
+
     except Exception as oE:
+        # oDB.rollback()  # Important: rollback on error
         raise HTTPException(status_code=500, detail=f'Error importing image: {str(oE)}')
 
 
