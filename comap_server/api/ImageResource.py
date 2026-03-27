@@ -133,59 +133,20 @@ async def getListByProject(project_id: str, oDB: Session = Depends(get_db),
         aoImages = oDB.query(DatasetImageEntity).filter(DatasetImageEntity.projectId == project_id).all()
 
         oResult = []
-        for img in aoImages:
+        for oImg in aoImages:
             # Safely map the DB Entity to our new React-friendly ViewModel
             oResult.append(ProjectImageResponse(
-                id=img.id,
-                name=img.fileName or "Unknown Image",
-                filename=img.fileName or "",
-                date=img.date or 0,
-                bbox=img.bbox,
+                id=oImg.id,
+                name=oImg.fileName or "Unknown Image",
+                filename=oImg.fileName or "",
+                date=oImg.date or 0,
+                bbox=oImg.bbox,
                 annotator="System"
             ))
 
         return oResult
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching images: {str(e)}")
-
-
-# @oRouter.get("/getListByProject", response_model=list[ImageItem])
-# async def getListByProject(project_id: str = Query(..., description="Project ID to list images for")):
-#     """
-#     Retrieve all images associated with a specific project.
-#
-#     :param project_id: Project ID to list images for
-#     :return: dict containing list of image IDs associated with the project
-#     """
-#     try:
-#         # todo
-#         return [
-#             {
-#                 "title": "s2_image_001",
-#                 "footprint": "POLYGON((...))",
-#                 "startDate": 1678886400000,
-#                 "endDate": 1678972800000,
-#                 "platform": "Sentinel-2",
-#                 "productType": "S2MSI2A",
-#                 "productLevel": "L2A",
-#                 "cloudCover": 12.5,
-#                 "bands": ["B2", "B3", "B4", "B8"]
-#             },
-#             {
-#                 "title": "s2_image_002",
-#                 "footprint": "POLYGON((...))",
-#                 "startDate": 1678972800000,
-#                 "endDate": 1679059200000,
-#                 "platform": "Sentinel-2",
-#                 "productType": "S2MSI2A",
-#                 "productLevel": "L2A",
-#                 "cloudCover": 8.0,
-#                 "bands": ["B2", "B3", "B4", "B8"]
-#             }
-#         ]
-#     except Exception as oE:
-#         raise HTTPException(status_code=500, detail=f'Error retrieving images for project: {str(oE)}')
-#
 
 # TODO: not sure what does it mean
 # NOTE: Probably not needed, is directly titler that provides images.
