@@ -123,56 +123,56 @@ async def confirmRegistration(oOtpModel: OtpModel, db: DBSession = Depends(get_d
     
 
 @oRouter.post("/login")
-async def login(oLoginModel: LoginModel, db: DBSession = Depends(get_db)):
+async def login(oLoginModel: LoginModel, oDatabase: DBSession = Depends(get_db)):
     """
     Authenticate a user using username (email) and password.
 
     :param oLoginModel: LoginModel containing username and password
-    :param db: Database session
+    :param oDatabase: Database session
     :return: dict containing authentication token upon successful login
     """
     try:
         # Find user by email (username)
-        user = db.query(User).filter(User.email == oLoginModel.username).first()
+        oUser = oDatabase.query(User).filter(User.email == oLoginModel.username).first()
         
-        if not user:
+        if not oUser:
             raise HTTPException(status_code=401, detail="Invalid credentials")
         
         # Check if user is confirmed
-        if not user.confirmed:
+        if not oUser.confirmed:
             raise HTTPException(status_code=403, detail="User not confirmed. Please confirm your registration first.")
         
         # Verify password
-        if not verify_password(oLoginModel.password, user.password_hash):
+        if not verify_password(oLoginModel.password, oUser.password_hash):
             raise HTTPException(status_code=401, detail="Invalid credentials")
         
         # Generate session token
-        session_token = generate_session_token(32)
+        sToken = generate_session_token(32)
         
         # Create new session
-        new_session = Session(
-            token=session_token,
-            user_email=user.email
+        oSession = Session(
+            token=sToken,
+            user_email=oUser.email
         )
         
-        db.add(new_session)
-        db.commit()
-        db.refresh(new_session)
+        oDatabase.add(oSession)
+        oDatabase.commit()
+        oDatabase.refresh(oSession)
         
         return {
             "message": "Login successful",
-            "email": user.email,
-            "name": user.name,
-            "surname": user.surname,
-            "role": user.role,
-            "session_token": session_token,
-            "expires_at": new_session.expires_at.isoformat()
+            "email": oUser.email,
+            "name": oUser.name,
+            "surname": oUser.surname,
+            "role": oUser.role,
+            "session_token": sToken,
+            "expires_at": oSession.expires_at.isoformat()
         }
         
     except HTTPException:
         raise
     except Exception as oE:
-        db.rollback()
+        oDatabase.rollback()
         raise HTTPException(status_code=500, detail=f'Error during login: {str(oE)}')
     
 
