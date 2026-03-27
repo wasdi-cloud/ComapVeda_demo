@@ -220,6 +220,8 @@ All database credentials and configuration are stored in the `.env` file at the 
 - **REACT_APP_MAPBOX_TOKEN** - Mapbox API access token (required for map functionality)
   - Get your token from: https://account.mapbox.com/access-tokens/
   - Sign up at: https://www.mapbox.com/ (free tier available)
+- **APPWASDI_UID** - Numeric UID used to run backend container process (default: `1000`)
+- **APPWASDI_GID** - Numeric GID used to run backend container process (default: `1000`)
 
 **Important**: 
 - The `.env` file is ignored by Git for security. Always use `.env.example` as a template.
