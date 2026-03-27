@@ -25,6 +25,7 @@ services:
       - DATABASE_URL=${DATABASE_URL}
     volumes:
       - ./comap_server:/app
+      - /opt/comap/docker/data:${COMAP_PROJECTS_BASE_PATH}
     networks:
       - comap-network
       - net-wasdi # Joins Traefik's world
