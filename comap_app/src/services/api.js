@@ -4,40 +4,41 @@ import {getToken} from "./session";
 const BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000/";
 
 // Helper function to handle Headers and Errors
-const request = async (endpoint, options = {}) => {
+const oRequest = async (sEndPointUrl, oOptions = {}) => {
     // 1. Get Token using the new utility
-    const token = getToken();
+    const sToken = getToken();
 
     // 2. Set Default Headers
-    const defaultHeaders = {
+    const oDefaultHeaders = {
         "Content-Type": "application/json",
-        ...(token && { Authorization: `Bearer ${token}` })
+        ...(sToken && { Authorization: `Bearer ${sToken}` })
     };
 
     // 3. Merge Config
-    const config = {
-        ...options,
+    const oConfig = {
+        ...oOptions,
         headers: {
-            ...defaultHeaders,
-            ...options.headers
+            ...oDefaultHeaders,
+            ...oOptions.headers
         }
     };
 
     try {
-        const response = await fetch(`${BASE_URL}${endpoint}`, config);
+        const oResponse = await fetch(`${BASE_URL}${sEndPointUrl}`, oConfig);
 
         // 4. Handle HTTP Errors (4xx, 5xx)
-        if (!response.ok) {
-            const errorBody = await response.json();
-            throw new Error(errorBody.message || "Something went wrong");
+        if (!oResponse.ok) {
+            const sErrorBody = await oResponse.json();
+            throw new Error(sErrorBody.message || "Something went wrong");
         }
 
         // 5. Return JSON
         // Check if response has content before parsing
-        const contentType = response.headers.get("content-type");
-        if (contentType && contentType.indexOf("application/json") !== -1) {
-            return await response.json();
+        const sContentType = oResponse.headers.get("content-type");
+        if (sContentType && sContentType.indexOf("application/json") !== -1) {
+            return await oResponse.json();
         }
+
         return null; // For 204 No Content
 
     } catch (error) {
@@ -46,4 +47,4 @@ const request = async (endpoint, options = {}) => {
     }
 };
 
-export default request;
+export default oRequest;

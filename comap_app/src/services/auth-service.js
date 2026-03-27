@@ -1,4 +1,4 @@
-import request from './api';
+import oRequest from './api';
 import {clearSession, setSession} from "./session";
 
 // --- 1. AUTHENTICATION API CALLS ---
@@ -8,7 +8,7 @@ import {clearSession, setSession} from "./session";
  * @param {Object} oUserData - { name, surname, email, password, etc. }
  */
 export const register = async (oUserData) => {
-    return await request('/auth/register', {
+    return await oRequest('/auth/register', {
         method: 'POST',
         body: JSON.stringify(oUserData)
     });
@@ -21,7 +21,7 @@ export const register = async (oUserData) => {
 
 
 export const confirmRegistration = async (oPayload) => {
-    return await request('/auth/confirm-registration', {
+    return await oRequest('/auth/confirm-registration', {
         method: 'POST',
         body: JSON.stringify(oPayload)
     });
@@ -32,7 +32,7 @@ export const confirmRegistration = async (oPayload) => {
  * @param {Object} oCredentials - { email, password }
  */
 export const login = async (oCredentials) => {
-    const response = await request('/auth/login', {
+    const response = await oRequest('/auth/login', {
         method: 'POST',
         body: JSON.stringify(oCredentials)
     });
@@ -50,7 +50,7 @@ export const login = async (oCredentials) => {
  * @param {String} sEmail
  */
 export const recoverPassword = async (sEmail) => {
-    return await request('/auth/recover-password', {
+    return await oRequest('/auth/recover-password', {
         method: 'POST',
         body: JSON.stringify({email: sEmail})
     });
@@ -61,7 +61,7 @@ export const recoverPassword = async (sEmail) => {
  * @param {Object} oPayload - { oldPassword, newPassword } OR { token, newPassword }
  */
 export const changePassword = async (oPayload) => {
-    return await request('/auth/change-password', {
+    return await oRequest('/auth/change-password', {
         method: 'POST',
         body: JSON.stringify(oPayload)
     });

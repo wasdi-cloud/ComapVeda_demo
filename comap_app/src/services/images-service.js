@@ -1,4 +1,4 @@
-import request from './api';
+import oRequest from './api';
 
 // --- IMAGE MANAGEMENT ---
 
@@ -10,7 +10,7 @@ export const searchImages = async (oQueryParams) => {
     // Convert the object into a URL query string (e.g., ?bbox=...&start_date=...)
     const queryString = new URLSearchParams(oQueryParams).toString();
 
-    return await request(`images/search?${queryString}`, {
+    return await oRequest(`images/search?${queryString}`, {
         method: 'GET'
     });
 };
@@ -20,7 +20,7 @@ export const searchImages = async (oQueryParams) => {
  * @param oImageImportPayload
  */
 export const importImage = async (oImageImportPayload) => {
-    return await request('images/import', {
+    return await oRequest('images/import', {
         method: 'POST',
         body: JSON.stringify(oImageImportPayload)
     });
@@ -30,7 +30,7 @@ export const importImage = async (oImageImportPayload) => {
  * @param {String} sImageId
  */
 export const get = async (sImageId) => {
-    return await request(`/images/${sImageId}`, {
+    return await oRequest(`/images/${sImageId}`, {
         method: 'GET'
     });
 };
@@ -41,7 +41,7 @@ export const get = async (sImageId) => {
  */
 export const getProjectImages = async (sProjectId) => {
     // Make sure the URL matches the prefix of your router!
-    return await request(`images/getListByProject/${sProjectId}`, {
+    return await oRequest(`images/getListByProject/${sProjectId}`, {
         method: 'GET'
     });
 };
@@ -51,7 +51,7 @@ export const getProjectImages = async (sProjectId) => {
  * @param {String} sImageId
  */
 export const remove = async (sImageId) => {
-    return await request(`/images/${sImageId}`, {
+    return await oRequest(`/images/${sImageId}`, {
         method: 'DELETE'
     });
 };
@@ -71,7 +71,7 @@ export const getTileUrl = (sImageId) => {
 
 export const seedDemoImages = async () => {
     // Assuming your endpoint is at /seed-demo-images
-    return await request(`seed-demo-images`, {
+    return await oRequest(`seed-demo-images`, {
         method: 'GET'
     });
 };

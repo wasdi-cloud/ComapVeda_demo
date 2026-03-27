@@ -1,4 +1,4 @@
-import request from './api';
+import oRequest from './api';
 
 // --- 1. TEMPLATE MANAGEMENT ---
 
@@ -6,7 +6,7 @@ import request from './api';
  * Get a list of all labelling templates
  */
 export const getLabelTemplates = async () => {
-    return await request('templates/getList', {
+    return await oRequest('templates/getList', {
         method: 'GET'
     });
 };
@@ -16,7 +16,7 @@ export const getLabelTemplates = async () => {
  * @param {String} sTemplateId
  */
 export const getLabelTemplateById = async (sTemplateId) => {
-    return await request(`templates/getById?template_id=${sTemplateId}`, {
+    return await oRequest(`templates/getById?template_id=${sTemplateId}`, {
         method: 'GET'
     });
 };
@@ -26,7 +26,7 @@ export const getLabelTemplateById = async (sTemplateId) => {
  * @param {String} sProjectId
  */
 export const getLabelTemplateByProject = async (sProjectId) => {
-    return await request(`templates/getByProject?project_id=${sProjectId}`, {
+    return await oRequest(`templates/getByProject?project_id=${sProjectId}`, {
         method: 'GET'
     });
 };
@@ -36,7 +36,7 @@ export const getLabelTemplateByProject = async (sProjectId) => {
  * @param {Object} oTemplateData - { name, description, geometryTypes, etc. }
  */
 export const createTemplate = async (oTemplateData) => {
-    return await request('templates/create', {
+    return await oRequest('templates/create', {
         method: 'POST',
         body: JSON.stringify(oTemplateData)
     });
@@ -48,7 +48,7 @@ export const createTemplate = async (oTemplateData) => {
  * @param {Object} oData
  */
 export const updateLabelTemplate = async (sTemplateId, oData) => {
-    return await request(`/label-templates/${sTemplateId}`, {
+    return await oRequest(`/label-templates/${sTemplateId}`, {
         method: 'PUT',
         body: JSON.stringify(oData)
     });
@@ -59,7 +59,7 @@ export const updateLabelTemplate = async (sTemplateId, oData) => {
  * @param {String} sTemplateId
  */
 export const removeLabelTemplate = async (sTemplateId) => { // 'delete' is a reserved word in JS, so we use 'remove'
-    return await request(`/label-templates/${sTemplateId}`, {
+    return await oRequest(`/label-templates/${sTemplateId}`, {
         method: 'DELETE'
     });
 };
@@ -72,7 +72,7 @@ export const removeLabelTemplate = async (sTemplateId) => { // 'delete' is a res
  * Useful for populating the dropdown in the creation UI
  */
 export const getAttributeTypes = async () => {
-    return await request('/label-templates/attribute-types', {
+    return await oRequest('/label-templates/attribute-types', {
         method: 'GET'
     });
 };
@@ -82,7 +82,7 @@ export const getAttributeTypes = async () => {
  * @param {String} sTemplateId
  */
 export const getAttributes = async (sTemplateId) => {
-    return await request(`/label-templates/${sTemplateId}/attributes`, {
+    return await oRequest(`/label-templates/${sTemplateId}/attributes`, {
         method: 'GET'
     });
 };
@@ -93,7 +93,7 @@ export const getAttributes = async (sTemplateId) => {
  * @param {Object} oAttributeData - { name, type, mandatory, options, etc. }
  */
 export const addAttribute = async (sTemplateId, oAttributeData) => {
-    return await request(`/label-templates/${sTemplateId}/attributes`, {
+    return await oRequest(`/label-templates/${sTemplateId}/attributes`, {
         method: 'POST',
         body: JSON.stringify(oAttributeData)
     });
@@ -106,7 +106,7 @@ export const addAttribute = async (sTemplateId, oAttributeData) => {
  * @param {Object} oData
  */
 export const updateAttribute = async (sTemplateId, sAttributeId, oData) => {
-    return await request(`/label-templates/${sTemplateId}/attributes/${sAttributeId}`, {
+    return await oRequest(`/label-templates/${sTemplateId}/attributes/${sAttributeId}`, {
         method: 'PUT',
         body: JSON.stringify(oData)
     });
@@ -118,7 +118,7 @@ export const updateAttribute = async (sTemplateId, sAttributeId, oData) => {
  * @param {String} sAttributeId
  */
 export const deleteAttribute = async (sTemplateId, sAttributeId) => {
-    return await request(`/label-templates/${sTemplateId}/attributes/${sAttributeId}`, {
+    return await oRequest(`/label-templates/${sTemplateId}/attributes/${sAttributeId}`, {
         method: 'DELETE'
     });
 };
