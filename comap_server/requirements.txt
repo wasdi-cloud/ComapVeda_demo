@@ -9,6 +9,7 @@ aiohttp~=3.9.0
 pyshp~=3.0.3
 email-validator
 argon2-cffi
+passlib
 
 rasterio~=1.4.3
 starlette~=0.50.0
