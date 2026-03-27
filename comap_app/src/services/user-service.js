@@ -1,13 +1,13 @@
-import request from './api';
+import oRequest from './api';
 
 export const getMyProfile = async () => {
-    return await request('users/me', {
+    return await oRequest('users/me', {
         method: 'GET'
     });
 };
 
 export const updateMyProfile = async (oData) => {
-    return await request('users/me', {
+    return await oRequest('users/me', {
         method: 'PUT',
         body: JSON.stringify(oData)
     });

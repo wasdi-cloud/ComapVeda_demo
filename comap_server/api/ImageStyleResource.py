@@ -5,6 +5,10 @@ from database import get_db
 from entities.ImageStyle import ImageStyleEntity
 # Import your Pydantic model
 from viewmodels.imagesStyle import ImageStyleItem
+from entities.User import User
+from utils.auth_utils import get_current_user
+from utils.auth_utils import canReadProject
+from utils.auth_utils import canWriteProject
 
 oRouter = APIRouter(prefix="/imagestyle")
 
@@ -13,13 +17,18 @@ oRouter = APIRouter(prefix="/imagestyle")
 @oRouter.post("/add")  
 async def add(
         oImageStyleData: ImageStyleItem,
-        oDB: Session = Depends(get_db)
+        oDB: Session = Depends(get_db),
+        oCurrentUser: User = Depends(get_current_user)
 ):
     """
     Add a new image style.
     Enforces One-to-One rule: If a style already exists for this project, it fails or updates.
     """
     try:
+        bCanWrite = canWriteProject(oCurrentUser, oImageStyleData.projectId, oDB)
+        if not bCanWrite:
+            raise HTTPException(status_code=403, detail="User does not have write access to this project")
+
         # 1. Check if style already exists for this project (One-to-One constraint)
         # We assume oImageStyleData has a 'projectId' field
         oExistingStyle = oDB.query(ImageStyleEntity).filter(
@@ -79,12 +88,17 @@ async def add(
 @oRouter.put("/update")
 async def update(
         oImageStyleData: ImageStyleItem,
-        oDB: Session = Depends(get_db)
+        oDB: Session = Depends(get_db),
+        oCurrentUser: User = Depends(get_current_user)
 ):
     """
     Update an existing image oStyle.
     """
     try:
+        bCanWrite = canWriteProject(oCurrentUser, oImageStyleData.projectId, oDB)
+        if not bCanWrite:
+            raise HTTPException(status_code=403, detail="User does not have write access to this project")
+
         # Find by ID (preferred) or ProjectID
         # oImageStyleData must have either imageStyleId or projectId
         oStyle = None
@@ -131,17 +145,23 @@ async def update(
 @oRouter.get("/get")
 async def get(
         sImageStyleId: str = Query(..., description="Unique identifier for the image oStyle"),
-        oDB: Session = Depends(get_db)
+        oDB: Session = Depends(get_db),
+        oCurrentUser: User = Depends(get_current_user)
 ):
     """
     Retrieve an existing image oStyle by its ID.
     Maps Flat DB columns -> Nested Frontend JSON.
     """
     try:
+        
         oStyle = oDB.query(ImageStyleEntity).filter(ImageStyleEntity.id == sImageStyleId).first()
 
         if not oStyle:
             raise HTTPException(status_code=404, detail="Image Style not found")
+        
+        bCanRead = canReadProject(oCurrentUser, oStyle.projectId, oDB)
+        if not bCanRead:
+            raise HTTPException(status_code=403, detail="User does not have access to this project")
 
         # Construct the nested response manually to match frontend expectations
         return {

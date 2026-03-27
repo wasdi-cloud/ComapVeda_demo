@@ -6,8 +6,7 @@ from entities.LabellingTemplate import LabellingTemplateEntity
 from viewmodels.templates.LabellingTemplateViewModel import LabellingTemplateViewModel
 from viewmodels.templates.TemplateListItem import TemplateListItem
 
-# --- NEW: Import our security dependency and User entity ---
-from utils.auth_utils import get_current_user
+from utils.auth_utils import canWriteTemplate, get_current_user
 from entities.User import User
 
 oRouter = APIRouter(prefix="/templates")
@@ -17,8 +16,7 @@ oRouter = APIRouter(prefix="/templates")
 async def create(
         oTemplateData: LabellingTemplateViewModel,
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
         oData = oTemplateData.model_dump()
@@ -26,7 +24,7 @@ async def create(
         oNewtemplate = LabellingTemplateEntity(
             name=oData['name'],
             # SECURITY UPGRADE: Ignore frontend 'creator', use actual logged-in user!
-            creator=current_user.email,
+            creator=oCurrentUser.email,
             description=oData['description'],
             creationDate=oData['creationDate'],
             hasPolygons=('polygon' in oData['geometryTypes']),
@@ -56,8 +54,7 @@ async def create(
 @oRouter.get("/getList", response_model=list[TemplateListItem])
 async def getList(
     oDB: Session = Depends(get_db),
-    # --- SECURE THIS ROUTE ---
-    current_user: User = Depends(get_current_user)
+    oCurrentUser: User = Depends(get_current_user)
 ):
     try:
         aoTemplates = oDB.query(LabellingTemplateEntity).all()
@@ -80,10 +77,13 @@ async def update(
         oTemplateData: LabellingTemplateViewModel,
         sTemplateId: str = Query(..., description="Unique identifier for the template"),
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
+        bCanWrite = canWriteTemplate(oCurrentUser, sTemplateId, oDB)
+        if not bCanWrite:
+            raise HTTPException(status_code=403, detail="User does not have write access to this template")
+
         oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.id == sTemplateId).first()
 
         if not oTemplate:
@@ -112,10 +112,13 @@ async def update(
 async def delete(
         sTemplateId: str = Query(..., description="Unique identifier for the template"),
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
+        bCanWrite = canWriteTemplate(oCurrentUser, sTemplateId, oDB)
+        if not bCanWrite:
+            raise HTTPException(status_code=403, detail="User does not have write access to this template")
+
         oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.id == sTemplateId).first()
 
         if not oTemplate:
@@ -138,8 +141,7 @@ async def delete(
 async def getByProject(
         project_id: str = Query(..., description="Unique identifier for the project"),
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
         oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.projectId == project_id).first()
@@ -157,8 +159,7 @@ async def getByProject(
 async def getAttributes(
         sTemplateId: str= Query(..., description="Unique identifier for the template"),
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
         oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.id == sTemplateId).first()
@@ -177,8 +178,7 @@ async def getAttributes(
 async def getByID(
         template_id: str = Query(..., description="Unique identifier for the template"),
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
         oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.id == template_id).first()

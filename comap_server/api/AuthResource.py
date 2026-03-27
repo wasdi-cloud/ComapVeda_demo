@@ -13,7 +13,7 @@ from viewmodels.auth.Registration import Registration
 oRouter = APIRouter(prefix="/auth")
 
 @oRouter.post("/register")
-async def register(oRegistration: Registration, db: DBSession = Depends(get_db)):
+async def register(oRegistration: Registration, oDatabase: DBSession = Depends(get_db)):
     """
     Register a new user with validated data.
     
@@ -23,102 +23,103 @@ async def register(oRegistration: Registration, db: DBSession = Depends(get_db))
     """
     try:
         # Check if user already exists
-        existing_user = db.query(User).filter(User.email == oRegistration.email).first()
-        if existing_user:
+        oExistingUser = oDatabase.query(User).filter(User.email == oRegistration.email).first()
+        if oExistingUser:
             raise HTTPException(status_code=400, detail="User with this email already exists")
         
         # Generate OTP for email confirmation
-        otp = generate_otp(6)
+        sOtp = generate_otp(6)
         
         # Hash the password
-        password_hash = hash_password(oRegistration.password)
+        sPasswordHash = hash_password(oRegistration.password)
         
         # Create new user
-        new_user = User(
+        oNewUser = User(
             email=oRegistration.email,
             name=oRegistration.name,
             surname=oRegistration.surname,
-            password_hash=password_hash,
+            password_hash=sPasswordHash,
             confirmed=False,
-            registration_otp=otp
+            registration_otp=sOtp
         )
         
         # Add to database
-        db.add(new_user)
-        db.commit()
-        db.refresh(new_user)
+        oDatabase.add(oNewUser)
+        oDatabase.commit()
+        oDatabase.refresh(oNewUser)
         
         # TODO: Send OTP via email
         # For now, we return it in the response for testing
         return {
             "message": "Registration successful. Please check your email for the OTP.",
             "email": oRegistration.email,
-            "otp": otp  # TODO: Remove this in production, send via email instead
+            "otp": sOtp  # TODO: Remove this in production, send via email instead
         }
         
     except HTTPException:
         raise
     except Exception as oE:
-        db.rollback()
+        oDatabase.rollback()
         raise HTTPException(status_code=500, detail=f'Error registering user: {str(oE)}')
     
 
 
 @oRouter.post("/confirmRegistration")
-async def confirmRegistration(oOtpModel: OtpModel, db: DBSession = Depends(get_db)):
+async def confirmRegistration(oOtpModel: OtpModel, oDatabase: DBSession = Depends(get_db)):
     """
     Confirm user registration using OTP and create initial session.
 
     :param oOtpModel: OTP model containing username (email) and OTP code
-    :param db: Database session
+    :param oDatabase: Database session
     :return: dict containing session token for authenticated access
     """
     try:
         # Find user by email (username)
-        user = db.query(User).filter(User.email == oOtpModel.email).first()
+        oUser = oDatabase.query(User).filter(User.email == oOtpModel.email).first()
         
-        if not user:
+        if not oUser:
             raise HTTPException(status_code=404, detail="User not found")
         
         # Check if user is already confirmed
-        if user.confirmed:
+        if oUser.confirmed:
             raise HTTPException(status_code=400, detail="User is already confirmed")
         
         # Verify OTP
-        if user.registration_otp != oOtpModel.otp_code:
-            raise HTTPException(status_code=400, detail="Invalid OTP code")
+        # Check Disabled until we do not implment the email sending.
+        #if oUser.registration_otp != oOtpModel.otp_code:
+        #   raise HTTPException(status_code=400, detail="Invalid OTP code")
         
         # Confirm user
-        user.confirmed = True
-        user.registration_otp = None  # Clear the OTP after successful confirmation
+        oUser.confirmed = True
+        oUser.registration_otp = None  # Clear the OTP after successful confirmation
         
         # Generate session token
-        session_token = generate_session_token(32)
+        sSessionToken = generate_session_token(32)
         
         # Create new session
-        new_session = Session(
-            token=session_token,
-            user_email=user.email
+        oNewSession = Session(
+            token=sSessionToken,
+            user_email=oUser.email
         )
         
-        db.add(new_session)
-        db.commit()
-        db.refresh(new_session)
+        oDatabase.add(oNewSession)
+        oDatabase.commit()
+        oDatabase.refresh(oNewSession)
         
         return {
             "message": "Registration confirmed successfully",
-            "email": user.email,
-            "name": user.name,
-            "surname": user.surname,
-            "role": user.role,
-            "session_token": session_token,
-            "expires_at": new_session.expires_at.isoformat()
+            "email": oUser.email,
+            "name": oUser.name,
+            "surname": oUser.surname,
+            "role": oUser.role,
+            "session_token": sSessionToken,
+            "expires_at": oNewSession.expires_at.isoformat()
         }
         
     except HTTPException:
         raise
     except Exception as oE:
-        db.rollback()
+        oDatabase.rollback()
         raise HTTPException(status_code=500, detail=f'Error confirming registration: {str(oE)}')
     
 
@@ -177,24 +178,24 @@ async def login(oLoginModel: LoginModel, oDatabase: DBSession = Depends(get_db))
     
 
 @oRouter.post("/logout")
-async def logout(x_session_token: str = Header(...), db: DBSession = Depends(get_db)):
+async def logout(x_session_token: str = Header(...), oDatabase: DBSession = Depends(get_db)):
     """
     Logout user by deleting their session.
 
     :param x_session_token: Session token from header
-    :param db: Database session
+    :param oDatabase: Database session
     :return: dict confirming successful logout
     """
     try:
         # Find session by token
-        session = db.query(Session).filter(Session.token == x_session_token).first()
+        oSession = oDatabase.query(Session).filter(Session.token == x_session_token).first()
         
-        if not session:
+        if not oSession:
             raise HTTPException(status_code=401, detail="Invalid or expired session token")
         
         # Delete the session
-        db.delete(session)
-        db.commit()
+        oDatabase.delete(oSession)
+        oDatabase.commit()
         
         return {
             "message": "Logout successful"
@@ -203,7 +204,7 @@ async def logout(x_session_token: str = Header(...), db: DBSession = Depends(get
     except HTTPException:
         raise
     except Exception as oE:
-        db.rollback()
+        oDatabase.rollback()
         raise HTTPException(status_code=500, detail=f'Error during logout: {str(oE)}')
     
 

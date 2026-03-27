@@ -1,24 +1,24 @@
-import request from './api';
+import oRequest from './api';
 
 
 
 // 1. GET PUBLIC PROJECTS
 export const getPublicProjects = async () => {
-    return await request('projects/getPublic', { method: 'GET' });
+    return await oRequest('projects/getPublic', { method: 'GET' });
 };
 // 1. GET PROJECT BY ID
 export const getProject = async ( sProjectId) => {
-    return await request(`projects/getProject?project_id=${sProjectId}`, { method: 'GET' });
+    return await oRequest(`projects/getProject?project_id=${sProjectId}`, { method: 'GET' });
 };
 
 // 2. GET PROJECTS BY USER
 export const getProjectsByUser = async (userId) => {
-    return await request(`projects/getByUser?user_id=${userId}`, { method: 'GET' });
+    return await oRequest(`projects/getByUser?user_id=${userId}`, { method: 'GET' });
 };
 
 // 3. CREATE PROJECT
 export const createProject = async (projectData) => {
-    return await request('projects/create', {
+    return await oRequest('projects/create', {
         method: 'POST',
         body: JSON.stringify(projectData)
     });
@@ -32,7 +32,7 @@ export const approveProject = async (projectId, maxStorage) => {
         maxStorage: maxStorage // Sending it as query param
     });
 
-    return await request(`projects/approve?${params.toString()}`, {
+    return await oRequest(`projects/approve?${params.toString()}`, {
         method: 'GET' // Changed to GET to match server
     });
 };
@@ -45,27 +45,27 @@ export const rejectProject = async (projectId, note) => {
         note: note || "" // <-- ADD THE NOTE HERE!
     });
 
-    return await request(`projects/reject?${params.toString()}`, {
+    return await oRequest(`projects/reject?${params.toString()}`, {
         method: 'GET'
     });
 };
 // 6. INVITE COLLAB (Admin)
 export const inviteCollab = async (projectId, note) => {
-    return await request(`/projects/${projectId}/reject`, {
+    return await oRequest(`/projects/${projectId}/reject`, {
         method: 'POST',
         body: JSON.stringify({ note })
     });
 };
 // 7. REJECT PROJECT (Admin)
 export const removeCollab = async (projectId, note) => {
-    return await request(`/projects/${projectId}/reject`, {
+    return await oRequest(`/projects/${projectId}/reject`, {
         method: 'POST',
         body: JSON.stringify({ note })
     });
 };
 // 8. Export Project
 export const exportProject = async (projectId, note) => {
-    return await request(`/projects/${projectId}/reject`, {
+    return await oRequest(`/projects/${projectId}/reject`, {
         method: 'POST',
         body: JSON.stringify({ note })
     });
@@ -73,7 +73,7 @@ export const exportProject = async (projectId, note) => {
 
 export const updateProject = async (projectId, projectData) => {
     // Notice how we pass project_id in the URL to match the Python Query parameter
-    return await request(`projects/update?project_id=${projectId}`, {
+    return await oRequest(`projects/update?project_id=${projectId}`, {
         method: 'PUT',
         body: JSON.stringify(projectData)
     });
@@ -82,13 +82,13 @@ export const updateProject = async (projectId, projectData) => {
 
 // Add this to project-service.js
 export const getProjectRequests = async () => {
-    return await request('projects/getRequests', { method: 'GET' });
+    return await oRequest('projects/getRequests', { method: 'GET' });
 };
 
 
 // --- NEW: DELETE PROJECT ---
 export const deleteProject = async (projectId) => {
-    return await request(`projects/delete?project_id=${projectId}`, {
+    return await oRequest(`projects/delete?project_id=${projectId}`, {
         method: 'DELETE'
     });
 };
@@ -96,7 +96,7 @@ export const deleteProject = async (projectId) => {
 // --- NEW: LEAVE PROJECT ---
 export const leaveProject = async (projectId, userId) => {
     // Ideally this uses the logged in session token, but we pass ID for testing
-    return await request(`projects/leave?project_id=${projectId}&user_id=${userId}`, {
+    return await oRequest(`projects/leave?project_id=${projectId}&user_id=${userId}`, {
         method: 'POST'
     });
 };

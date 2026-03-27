@@ -9,9 +9,10 @@ from database import get_db
 from entities.Label import LabelEntity
 from viewmodels.labels.LabelItem import LabelItem
 
-# --- NEW: Import security dependencies ---
 from entities.User import User
 from utils.auth_utils import get_current_user
+from utils.auth_utils import canReadProject
+from utils.auth_utils import canWriteProject
 
 oRouter = APIRouter(prefix="/labels")
 
@@ -22,8 +23,7 @@ async def getByImage(
         project_id: str = Query(..., description="Unique identifier for the project"),
         sImageName: str = Query(..., description="Unique identifier for the image (used as datasetImageId)"),
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
         aoLabels = oDB.query(
@@ -58,8 +58,7 @@ async def getByImage(
 async def addLabel(
         oLabelData: LabelItem,
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
         aoGeojson = {
@@ -77,7 +76,7 @@ async def addLabel(
             isPoint=(oLabelData.geometryType.lower() == "point"),
 
             # SECURITY INJECTION: Use the authenticated user's email
-            creatorId=current_user.email
+            creatorId=oCurrentUser.email
         )
 
         oDB.add(oNewLabel)
@@ -96,8 +95,7 @@ async def addLabel(
 async def editLabel(
         oLabelData: LabelItem,
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
         oLabel = oDB.query(LabelEntity).filter(LabelEntity.id == oLabelData.labelId).first()
@@ -129,8 +127,7 @@ async def editLabel(
 async def deleteLabel(
         sLabelId: str = Query(...),
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
         oLabel = oDB.query(LabelEntity).filter(LabelEntity.id == sLabelId).first()
@@ -152,8 +149,7 @@ async def deleteLabel(
 async def approveLabel(
         sLabelId: str = Query(...),
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
         oLabel = oDB.query(LabelEntity).filter(LabelEntity.id == sLabelId).first()
@@ -172,8 +168,7 @@ async def approveLabel(
 async def rejectLabel(
         sLabelId: str = Query(...),
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
         OLabel = oDB.query(LabelEntity).filter(LabelEntity.id == sLabelId).first()
@@ -192,8 +187,7 @@ async def syncLabels(
         image_id: str = Query(..., description="The ID of the image being annotated"),
         aoLabels: list[LabelItem] = Body(...),
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
         # 1. Clear existing labels for this specific image
@@ -221,7 +215,7 @@ async def syncLabels(
                 isPoint=(oLabelData.geometryType.lower() == "point"),
 
                 # SECURITY INJECTION: Use the authenticated user's email
-                creatorId=current_user.email
+                creatorId=oCurrentUser.email
             )
             oDB.add(oNewLabel)
 

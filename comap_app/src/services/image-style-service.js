@@ -1,4 +1,4 @@
-import request from './api';
+import oRequest from './api';
 
 // --- IMAGE STYLING MANAGEMENT ---
 
@@ -11,7 +11,7 @@ import request from './api';
  * @param {String} sImageId
  */
 export const get = async (sImageId) => {
-    return await request(`/images/${sImageId}/style`, {
+    return await oRequest(`/images/${sImageId}/style`, {
         method: 'GET'
     });
 };
@@ -23,7 +23,7 @@ export const get = async (sImageId) => {
  * @param {Object} oStyleData - { renderType, bands, effects, histogram }
  */
 export const add = async (sImageId, oStyleData) => {
-    return await request(`/images/${sImageId}/style`, {
+    return await oRequest(`/images/${sImageId}/style`, {
         method: 'POST',
         body: JSON.stringify(oStyleData)
     });
@@ -35,7 +35,7 @@ export const add = async (sImageId, oStyleData) => {
  * @param {Object} oStyleData
  */
 export const update = async (sImageId, oStyleData) => {
-    return await request(`/images/${sImageId}/style`, {
+    return await oRequest(`/images/${sImageId}/style`, {
         method: 'PUT',
         body: JSON.stringify(oStyleData)
     });

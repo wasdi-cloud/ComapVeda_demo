@@ -2,7 +2,7 @@
 Database initialization script.
 Run this to create all tables in the database.
 """
-from database import engine, Base
+from database import engine, Base, ensure_legacy_schema_compatibility
 from entities.User import User
 from entities.Session import Session
 # Import other entities as they are created
@@ -15,6 +15,7 @@ def init_db():
     """Create all tables in the database."""
     print("Creating database tables...")
     Base.metadata.create_all(bind=engine)
+    ensure_legacy_schema_compatibility()
     print("Database tables created successfully!")
 
 

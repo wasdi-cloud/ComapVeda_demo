@@ -13,18 +13,18 @@ from entities.Session import Session
 
 async def get_current_user(
     x_session_token: str = Header(..., description="Session token for authentication"),
-    db: DBSession = Depends(get_db)
+    oDatabase: DBSession = Depends(get_db)
 ) -> User:
     """
     Dependency to validate session token and return the authenticated user.
     
     :param x_session_token: Session token from X-Session-Token header
-    :param db: Database session
+    :param oDatabase: Database session
     :return: Authenticated User object
     :raises HTTPException: If session is invalid, expired, or user not found
     """
     # Find session by token
-    session = db.query(Session).filter(Session.token == x_session_token).first()
+    session = oDatabase.query(Session).filter(Session.token == x_session_token).first()
     
     if not session:
         raise HTTPException(status_code=401, detail="Invalid session token")
@@ -32,17 +32,17 @@ async def get_current_user(
     # Check if session is expired
     if session.is_expired():
         # Delete expired session
-        db.delete(session)
-        db.commit()
+        oDatabase.delete(session)
+        oDatabase.commit()
         raise HTTPException(status_code=401, detail="Session expired. Please login again.")
     
     # Get user associated with session
-    user = db.query(User).filter(User.email == session.user_email).first()
+    user = oDatabase.query(User).filter(User.email == session.user_email).first()
     
     if not user:
         # Session exists but user doesn't (shouldn't happen with FK constraint)
-        db.delete(session)
-        db.commit()
+        oDatabase.delete(session)
+        oDatabase.commit()
         raise HTTPException(status_code=401, detail="User not found")
     
     if not user.confirmed:
@@ -50,7 +50,7 @@ async def get_current_user(
     
     # Update last activity
     session.update_activity()
-    db.commit()
+    oDatabase.commit()
     
     return user
 

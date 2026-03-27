@@ -1,30 +1,24 @@
-import request from './api';
+import oRequest from './api';
 import { clearSession, setSession } from "./session";
 
 // --- 1. AUTHENTICATION API CALLS ---
 
 export const register = async (oUserData) => {
-    return await request('auth/register', {
+    return await oRequest('/auth/register', {
         method: 'POST',
         body: JSON.stringify(oUserData)
     });
 };
 
 export const confirmRegistration = async (oPayload) => {
-    const response = await request('auth/confirmRegistration', {
+    return await oRequest('/auth/confirmRegistration', {
         method: 'POST',
         body: JSON.stringify(oPayload)
     });
-
-    // Auto-login if backend provides the token!
-    if (response && response.session_token) {
-        setSession(response.session_token, response);
-    }
-    return response;
 };
 
 export const login = async (oCredentials) => {
-    const response = await request('auth/login', {
+    const response = await oRequest('/auth/login', {
         method: 'POST',
         body: JSON.stringify(oCredentials)
     });
@@ -37,14 +31,14 @@ export const login = async (oCredentials) => {
 };
 
 export const recoverPassword = async (sEmail) => {
-    return await request('auth/recoverPassword', {
+    return await oRequest('/auth/recover-password', {
         method: 'POST',
         body: JSON.stringify({ email: sEmail })
     });
 };
 
 export const changePassword = async (oPayload) => {
-    return await request('auth/changePassword', {
+    return await oRequest('/auth/change-password', {
         method: 'POST',
         body: JSON.stringify(oPayload)
     });
@@ -52,7 +46,7 @@ export const changePassword = async (oPayload) => {
 
 export const logout = async () => {
     try {
-        await request('auth/logout', { method: 'POST' });
+        await oRequest('auth/logout', { method: 'POST' });
     } catch (e) {
         console.error("Logout API failed, clearing local session anyway.");
     }

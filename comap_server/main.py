@@ -19,7 +19,7 @@ from api.ProjectResource import oRouter as oProjectRouter
 from api.TemplateResource import oRouter as oTemplateRouter
 from api.DatasetPathParams import DatasetPathParams
 from dataproviders.copernicus_dataspace.Sentinel2ZipReader import Sentinel2ZipReader
-from database import Base, engine
+from database import Base, engine, ensure_legacy_schema_compatibility
 from database import get_db
 from entities.DatasetImage import DatasetImageEntity
 from entities.DatasetProject import DatasetProjectEntity
@@ -31,6 +31,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 print("Building database tables...")
 Base.metadata.create_all(bind=engine)
+ensure_legacy_schema_compatibility()
 
 # Configure root_path for reverse proxy with path prefix stripping
 # Traefik strips /api, but we need FastAPI to know it's behind /api for docs

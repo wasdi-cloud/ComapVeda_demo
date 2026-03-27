@@ -24,33 +24,33 @@ class UserProfileUpdate(BaseModel):
 
 # --- 1. GET MY PROFILE ---
 @oRouter.get("/me", response_model=UserProfileResponse)
-async def get_my_profile(current_user: User = Depends(get_current_user)):
+async def get_my_profile(oCurrentUser: User = Depends(get_current_user)):
     """
     Returns the profile information of the currently logged-in user.
     """
     # current_user is already fetched from the DB by the dependency!
-    return current_user
+    return oCurrentUser
 
 
 # --- 2. UPDATE MY PROFILE ---
 @oRouter.put("/me", response_model=UserProfileResponse)
 async def update_my_profile(
         update_data: UserProfileUpdate,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+        oDatabase: Session = Depends(get_db),
+        oCurrentUser: User = Depends(get_current_user)
 ):
     """
     Updates the name and surname of the currently logged-in user.
     """
     try:
         # Update the entity
-        current_user.name = update_data.name
-        current_user.surname = update_data.surname
+        oCurrentUser.name = update_data.name
+        oCurrentUser.surname = update_data.surname
 
-        db.commit()
-        db.refresh(current_user)
+        oDatabase.commit()
+        oDatabase.refresh(oCurrentUser)
 
-        return current_user
+        return oCurrentUser
     except Exception as e:
-        db.rollback()
+        oDatabase.rollback()
         raise HTTPException(status_code=500, detail=f"Error updating profile: {str(e)}")

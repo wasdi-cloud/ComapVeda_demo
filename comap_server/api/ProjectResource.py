@@ -6,12 +6,16 @@ from database import get_db
 from entities.DatasetProject import DatasetProjectEntity
 from entities.ImageStyle import ImageStyleEntity
 from entities.User import User
-# --- IMPORT SECURITY DEPENDENCY ---
 from utils.auth_utils import get_current_user
 from viewmodels.projects.ProjectListItem import ProjectPublic, AOI
 from viewmodels.projects.ProjectPropertiesViewModel import ProjectPropertiesViewModel
 from viewmodels.projects.ProjectRequest import ProjectRequestViewModel
 from viewmodels.projects.ProjectViewModel import ProjectViewModel
+from utils.auth_utils import canReadProject
+from utils.auth_utils import canWriteProject
+from utils.auth_utils import isProjectOwner
+
+
 
 oRouter = APIRouter(prefix="/projects")
 
@@ -21,8 +25,7 @@ oRouter = APIRouter(prefix="/projects")
 async def create(
         oProjectData: ProjectViewModel,
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     """
     Create a new project. Automatically adds the current user as the primary owner.
@@ -52,7 +55,7 @@ async def create(
             "template_id": oData.get("labellingTemplate"),
 
             # SECURITY INJECTION: The logged-in user is automatically the owner
-            "owners": [current_user.email]
+            "owners": [oCurrentUser.email]
         }
 
         oNewProject = DatasetProjectEntity(**oProject)
@@ -114,8 +117,7 @@ async def getPublic(oDB: Session = Depends(get_db)):
 @oRouter.get("/getByUser", response_model=list[ProjectPublic])
 async def getByUser(
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
         # Currently fetches all approved projects.
@@ -127,9 +129,9 @@ async def getByUser(
 
             # Basic logic to determine user role based on their actual email
             role = "ANNOTATOR"
-            if oProject.owners and current_user.email in oProject.owners:
+            if oProject.owners and oCurrentUser.email in oProject.owners:
                 role = "OWNER"
-            elif oProject.reviewers and current_user.email in oProject.reviewers:
+            elif oProject.reviewers and oCurrentUser.email in oProject.reviewers:
                 role = "REVIEWER"
 
             owners_list = oProject.owners if oProject.owners else []
@@ -157,15 +159,16 @@ async def getByUser(
 async def delete_project(
         project_id: str = Query(...),
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
         oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
         if not oProject:
             raise HTTPException(status_code=404, detail="Project not found")
 
-        # TODO: Verify current_user.email is in oProject.owners before deleting
+        bIsOwner = isProjectOwner(oCurrentUser, oProject, oDB)
+        if not bIsOwner:
+            raise HTTPException(status_code=403, detail="Only project owners can delete the project")
 
         oDB.delete(oProject)
         oDB.commit()
@@ -185,10 +188,10 @@ async def delete_project(
 async def leave_project(
         project_id: str = Query(...),
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
+
         oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
         if not oProject:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -197,7 +200,7 @@ async def leave_project(
         # if current_user.email in oProject.annotators: oProject.annotators.remove(current_user.email)
 
         oDB.commit()
-        return {"status": "success", "message": f"User {current_user.email} dropped from collaborators"}
+        return {"status": "success", "message": f"User {oCurrentUser.email} dropped from collaborators"}
     except HTTPException:
         raise
     except Exception as oE:
@@ -210,10 +213,13 @@ async def leave_project(
 async def getProject(
         project_id: str = Query(..., description="The unique identifier of the project"),
         oDB: Session = Depends(get_db),
-        # --- SECURE THIS ROUTE ---
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
+        bCanRead = canReadProject(oCurrentUser, project_id, oDB)
+        if not bCanRead:
+            raise HTTPException(status_code=403, detail="User does not have access to this project")
+
         oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
 
         if not oProject:
@@ -261,12 +267,15 @@ async def reject(
         project_id: str = Query(...),
         note: str = Query(None, description="Reason for rejection"),
         oDB: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
         oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
         if not oProject:
             raise HTTPException(status_code=404, detail="Project not found")
+
+        if oCurrentUser.role != "ADMIN":
+            raise HTTPException(status_code=403, detail="Only admins can reject the project")
 
         oProject.rejected = True
         oProject.approved = False
@@ -286,9 +295,13 @@ async def approve(
         project_id: str = Query(...),
         maxStorage: int = Query(None, description="Max storage in GB"),
         oDB: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
+
+        if oCurrentUser.role != "ADMIN":
+            raise HTTPException(status_code=403, detail="Only admins can approve the project")
+        
         oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
         if not oProject:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -311,9 +324,14 @@ async def updateProject(
         project_id: str = Query(..., description="The unique identifier of the project"),
         oProjectPropertiesData: ProjectPropertiesViewModel = ...,
         oDB: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
+
+        bCanWrite = canWriteProject(oCurrentUser, project_id, oDB)
+        if not bCanWrite:
+            raise HTTPException(status_code=403, detail="User does not have write access to this project")
+
         oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
 
         if not oProject:
@@ -339,9 +357,13 @@ async def updateProject(
 @oRouter.get("/getRequests", response_model=list[ProjectRequestViewModel])
 async def getRequests(
         oDB: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
+        
+        if oCurrentUser.role != "ADMIN":
+            raise HTTPException(status_code=403, detail="Only admins can view project requests")
+        
         aoProjects = oDB.query(DatasetProjectEntity).order_by(desc(DatasetProjectEntity.creationDate)).all()
 
         oResult = []

@@ -12,7 +12,10 @@ from viewmodels.images.SearchResultItem import SearchResultItem
 from entities.DatasetImage import DatasetImageEntity
 from viewmodels.images.ProjectImageItem import ProjectImageResponse
 from viewmodels.images.ImageImport import ImageImport
-
+from entities.User import User
+from utils.auth_utils import get_current_user
+from utils.auth_utils import canReadProject
+from utils.auth_utils import canWriteProject
 
 oRouter = APIRouter(prefix="/images")
 
@@ -24,7 +27,8 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
                  end_date: str = Query(..., description="End date with YYYY-MM-DD format"),
                  platform: str = Query(None, description="Satellite platform to search for"),
                  product_level: str = Query(None, description="Product level to search for"),
-                 max_cloud_cover: float = Query(0.0, description="Maximum cloud cover percentage")):
+                 max_cloud_cover: float = Query(0.0, description="Maximum cloud cover percentage"),
+                 oCurrentUser: User = Depends(get_current_user)):
     """
     Search images
 
@@ -37,8 +41,6 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
     :return: dict containing list of image IDs matching the search criteria
     """
     try:
-
-        # TODO: here we probably miss all the checks about user permissions.
 
         # check the inputs 
         if not bbox or not start_date or not end_date or not platform or not product_level:
@@ -82,7 +84,10 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
 
 
 @oRouter.post("/import")
-async def import_image(oImageImport: ImageImport, oDB: Session = Depends(get_db), response_model=ImageImport):
+async def import_image(oImageImport: ImageImport, 
+                       oDB: Session = Depends(get_db), 
+                       response_model=ImageImport,
+                       oCurrentUser: User = Depends(get_current_user)):
     """
     Import an image by its unique name.
 
@@ -91,12 +96,10 @@ async def import_image(oImageImport: ImageImport, oDB: Session = Depends(get_db)
     """
     try:
 
-        # TODO: verify that the project ID exists and that the user has permissions to add images to it
-        """
-        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == oImageImport.projectId).first()
-        if not oProject:
-            raise HTTPException(status_code=404, detail=f'Project with ID {oImageImport.projectId} not found')
-        """
+        bCanWrite = canWriteProject(oCurrentUser, oImageImport.projectId, oDB)
+        if not bCanWrite:
+            raise HTTPException(status_code=403, detail="User does not have write access to this project")
+
         oQueryExecutor = QueryExecutorCopernicusDataspace()
 
         # Schedule async task to run in background without blocking response
@@ -117,11 +120,16 @@ async def import_image(oImageImport: ImageImport, oDB: Session = Depends(get_db)
 
 
 @oRouter.get("/getListByProject/{project_id}", response_model=list[ProjectImageResponse])
-async def getListByProject(project_id: str, oDB: Session = Depends(get_db)):
+async def getListByProject(project_id: str, oDB: Session = Depends(get_db),
+                           oCurrentUser: User = Depends(get_current_user)):
     """
     Fetch all images associated with a specific project ID for the Editor.
     """
     try:
+        bCanRead = canReadProject(oCurrentUser, project_id, oDB)
+        if not bCanRead:
+            raise HTTPException(status_code=403, detail="User does not have access to this project")
+
         aoImages = oDB.query(DatasetImageEntity).filter(DatasetImageEntity.projectId == project_id).all()
 
         oResult = []
@@ -180,9 +188,11 @@ async def getListByProject(project_id: str, oDB: Session = Depends(get_db)):
 #
 
 # TODO: not sure what does it mean
+# NOTE: Probably not needed, is directly titler that provides images.
 @oRouter.get("/get")
 async def get(image_id: str = Query(..., description="Unique identifier for the image to retrieve"),
-              project_id: str = Query(..., description="Project ID associated with the image")):
+              project_id: str = Query(..., description="Project ID associated with the image"),
+              oCurrentUser: User = Depends(get_current_user), oDB: Session = Depends(get_db)):
     """
     Retrieve details of a specific image.
 
@@ -191,7 +201,10 @@ async def get(image_id: str = Query(..., description="Unique identifier for the 
     :return: dict containing image details
     """
     try:
-        # todo
+        bCanRead = canReadProject(oCurrentUser, project_id, oDB)
+        if not bCanRead:
+            raise HTTPException(status_code=403, detail="User does not have access to this project")
+
         i = 0
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error retrieving image: {str(oE)}')
@@ -199,7 +212,8 @@ async def get(image_id: str = Query(..., description="Unique identifier for the 
 
 @oRouter.delete("/remove")
 async def delete(image_title: str = Query(..., description="Unique identifier for the image to delete"),
-                 project_id: str = Query(..., description="Project ID associated with the image")):
+                 project_id: str = Query(..., description="Project ID associated with the image"),
+                 oCurrentUser: User = Depends(get_current_user), oDB: Session = Depends(get_db)):
     """
     Delete a specific image from the project
 
@@ -208,6 +222,10 @@ async def delete(image_title: str = Query(..., description="Unique identifier fo
     :return: dict confirming deletion of the image
     """
     try:
+        bCanWrite = canWriteProject(oCurrentUser, project_id, oDB)
+        if not bCanWrite:
+            raise HTTPException(status_code=403, detail="User does not have write access to this project")
+
         # todo
         return {
             "imageTitle": image_title

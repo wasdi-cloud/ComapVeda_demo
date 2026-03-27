@@ -1,4 +1,4 @@
-import request from './api';
+import oRequest from './api';
 
 // --- LABEL MANAGEMENT ---
 
@@ -7,7 +7,7 @@ import request from './api';
  * @param {String} sImageId
  */
 export const getByImage = async (sImageId) => {
-    return await request(`/images/${sImageId}/labels`, {
+    return await oRequest(`/images/${sImageId}/labels`, {
         method: 'GET'
     });
 };
@@ -17,7 +17,7 @@ export const getByImage = async (sImageId) => {
  * @param {Object} oLabelData - { imageId, geometry, attributes, classId, etc. }
  */
 export const add = async (oLabelData) => {
-    return await request('/labels', {
+    return await oRequest('/labels', {
         method: 'POST',
         body: JSON.stringify(oLabelData)
     });
@@ -29,7 +29,7 @@ export const add = async (oLabelData) => {
  * @param {Object} oData - Fields to update
  */
 export const edit = async (sLabelId, oData) => {
-    return await request(`/labels/${sLabelId}`, {
+    return await oRequest(`/labels/${sLabelId}`, {
         method: 'PUT',
         body: JSON.stringify(oData)
     });
@@ -40,7 +40,7 @@ export const edit = async (sLabelId, oData) => {
  * @param {String} sLabelId
  */
 export const remove = async (sLabelId) => {
-    return await request(`/labels/${sLabelId}`, {
+    return await oRequest(`/labels/${sLabelId}`, {
         method: 'DELETE'
     });
 };
@@ -52,7 +52,7 @@ export const remove = async (sLabelId) => {
  * @param {String} sLabelId
  */
 export const approve = async (sLabelId) => {
-    return await request(`/labels/${sLabelId}/approve`, {
+    return await oRequest(`/labels/${sLabelId}/approve`, {
         method: 'POST'
     });
 };
@@ -63,7 +63,7 @@ export const approve = async (sLabelId) => {
  * @param {String} sReason - Optional reason for rejection
  */
 export const reject = async (sLabelId, sReason = "") => {
-    return await request(`/labels/${sLabelId}/reject`, {
+    return await oRequest(`/labels/${sLabelId}/reject`, {
         method: 'POST',
         body: JSON.stringify({ reason: sReason })
     });
@@ -72,14 +72,14 @@ export const reject = async (sLabelId, sReason = "") => {
 
 // GET labels for an image
 export const getLabelsByImage = async (projectId, imageId) => {
-    return await request(`labels/getByImage?project_id=${projectId}&sImageName=${imageId}`, {
+    return await oRequest(`labels/getByImage?project_id=${projectId}&sImageName=${imageId}`, {
         method: 'GET'
     });
 };
 
 // SYNC (Save) all labels for an image
 export const syncLabels = async (imageId, labelsArray) => {
-    return await request(`labels/sync?image_id=${imageId}`, {
+    return await oRequest(`labels/sync?image_id=${imageId}`, {
         method: 'POST',
         body: JSON.stringify(labelsArray)
     });
