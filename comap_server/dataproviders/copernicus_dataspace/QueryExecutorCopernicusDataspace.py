@@ -102,12 +102,9 @@ class QueryExecutorCopernicusDataspace:
                 sTitle = oItem.get("Name", "")
                 sDownloadLink = "https://download.dataspace.copernicus.eu/odata/v1/Products(" + oItem.get("Id", "") + ")/$value"
                 sFootprint = self._getAttr(oItem, "coordinates")
-                if not sFootprint:
-                    logging.debug(f"QueryExecutorCopernicusDataspace.parseODataResponse: No footprint found for item {sId}. Trying to recover it from another attribute")
-                    sFootprint = oItem.get("Footprint", "")
-                    if sFootprint.startswith("geography'SRID=4326;POLYGON"):
-                        sFootprint = sFootprint[len("geography'SRID=4326;"):-1]  # Remove the prefix and the trailing quote
-                        logging.debug(f"QueryExecutorCopernicusDataspace.parseODataResponse: Recovered footprint for item {sId} from 'Footprint' attribute.")
+                sFootprint = oItem.get("Footprint", "")
+                if sFootprint.startswith("geography'SRID=4326;POLYGON"):
+                    sFootprint = sFootprint[len("geography'SRID=4326;"):-1]  # Remove the prefix and the trailing quote
                 sDate = oItem.get("ContentDate", {}).get("Start", "")
                 sStartDate = oItem.get("ContentDate", {}).get("Start", "")
                 sEndDate = oItem.get("ContentDate", {}).get("End", "")
@@ -178,31 +175,6 @@ class QueryExecutorCopernicusDataspace:
             logging.error(f"QueryExecutorCopernicusDataspace.searchProductDetails.Error: An error occurred while fetching product details for product ID {sProductId}: {str(oE)}")
         
         return None
-    
-
-    async def runImportTask(self, sProductId: str, sProjectId: str):
-        oDbSession = SessionLocal()
-        try:
-            logging.debug(f"runImportTask: Inizio importazione. In realta' dormiro' per 10 secondi per simulare un processo di importazione lungo...")
-            await asyncio.sleep(10)
-            logging.debug(f"runImportTask: Importazione completata. Ora invio messaggio di completamento ai client connessi al progetto {sProjectId}...")
-            await oWsManager.broadcastToProject(sProjectId, {
-                "type": "import_completed",
-                "productId": sProductId,
-                "message": f"Image {sProductId} successfully imported!",
-                "messageType": "success"
-            })
-            
-        except Exception as oE:
-            logging.error(f"runImportTask.Error: An error occurred during the import task for product ID {sProductId} and project ID {sProjectId}: {str(oE)}")
-            await oWsManager.broadcastToProject(sProjectId, {
-                "type": "import_failed",
-                "productId": sProductId,
-                "message": f"Failed to import image {sProductId}: {str(oE)}",
-                "messageType": "error"
-            })
-        finally:
-            oDbSession.close()
 
 
     async def downloadProduct(self, sProductName: str, sDownloadLink: str, sPlatform: str, sProjectId: str):
@@ -213,8 +185,6 @@ class QueryExecutorCopernicusDataspace:
         :param sPlatform: The platform of the product (e.g., "SENTINEL-2").
         :param sProjectId: The ID of the CoMap project to which this product has to be stored.
         """
-
-        oDB = SessionLocal()
 
         if sProjectId is None or sProjectId == "":
             logging.error("QueryExecutorCopernicusDataspace.downloadProduct.Error: Project ID is missing. Cannot download product.")
@@ -258,7 +228,8 @@ class QueryExecutorCopernicusDataspace:
         if os.path.exists(oFullFilePath):
             logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct: File '{oFullFilePath}' already exists. Skipping download.")
             return str(oFullFilePath)
-        
+        oDB = None
+
         try:
             oTimeout = ClientTimeout(total=1800)  # 30 minutes timeout for large downloads
             async with aiohttp.ClientSession(headers=self.oCopernicusAuth.getHeader(), timeout=oTimeout) as session:
@@ -284,7 +255,7 @@ class QueryExecutorCopernicusDataspace:
             if str(sDownloadedFilePath) is None:
                 raise HTTPException(status_code=500, detail=f'Failed to download image from {sDownloadLink}')
         
-            logging.debug(f"ImageResource.import_image: Image downloaded successfully to {sDownloadedFilePath}")
+            logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct: Image downloaded successfully to {sDownloadedFilePath}")
 
             # with the product Id, we query again Copernicus Dataspace to get the metadata of the product, in order to extract the bbox and the date
             oJsonMetadataData = self.searchProductDetails(sProductId)
@@ -302,12 +273,12 @@ class QueryExecutorCopernicusDataspace:
                 bbox=sFootprint,
                 date=int(oNow.timestamp() * 1000)
             )
-        
+            oDB = SessionLocal()
             oDB.add(oDatasetImage)
             oDB.commit()
             oDB.refresh(oDatasetImage)
         
-            logging.debug(f"ImageResource.import_image: Image stored in database with ID: {oDatasetImage.id}")
+            logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct: Image stored in database with ID: {oDatasetImage.id}")
 
             await oWsManager.broadcastToProject(sProjectId, {
                 "type": "import_completed",
@@ -325,19 +296,5 @@ class QueryExecutorCopernicusDataspace:
                 "messageType": "error"
             })
         finally:
-            oDB.close()
-
-
-
-if __name__ == "__main__":
-    oQuery = SearchQueryParameters(
-        sPlatform = "SENTINEL-2",
-        sStartDate = "2026-02-11T00:00:00.000Z",
-        sEndDate = "2026-03-11T23:59:59.999Z",
-        sBoundingBox = "POLYGON ((12.401 45.19, 12.596 45.19, 12.596 45.542, 12.401 45.542, 12.401 45.19))",
-        sProductLevel = "L1C",
-        fCloudCover = "20"
-    )
-
-    oExecutor = QueryExecutorCopernicusDataspace()
-    oExecutor.executeQuery(oQuery)
+            if oDB is not None:
+                oDB.close()
