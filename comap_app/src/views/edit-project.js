@@ -738,6 +738,7 @@ const EditProject = () => {
 
                             sCurrentDrawColor={sDrawingColor}
                             sInitialMapStyle="mapbox://styles/mapbox/satellite-v9"
+                            bPreventSelfIntersection={true}
                         />
                     </div>
 

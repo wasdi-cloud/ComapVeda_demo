@@ -39,20 +39,7 @@ const HomePage = () => {
     const [sSelectedMission, setSelectedMission] = useState("");
     const [sSelectedTask, setSelectedTask] = useState("");
 
-    // --- AUTOMATIC SEEDING ON LOAD ---
-    useEffect(() => {
-        const autoSeedImages = async () => {
-            try {
-                // Silently seed images in the background so the backend always has data
-                await seedDemoImages();
-                console.log("Demo images seeded automatically.");
-            } catch (error) {
-                console.error("Auto-seeding failed. Backend might be unreachable.", error);
-            }
-        };
 
-        autoSeedImages();
-    }, []); // Empty dependency array means it runs exactly once when the homepage loads
 
     const loadProjects = async () => {
         try {
