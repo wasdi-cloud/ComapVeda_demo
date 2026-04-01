@@ -12,6 +12,7 @@ class DatasetImageEntity(Base):
 
     fileName = Column(String, nullable=True)
     link = Column(String, nullable=True)
+    bandpaths = Column(String, nullable=True)
     bbox = Column(String, nullable=True)
     date = Column(BigInteger, nullable=True)
 

@@ -3,8 +3,8 @@ from http.client import HTTPException
 import json
 import os
 import re
-import re
 import urllib
+import zipfile
 import logging
 import aiohttp
 from aiohttp import ClientTimeout
@@ -23,6 +23,7 @@ class QueryExecutorCopernicusDataspace:
 
     s_sAPI_BASE_URL = "https://catalogue.dataspace.copernicus.eu/odata/v1/Products?"
     s_sEq = "eq"
+    SENTINEL_BANDS = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12"]
 
     def __init__(self):
         self.oCopernicusAuth = CopernicusDataspaceAuth()
@@ -84,6 +85,24 @@ class QueryExecutorCopernicusDataspace:
             if oAttr.get("Name") == sAttrName:
                 return oAttr.get("Value")
         return None
+
+
+    def _extractBandPaths(self, sFilePath: str) -> dict[str, str]:
+        """Scan a Sentinel-2 ZIP and return a JSON-serializable band path map."""
+        sNormalizedPath = sFilePath.replace("\\", "/")
+        if not sNormalizedPath.lower().endswith(".zip"):
+            return {}
+
+        dBandPaths: dict[str, str] = {}
+        with zipfile.ZipFile(sNormalizedPath, 'r') as oZipFile:
+            for sName in oZipFile.namelist():
+                for sBand in QueryExecutorCopernicusDataspace.SENTINEL_BANDS:
+                    if sBand in dBandPaths:
+                        continue
+                    if re.search(rf"_{sBand}(?:_.*)?\.jp2$", sName):
+                        dBandPaths[sBand] = f"/vsizip/{sNormalizedPath}/{sName}"
+
+        return dBandPaths
 
 
     def _parseODataResponse(self, oData: str) -> list[SearchResultItem]:
@@ -265,11 +284,15 @@ class QueryExecutorCopernicusDataspace:
                 sFootprint = sFootprint[len("geography'SRID=4326;"):-1]
 
             oNow = datetime.now()
+            dBandPaths = self._extractBandPaths(sDownloadedFilePath)
+            sBandPathsJson = json.dumps(dBandPaths) if dBandPaths else None
+
             # now we need to store the image in the database
             oDatasetImage = DatasetImageEntity(
                 projectId=sProjectId,
                 fileName=os.path.basename(sDownloadedFilePath),
                 link=sDownloadedFilePath,
+                bandpaths=sBandPathsJson,
                 bbox=sFootprint,
                 date=int(oNow.timestamp() * 1000)
             )

@@ -28,6 +28,7 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
                  platform: str = Query(None, description="Satellite platform to search for"),
                  product_level: str = Query(None, description="Product level to search for"),
                  max_cloud_cover: float = Query(0.0, description="Maximum cloud cover percentage"),
+                 product_name : str = Query(None, description="Product name to search for"),
                  oCurrentUser: User = Depends(get_current_user)):
     """
     Search images
@@ -145,8 +146,9 @@ async def getListByProject(project_id: str, oDB: Session = Depends(get_db),
             ))
 
         return oResult
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching images: {str(e)}")
+    except Exception as oE:
+        logging.error(f"Error fetching images for project {project_id}: {str(oE)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching images: {str(oE)}")
 
 # TODO: not sure what does it mean
 # NOTE: Probably not needed, is directly titler that provides images.
