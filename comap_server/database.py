@@ -38,6 +38,10 @@ def ensure_legacy_schema_compatibility():
     if "updated_at" not in user_columns:
         statements.append("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP")
 
+    dataset_image_columns = {column["name"] for column in inspector.get_columns("dataset_images")}
+    if "bandpaths" not in dataset_image_columns:
+        statements.append("ALTER TABLE dataset_images ADD COLUMN IF NOT EXISTS bandpaths VARCHAR")
+
     if not statements:
         return
 

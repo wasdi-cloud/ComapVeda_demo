@@ -18,21 +18,41 @@ class WebSocketManager:
 
     def disconnect(self, sProjectId: str, oWebsocket: WebSocket):
         if sProjectId in self.dActiveConnections:
-            self.dActiveConnections[sProjectId].remove(oWebsocket)
-            # remove the key if there are no more connections for the project
+            try:
+                self.dActiveConnections[sProjectId].remove(oWebsocket)
+            except ValueError:
+                pass
+
             if not self.dActiveConnections[sProjectId]:
                 del self.dActiveConnections[sProjectId]
+
         logging.info(f"WebSocketManager.disconnect: Client disconnected from project {sProjectId}")
+
+
+    async def _sendJson(self, oConnection: WebSocket, dMessage: dict):
+        try:
+            await oConnection.send_json(dMessage)
+            return True
+        except Exception as oE:
+            logging.error(f"WebSocketManager._sendJson: Error sending WebSocket message: {oE}")
+            return False
 
 
     async def broadcastToProject(self, sProjectId: str, dMessage: dict):
         """Send a JSON message to all clients connected to the specified project."""
-        if sProjectId in self.dActiveConnections:
-            for oConnection in self.dActiveConnections[sProjectId]:
-                try:
-                    await oConnection.send_json(dMessage)
-                except Exception as oE:
-                    logging.error(f"WebSocketManager.broadcastToProject: Error sending WebSocket message: {oE}")
+        if sProjectId not in self.dActiveConnections:
+            return
+
+        oAliveConnections = []
+        for oConnection in list(self.dActiveConnections[sProjectId]):
+            ok = await self._sendJson(oConnection, dMessage)
+            if ok:
+                oAliveConnections.append(oConnection)
+
+        if oAliveConnections:
+            self.dActiveConnections[sProjectId] = oAliveConnections
+        else:
+            del self.dActiveConnections[sProjectId]
 
 
 # global instance of the WebSocketManager

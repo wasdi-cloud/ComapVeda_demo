@@ -3,8 +3,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from entities.DatasetImage import DatasetImageEntity
 
-# Trasformiamo la classe in una funzione semplice. 
-# FastAPI e TiTiler preferiscono questo formato per recuperare i path.
+
 def DatasetPathParams(
     dataset_id: str = Query(..., description="The ID (UUID) of the dataset image"),
     oDb: Session = Depends(get_db)
