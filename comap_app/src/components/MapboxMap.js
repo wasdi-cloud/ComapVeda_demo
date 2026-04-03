@@ -118,6 +118,7 @@ const MapboxMap = ({
                        bHasPolygons            = true,
                        bHasLines               = true,
                        bPreventSelfIntersection = false,
+                       sHoveredFootprint       = null // <-- NEW PROP FOR EO HOVER
                    }) => {
 
     const [oSelectedMarker, setSelectedMarker] = useState(null);
@@ -128,6 +129,10 @@ const MapboxMap = ({
     const mapRef           = useRef(null);
     const drawRef          = useRef(null);
     const activeLayerIdRef = useRef(null);
+
+    const EO_HOVER_SOURCE_ID = 'eo-hover-source';
+    const EO_HOVER_FILL_LAYER = 'eo-hover-fill';
+    const EO_HOVER_LINE_LAYER = 'eo-hover-line';
 
     // Readable synchronously inside the capture-phase click handler — must be a ref, not state.
     const isIntersectingRef = useRef(false);
@@ -295,7 +300,72 @@ const MapboxMap = ({
         const map = mapRef.current;
         if (map && oZoomToBBox?.length === 4) map.fitBounds(oZoomToBBox, { padding: 50, duration: 1500 });
     }, [oZoomToBBox]);
+// ═══════════════════════════════════════════════════════════════════
+    // --- NEW: EO IMAGE HOVER PREVIEW ---
+    // ═══════════════════════════════════════════════════════════════════
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map || !map.isStyleLoaded()) return;
 
+        // Make sure the source exists before we try to update it
+        if (!map.getSource(EO_HOVER_SOURCE_ID)) {
+            map.addSource(EO_HOVER_SOURCE_ID, {
+                type: 'geojson',
+                data: { type: 'FeatureCollection', features: [] }
+            });
+            map.addLayer({
+                id: EO_HOVER_FILL_LAYER,
+                type: 'fill',
+                source: EO_HOVER_SOURCE_ID,
+                paint: { 'fill-color': '#fde047', 'fill-opacity': 0.3 }
+            });
+            map.addLayer({
+                id: EO_HOVER_LINE_LAYER,
+                type: 'line',
+                source: EO_HOVER_SOURCE_ID,
+                paint: { 'line-color': '#eab308', 'line-width': 2, 'line-dasharray': [2, 2] }
+            });
+        }
+
+        if (!sHoveredFootprint) {
+            // Clear the preview if nothing is hovered
+            map.getSource(EO_HOVER_SOURCE_ID).setData({ type: 'FeatureCollection', features: [] });
+            return;
+        }
+
+        try {
+            // Your API returns a WKT string like "POLYGON ((...))"
+            // We need to parse it into an array of coordinates for GeoJSON
+            const coordsText = sHoveredFootprint.replace(/POLYGON\s*\(\(/i, "").replace(/\)\)/, "");
+            const pairs = coordsText.split(",");
+
+            const coordinates = pairs.map(pair => {
+                const [lng, lat] = pair.trim().split(/\s+/).map(Number);
+                return [lng, lat];
+            });
+
+            const geojsonFeature = {
+                type: 'FeatureCollection',
+                features: [{
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Polygon',
+                        coordinates: [coordinates]
+                    }
+                }]
+            };
+
+            map.getSource(EO_HOVER_SOURCE_ID).setData(geojsonFeature);
+
+            // Optional: You can auto-pan the map to the hovered image footprint
+            // const bbox = turf.bbox(geojsonFeature);
+            // map.fitBounds(bbox, { padding: 50, duration: 800 });
+
+        } catch (e) {
+            console.error("Failed to parse footprint for hover:", e);
+        }
+    }, [sHoveredFootprint]);
+    // ═══════════════════════════════════════════════════════════════════
     useEffect(() => {
         const map     = mapRef.current;
         const layerId = activeLayerIdRef.current;

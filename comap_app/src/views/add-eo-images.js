@@ -22,6 +22,7 @@ import { searchImages, importImage } from '../services/images-service';
 const AddEoImages = () => {
     const navigate = useNavigate();
     const location = useLocation(); // <-- 3. INIT location
+    const [sHoveredFootprint, setHoveredFootprint] = useState(null);
 
     // --- GRAB PROJECT ID FROM ROUTER ---
     const sProjectId = location.state?.projectId || null;
@@ -299,7 +300,10 @@ const AddEoImages = () => {
                                         const thumbColor = idx % 2 === 0 ? "#1e3c72" : "#2a5298";
 
                                         return (
-                                            <div key={img.id} style={{
+                                            <div key={img.id}
+                                                 onMouseEnter={() => setHoveredFootprint(img.footprint)}
+                                                 onMouseLeave={() => setHoveredFootprint(null)}
+                                                 style={{
                                                 padding: '10px',
                                                 borderRadius: '6px',
                                                 border: bIsSelected ? '1px solid #007bff' : '1px solid #eee',
@@ -307,7 +311,8 @@ const AddEoImages = () => {
                                                 alignItems: 'center',
                                                 gap: '10px',
                                                 opacity: bIsAlreadyImported ? 0.6 : 1,
-                                                background: bIsAlreadyImported ? '#f9f9f9' : 'white'
+                                                background: bIsAlreadyImported ? '#f9f9f9' : 'white',
+                                                cursor: 'pointer'
                                             }}>
                                                 <div style={{width: '30px', display: 'flex', justifyContent: 'center'}}>
                                                     {bIsAlreadyImported ? (
@@ -386,6 +391,7 @@ const AddEoImages = () => {
                     oInitialView={{latitude: 45.0, longitude: 8.0, zoom: 6}}
                     bEnableDraw={true}
                     bEnableGeocoder={true}
+                    sHoveredFootprint={sHoveredFootprint}
                     onDrawUpdate={handleDrawUpdate}
                     aoFeatures={aoFeatures}
                 />
