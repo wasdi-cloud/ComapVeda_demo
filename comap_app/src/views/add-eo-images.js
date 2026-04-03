@@ -293,7 +293,7 @@ const AddEoImages = () => {
                                 <div style={{textAlign: 'center', color: '#888', fontStyle: 'italic'}}>No images
                                     found.</div>
                             ) : (
-                                <div style={{display: 'flex', flexDirection: 'column', gap: '10px'}}>
+                                <div style={{display: 'flex', flexDirection: 'column', gap: '10px'}} onMouseLeave={() => setHoveredFootprint(null)}>
                                     {aoSearchResults.map((img, idx) => {
                                         const bIsAlreadyImported = aoAlreadyImportedIds.includes(img.id);
                                         const bIsSelected = aoSelectedIds.includes(img.id);
@@ -302,7 +302,7 @@ const AddEoImages = () => {
                                         return (
                                             <div key={img.id}
                                                  onMouseEnter={() => setHoveredFootprint(img.footprint)}
-                                                 onMouseLeave={() => setHoveredFootprint(null)}
+                                                 // onMouseLeave={() => setHoveredFootprint(null)}
                                                  style={{
                                                 padding: '10px',
                                                 borderRadius: '6px',
