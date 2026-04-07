@@ -100,11 +100,43 @@ const CUSTOM_DRAW_STYLES = [
     }
 ];
 
+const doLinesIntersect = (p1, p2, p3, p4) => {
+    const a = p1[0], b = p1[1], c = p2[0], d = p2[1];
+    const p = p3[0], q = p3[1], r = p4[0], s = p4[1];
+    const det = (c - a) * (s - q) - (r - p) * (d - b);
+    if (det === 0) return false;
+    const lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
+    const gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
+    return (0.01 < lambda && lambda < 0.99) && (0.01 < gamma && gamma < 0.99);
+};
+
+const hasSelfIntersection = (ring) => {
+    if (ring.length < 5) return false;
+
+    const cursor = ring[ring.length - 2];
+    const lastFixed = ring[ring.length - 3];
+    const p0 = ring[0];
+
+    for (let i = 0; i < ring.length - 4; i++) {
+        const p1 = ring[i];
+        const p2 = ring[i + 1];
+
+        if (i !== ring.length - 4) {
+            if (doLinesIntersect(lastFixed, cursor, p1, p2)) return true;
+        }
+
+        if (i !== 0) {
+            if (doLinesIntersect(cursor, p0, p1, p2)) return true;
+        }
+    }
+    return false;
+};
+
 const MapboxMap = ({
                        aoMarkers               = [],
                        oInitialView,
                        onDrawUpdate,
-                       onDrawError, // Make sure you pass this prop from EditProject!
+                       onDrawError,
                        sActiveGeoTIFF,
                        bEnableGeocoder         = false,
                        bEnableDraw             = true,
@@ -118,7 +150,7 @@ const MapboxMap = ({
                        bHasPolygons            = true,
                        bHasLines               = true,
                        bPreventSelfIntersection = false,
-                       sHoveredFootprint       = null // <-- NEW PROP FOR EO HOVER
+                       bPreventPolygonIntersection = false,
                    }) => {
 
     const [oSelectedMarker, setSelectedMarker] = useState(null);
@@ -126,26 +158,28 @@ const MapboxMap = ({
     const [sMapStyle, setMapStyle]             = useState(sInitialMapStyle);
     const [oHoverInfo, setHoverInfo]           = useState(null);
 
-    const mapRef           = useRef(null);
-    const drawRef          = useRef(null);
-    const activeLayerIdRef = useRef(null);
+    const oMapRef           = useRef(null);
+    const oDrawRef          = useRef(null);
+    const oActiveLayerIdRef = useRef(null);
 
-    const EO_HOVER_SOURCE_ID = 'eo-hover-source';
-    const EO_HOVER_FILL_LAYER = 'eo-hover-fill';
-    const EO_HOVER_LINE_LAYER = 'eo-hover-line';
+    const bIsIntersectingRef = useRef(false);
+    const sInvalidReasonRef  = useRef(""); // <-- NEW: Stores the reason for the error
 
-    // Readable synchronously inside the capture-phase click handler — must be a ref, not state.
-    const isIntersectingRef = useRef(false);
+    // --- LIVE REF FOR PREVIOUSLY SAVED FEATURES ---
+    const aoFeaturesRef = useRef(aoFeatures);
+    useEffect(() => {
+        aoFeaturesRef.current = aoFeatures;
+    }, [aoFeatures]);
 
     useEffect(() => {
-        if (drawRef.current && sSelectedFeatureId) {
-            drawRef.current.setFeatureProperty(sSelectedFeatureId, 'portColor', sCurrentDrawColor);
+        if (oDrawRef.current && sSelectedFeatureId) {
+            oDrawRef.current.setFeatureProperty(sSelectedFeatureId, 'portColor', sCurrentDrawColor);
         }
     }, [sCurrentDrawColor, sSelectedFeatureId]);
 
     const handleMapLoad = (e) => {
         const oMap = e.target;
-        mapRef.current = oMap;
+        oMapRef.current = oMap;
 
         if (bEnableGeocoder) {
             const oGeocoder = new MapboxGeocoder({ accessToken: MAPBOX_TOKEN, mapboxgl: require('mapbox-gl'), marker: false, collapsed: true });
@@ -161,7 +195,7 @@ const MapboxMap = ({
                 styles: CUSTOM_DRAW_STYLES
             });
             oMap.addControl(oDraw, 'top-left');
-            drawRef.current = oDraw;
+            oDrawRef.current = oDraw;
 
             oMap.on('draw.create', (ev) => handleDrawUpdate(ev, oDraw));
             oMap.on('draw.update', (ev) => handleDrawUpdate(ev, oDraw));
@@ -173,14 +207,14 @@ const MapboxMap = ({
 
             // Hover tooltip handler
             oMap.on('mousemove', (ev) => {
-                const mode = oDraw.getMode();
-                if (mode.startsWith('draw_')) { setHoverInfo(null); return; }
-                const features    = oMap.queryRenderedFeatures(ev.point);
-                const drawFeature = features.find(f => f.source && f.source.includes('mapbox-gl-draw'));
-                if (drawFeature) {
-                    const fullData = oDraw.get(drawFeature.properties.id);
-                    if (fullData?.properties?.annotator) {
-                        setHoverInfo({ latitude: ev.lngLat.lat, longitude: ev.lngLat.lng, annotator: fullData.properties.annotator, class: fullData.properties.className || "Shape" });
+                const oMode = oDraw.getMode();
+                if (oMode.startsWith('draw_')) { setHoverInfo(null); return; }
+                const m_aoFeatures    = oMap.queryRenderedFeatures(ev.point);
+                const oDrawFeature = m_aoFeatures.find(f => f.source && f.source.includes('mapbox-gl-draw'));
+                if (oDrawFeature) {
+                    const oFullData = oDraw.get(oDrawFeature.properties.id);
+                    if (oFullData?.properties?.annotator) {
+                        setHoverInfo({ latitude: ev.lngLat.lat, longitude: ev.lngLat.lng, annotator: oFullData.properties.annotator, class: oFullData.properties.className || "Shape" });
                         oMap.getCanvas().style.cursor = 'pointer';
                         return;
                     }
@@ -190,17 +224,18 @@ const MapboxMap = ({
             });
 
             // ═══════════════════════════════════════════════════════════════════
-            // SELF-INTERSECTION PREVENTION
+            // INTERSECTION PREVENTION (Self & Cross-Polygon)
             // ═══════════════════════════════════════════════════════════════════
-            if (bPreventSelfIntersection && bHasPolygons) {
+            if ((bPreventSelfIntersection || bPreventPolygonIntersection) && bHasPolygons) {
 
                 setupIntersectionLayer(oMap);
 
-                let drawnVertices = [];
+                let aoDrawnVertices = [];
 
                 const resetState = () => {
-                    isIntersectingRef.current = false;
-                    drawnVertices             = [];
+                    bIsIntersectingRef.current = false;
+                    sInvalidReasonRef.current  = "";
+                    aoDrawnVertices             = [];
                     clearIntersectionPreview(oMap);
                     oMap.getCanvas().style.cursor = '';
                 };
@@ -211,176 +246,150 @@ const MapboxMap = ({
 
                 // Per-frame intersection check while the user is actively drawing
                 oMap.on('mousemove', (ev) => {
-                    if (!drawRef.current) return;
+                    if (!oDrawRef.current) return;
 
-                    if (drawRef.current.getMode() !== 'draw_polygon') {
-                        if (isIntersectingRef.current) resetState();
+                    if (oDrawRef.current.getMode() !== 'draw_polygon') {
+                        if (bIsIntersectingRef.current) resetState();
                         return;
                     }
 
-                    if (drawnVertices.length < 2) {
-                        isIntersectingRef.current = false;
-                        clearIntersectionPreview(oMap);
-                        return;
+                    const afMouseCoord = [ev.lngLat.lng, ev.lngLat.lat];
+                    let bIsInvalid = false;
+                    let sErrorMessage = "";
+
+                    // --- 1. CHECK CROSS-POLYGON INTERSECTION ---
+                    if (bPreventPolygonIntersection) {
+                        const aoExistingPolygons = aoFeaturesRef.current.filter(f => f.geometry.type === 'Polygon');
+
+                        if (aoExistingPolygons.length > 0) {
+                            for (const oPoly of aoExistingPolygons) {
+                                try {
+                                    if (aoDrawnVertices.length === 0) {
+                                        // 0 points: Are we hovering inside another polygon?
+                                        if (turf.booleanPointInPolygon(turf.point(afMouseCoord), oPoly)) {
+                                            bIsInvalid = true;
+                                            sErrorMessage = "Cannot start drawing inside an existing polygon!";
+                                            break;
+                                        }
+                                    } else if (aoDrawnVertices.length === 1) {
+                                        // 1 point: Does the trailing line cross another polygon?
+                                        const afLastPlaced = aoDrawnVertices[0];
+                                        if (afLastPlaced[0] !== afMouseCoord[0] || afLastPlaced[1] !== afMouseCoord[1]) {
+                                            const oTestLine = turf.lineString([afLastPlaced, afMouseCoord]);
+                                            if (turf.booleanIntersects(oTestLine, oPoly)) {
+                                                bIsInvalid = true;
+                                                sErrorMessage = "Line crosses an existing polygon!";
+                                                break;
+                                            }
+                                        }
+                                    } else if (aoDrawnVertices.length >= 2) {
+                                        // 2+ points: Does the proposed polygon overlap another polygon?
+                                        const oTestRing = [...aoDrawnVertices, afMouseCoord, aoDrawnVertices[0]];
+                                        if (oTestRing.length >= 4) {
+                                            const oTestPoly = turf.polygon([oTestRing]);
+                                            if (turf.booleanIntersects(oTestPoly, oPoly)) {
+                                                bIsInvalid = true;
+                                                sErrorMessage = "Polygons cannot overlap!";
+                                                break;
+                                            }
+                                        }
+                                    }
+                                } catch (_) {}
+                            }
+                        }
                     }
 
-                    const mouseCoord = [ev.lngLat.lng, ev.lngLat.lat];
-                    const testRing = [...drawnVertices, mouseCoord, drawnVertices[0]];
-
-                    if (testRing.length < 4) {
-                        isIntersectingRef.current = false;
-                        clearIntersectionPreview(oMap);
-                        return;
+                    // --- 2. CHECK SELF-INTERSECTION (Only if not already invalid!) ---
+                    if (!bIsInvalid && bPreventSelfIntersection && aoDrawnVertices.length >= 2) {
+                        const oTestRing = [...aoDrawnVertices, afMouseCoord, aoDrawnVertices[0]];
+                        if (oTestRing.length >= 4) {
+                            if (hasSelfIntersection(oTestRing)) {
+                                bIsInvalid = true;
+                                sErrorMessage = "Polygon cannot intersect itself!";
+                            }
+                        }
                     }
 
-                    try {
-                        const kinks           = turf.kinks(turf.polygon([testRing]));
-                        const hasIntersection = kinks.features.length > 0;
-                        isIntersectingRef.current = hasIntersection;
+                    // --- 3. APPLY UNIFIED VISUAL FEEDBACK ---
+                    bIsIntersectingRef.current = bIsInvalid;
+                    sInvalidReasonRef.current  = sErrorMessage; // Save the error message for the click shield!
 
-                        if (hasIntersection) {
-                            const lastPlaced = drawnVertices[drawnVertices.length - 1];
+                    if (bIsInvalid) {
+                        // Only draw the red line if we actually have a placed vertex to connect it to
+                        if (aoDrawnVertices.length > 0) {
+                            const afLastPlaced = aoDrawnVertices[aoDrawnVertices.length - 1];
                             oMap.getSource(INTERSECTION_SOURCE_ID).setData({
                                 type: 'FeatureCollection',
                                 features: [{
                                     type: 'Feature',
-                                    geometry: { type: 'LineString', coordinates: [lastPlaced, mouseCoord] },
+                                    geometry: { type: 'LineString', coordinates: [afLastPlaced, afMouseCoord] },
                                     properties: {}
                                 }]
                             });
-                            oMap.getCanvas().style.cursor = 'not-allowed';
                         } else {
-                            clearIntersectionPreview(oMap);
-                            oMap.getCanvas().style.cursor = '';
+                            clearIntersectionPreview(oMap); // Clear line if just hovering (0 vertices)
                         }
-                    } catch (_) {
-                        isIntersectingRef.current = false;
+                        oMap.getCanvas().style.cursor = 'not-allowed';
+                    } else {
                         clearIntersectionPreview(oMap);
+                        oMap.getCanvas().style.cursor = '';
                     }
                 });
 
-                // --- THIS IS THE FIX ---
-                // We must catch 'mousedown', 'pointerdown', and 'touchstart' because Mapbox Draw
-                // uses those to place points, NOT the 'click' event!
+                // --- YOUR CAPTURE PHASE CLICK SHIELD ---
                 const blockClick = (ev) => {
-                    if (!drawRef.current) return;
-                    if (drawRef.current.getMode() !== 'draw_polygon') return;
+                    if (!oDrawRef.current) return;
+                    if (oDrawRef.current.getMode() !== 'draw_polygon') return;
 
-                    if (isIntersectingRef.current) {
+                    if (bIsIntersectingRef.current) {
                         ev.stopPropagation();   // ← Blocks Mapbox Draw
                         ev.preventDefault();    // ← Blocks browser defaults
 
-                        // Send a notification if we have an error handler mapped
+                        // Trigger the error notification with the dynamic reason!
                         if (onDrawError && ev.type === 'mousedown') {
-                            onDrawError("Polygon cannot intersect itself!");
+                            onDrawError(sInvalidReasonRef.current);
                         }
                         return;
                     }
 
                     // Safe click — record where this vertex lands
-                    // We only push on mousedown to avoid duplicate points from pointer/touch events
                     if (ev.type === 'mousedown') {
-                        const rect   = oMap.getCanvas().getBoundingClientRect();
-                        const lngLat = oMap.unproject([ev.clientX - rect.left, ev.clientY - rect.top]);
-                        drawnVertices.push([lngLat.lng, lngLat.lat]);
+                        const oRect   = oMap.getCanvas().getBoundingClientRect();
+                        const afLngLat = oMap.unproject([ev.clientX - oRect.left, ev.clientY - oRect.top]);
+                        aoDrawnVertices.push([afLngLat.lng, afLngLat.lat]);
                     }
                 };
 
-                const canvas = oMap.getCanvas();
-                canvas.addEventListener('mousedown', blockClick, true);
-                canvas.addEventListener('pointerdown', blockClick, true);
-                canvas.addEventListener('touchstart', blockClick, true);
-                canvas.addEventListener('click', blockClick, true); // Catch stray clicks too
+                const oCanvas = oMap.getCanvas();
+                oCanvas.addEventListener('mousedown', blockClick, true);
+                oCanvas.addEventListener('pointerdown', blockClick, true);
+                oCanvas.addEventListener('touchstart', blockClick, true);
+                oCanvas.addEventListener('click', blockClick, true);
             }
             // ═══════════════════════════════════════════════════════════════════
         }
     };
 
     useEffect(() => {
-        const map = mapRef.current;
+        const map = oMapRef.current;
         if (map && oZoomToBBox?.length === 4) map.fitBounds(oZoomToBBox, { padding: 50, duration: 1500 });
     }, [oZoomToBBox]);
-// ═══════════════════════════════════════════════════════════════════
-    // --- NEW: EO IMAGE HOVER PREVIEW ---
-    // ═══════════════════════════════════════════════════════════════════
+
     useEffect(() => {
-        const map = mapRef.current;
-        if (!map || !map.isStyleLoaded()) return;
-
-        // Make sure the source exists before we try to update it
-        if (!map.getSource(EO_HOVER_SOURCE_ID)) {
-            map.addSource(EO_HOVER_SOURCE_ID, {
-                type: 'geojson',
-                data: { type: 'FeatureCollection', features: [] }
-            });
-            map.addLayer({
-                id: EO_HOVER_FILL_LAYER,
-                type: 'fill',
-                source: EO_HOVER_SOURCE_ID,
-                paint: { 'fill-color': '#fde047', 'fill-opacity': 0.3 }
-            });
-            map.addLayer({
-                id: EO_HOVER_LINE_LAYER,
-                type: 'line',
-                source: EO_HOVER_SOURCE_ID,
-                paint: { 'line-color': '#eab308', 'line-width': 2, 'line-dasharray': [2, 2] }
-            });
-        }
-
-        if (!sHoveredFootprint) {
-            // Clear the preview if nothing is hovered
-            map.getSource(EO_HOVER_SOURCE_ID).setData({ type: 'FeatureCollection', features: [] });
-            return;
-        }
-
-        try {
-            // Your API returns a WKT string like "POLYGON ((...))"
-            // We need to parse it into an array of coordinates for GeoJSON
-            const coordsText = sHoveredFootprint.replace(/POLYGON\s*\(\(/i, "").replace(/\)\)/, "");
-            const pairs = coordsText.split(",");
-
-            const coordinates = pairs.map(pair => {
-                const [lng, lat] = pair.trim().split(/\s+/).map(Number);
-                return [lng, lat];
-            });
-
-            const geojsonFeature = {
-                type: 'FeatureCollection',
-                features: [{
-                    type: 'Feature',
-                    geometry: {
-                        type: 'Polygon',
-                        coordinates: [coordinates]
-                    }
-                }]
-            };
-
-            map.getSource(EO_HOVER_SOURCE_ID).setData(geojsonFeature);
-
-            // Optional: You can auto-pan the map to the hovered image footprint
-            // const bbox = turf.bbox(geojsonFeature);
-            // map.fitBounds(bbox, { padding: 50, duration: 800 });
-
-        } catch (e) {
-            console.error("Failed to parse footprint for hover:", e);
-        }
-    }, [sHoveredFootprint]);
-    // ═══════════════════════════════════════════════════════════════════
-    useEffect(() => {
-        const map     = mapRef.current;
-        const layerId = activeLayerIdRef.current;
+        const map     = oMapRef.current;
+        const layerId = oActiveLayerIdRef.current;
         if (map && layerId && map.getLayer(layerId)) map.setPaintProperty(layerId, 'raster-opacity', iImageOpacity);
     }, [iImageOpacity]);
 
     useEffect(() => {
-        if (drawRef.current && sSelectedFeatureId) {
-            try { drawRef.current.changeMode('simple_select', { featureIds: [sSelectedFeatureId] }); } catch (_) {}
+        if (oDrawRef.current && sSelectedFeatureId) {
+            try { oDrawRef.current.changeMode('simple_select', { featureIds: [sSelectedFeatureId] }); } catch (_) {}
         }
     }, [sSelectedFeatureId]);
 
     useEffect(() => {
-        if (!drawRef.current) return;
-        const oDraw = drawRef.current;
+        if (!oDrawRef.current) return;
+        const oDraw = oDrawRef.current;
         if (oDraw.getMode().startsWith('draw_')) return;
 
         const currentIds = oDraw.getAll().features.map(f => f.id).sort().join(',');
@@ -402,14 +411,14 @@ const MapboxMap = ({
     }, [aoFeatures]);
 
     useEffect(() => {
-        const map = mapRef.current;
+        const map = oMapRef.current;
         if (!map) return;
 
         const refreshLayer = () => {
-            if (activeLayerIdRef.current) {
-                if (map.getLayer(activeLayerIdRef.current))  map.removeLayer(activeLayerIdRef.current);
-                if (map.getSource(activeLayerIdRef.current)) map.removeSource(activeLayerIdRef.current);
-                activeLayerIdRef.current = null;
+            if (oActiveLayerIdRef.current) {
+                if (map.getLayer(oActiveLayerIdRef.current))  map.removeLayer(oActiveLayerIdRef.current);
+                if (map.getSource(oActiveLayerIdRef.current)) map.removeSource(oActiveLayerIdRef.current);
+                oActiveLayerIdRef.current = null;
             }
             if (sActiveGeoTIFF) {
                 const sAssets  = "assets=B04&assets=B03&assets=B02";
@@ -423,7 +432,7 @@ const MapboxMap = ({
                     for (const l of layers) { if (l.id.startsWith('gl-draw'))  { beforeId = l.id; break; } }
                     if (!beforeId) { for (const l of layers) { if (l.type === 'symbol') { beforeId = l.id; break; } } }
                     map.addLayer({ id: uniqueId, type: 'raster', source: uniqueId, paint: { 'raster-opacity': iImageOpacity } }, beforeId);
-                    activeLayerIdRef.current = uniqueId;
+                    oActiveLayerIdRef.current = uniqueId;
                 } catch (err) { console.error(err); }
             }
         };
@@ -431,9 +440,8 @@ const MapboxMap = ({
         refreshLayer();
 
         const onStyleData = () => {
-            if (activeLayerIdRef.current && !map.getLayer(activeLayerIdRef.current)) refreshLayer();
-            // Re-add intersection layer after a basemap style swap wipes all custom layers
-            if (bPreventSelfIntersection && bHasPolygons && !map.getLayer(INTERSECTION_LAYER_ID)) {
+            if (oActiveLayerIdRef.current && !map.getLayer(oActiveLayerIdRef.current)) refreshLayer();
+            if ((bPreventSelfIntersection || bPreventPolygonIntersection) && bHasPolygons && !map.getLayer(INTERSECTION_LAYER_ID)) {
                 setupIntersectionLayer(map);
             }
         };
@@ -464,7 +472,7 @@ const MapboxMap = ({
             )}
 
             <Map
-                ref={mapRef}
+                ref={oMapRef}
                 mapboxAccessToken={MAPBOX_TOKEN}
                 initialViewState={{...oInitialView}}
                 style={{ width: '100%', height: '100%' }}
