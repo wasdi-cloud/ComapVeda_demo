@@ -9,7 +9,10 @@ import AppSelect from '../components/app-dropdown-input';
 import AppCheckbox from '../components/app-checkbox';
 import AppRadioButton from '../components/app-radiobutton';
 import AppButton from '../components/app-button';
-import AppNotification from '../dialogues/app-notifications'; // <-- IMPORTED
+import AppNotification from '../dialogues/app-notifications';
+
+import oSelfIntersectGif from '../assets/self-intersect.jpg';
+import oCrossIntersectGif from '../assets/overlapping.png';
 
 import {createTemplate, getLabelTemplateById, updateLabelTemplate} from "../services/labelling-template-service";
 
@@ -58,8 +61,9 @@ const NewLabelTemplate = () => {
     const sMode = location.state?.mode || 'create'; // 'create', 'edit', or 'view'
     const bIsViewMode = sMode === 'view';
 
-    // --- NEW: NOTIFICATION STATE ---
+    // --- NOTIFICATION & MODAL STATE ---
     const [oNotification, setNotification] = useState({ show: false, message: '', type: 'info' });
+    const [bShowInfoModal, setBShowInfoModal] = useState(false); // <-- Controls the Info Pop-up
 
     const showNotif = (message, type = 'info') => {
         setNotification({ show: true, message, type });
@@ -68,7 +72,13 @@ const NewLabelTemplate = () => {
     // --- 1. MAIN TEMPLATE STATE ---
     const [sName, setSName] = useState("");
     const [sDescription, setSDescription] = useState("");
-    const [oGeometries, setOGeometries] = useState({polygon: true, polyline: false, point: false});
+
+    // <-- ADDED MULTIPOLYGON -->
+    const [oGeometries, setOGeometries] = useState({polygon: true, multipolygon: false, polyline: false, point: false});
+
+    // <-- ADDED INTERSECTION FLAGS -->
+    const [bSelfIntersectAllowed, setBSelfIntersectAllowed] = useState(false);
+    const [bPolygonsIntersectAllowed, setBPolygonsIntersectAllowed] = useState(false);
 
     // --- 2. ATTRIBUTE BUILDER STATE ---
     const [aoAttributes, setAoAttributes] = useState([]);
@@ -98,9 +108,14 @@ const NewLabelTemplate = () => {
 
                     setOGeometries({
                         polygon: data.geometryTypes?.includes('polygon'),
+                        multipolygon: data.geometryTypes?.includes('multipolygon'), // <-- Load
                         polyline: data.geometryTypes?.includes('polyline'),
                         point: data.geometryTypes?.includes('point')
                     });
+
+                    // <-- Load intersection rules -->
+                    setBSelfIntersectAllowed(data.isSelfIntersectAllowed || false);
+                    setBPolygonsIntersectAllowed(data.isPolygonsIntersectAllowed || false);
 
                     const loadedAttributes = [];
                     const loadedColors = {};
@@ -187,6 +202,7 @@ const NewLabelTemplate = () => {
     const handleSaveTemplate = async () => {
         const aoGeometryTypes = [];
         if (oGeometries.polygon) aoGeometryTypes.push("polygon");
+        if (oGeometries.multipolygon) aoGeometryTypes.push("multipolygon"); // <-- Save
         if (oGeometries.polyline) aoGeometryTypes.push("polyline");
         if (oGeometries.point) aoGeometryTypes.push("point");
 
@@ -217,6 +233,9 @@ const NewLabelTemplate = () => {
             isSingleColorStyle: sStyleType === 'single',
             featureColor: sStyleType === 'single' ? sSingleColor : null,
             colourAttributeName: sStyleType === 'category' ? sSelectedCategoryAttr : null,
+            // <-- Add Intersection Flags to Payload -->
+            isSelfIntersectAllowed: bSelfIntersectAllowed,
+            isPolygonsIntersectAllowed: bPolygonsIntersectAllowed,
             creationDate: Date.now() / 1000
         };
 
@@ -229,7 +248,6 @@ const NewLabelTemplate = () => {
                 showNotif("Template Saved Successfully!", "success");
             }
 
-            // Wait 1.5 seconds before navigating so the user can read the success message!
             setTimeout(() => {
                 navigate('/label-templates');
             }, 1500);
@@ -248,16 +266,69 @@ const NewLabelTemplate = () => {
             minHeight: '100vh',
             display: 'flex',
             justifyContent: 'center',
-            position: 'relative' // Added for absolute positioning context
+            position: 'relative'
         }}>
 
-            {/* --- RENDER NOTIFICATION HERE --- */}
             <AppNotification
                 show={oNotification.show}
                 message={oNotification.message}
                 type={oNotification.type}
                 onClose={() => setNotification(prev => ({ ...prev, show: false }))}
             />
+
+            {/* --- INFO MODAL POPUP --- */}
+            {bShowInfoModal && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999,
+                    display: 'flex', justifyContent: 'center', alignItems: 'center'
+                }}>
+                    <div style={{
+                        background: 'white', padding: '30px', borderRadius: '8px',
+                        maxWidth: '500px', width: '90%', boxShadow: '0 4px 20px rgba(0,0,0,0.15)'
+                    }}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '20px'}}>
+                            <h3 style={{margin: 0, color: '#333'}}>Intersection Rules Explained</h3>
+                            <button onClick={() => setBShowInfoModal(false)} style={{cursor: 'pointer', border: 'none', background: 'none', fontSize: '18px'}}>❌</button>
+                        </div>
+
+                        <div style={{marginBottom: '20px'}}>
+                            <strong style={{color: '#2c3e50'}}>Self-Intersection</strong>
+                            <p style={{fontSize: '13px', color: '#555', marginTop: '5px'}}>
+                                If turned OFF, a single shape cannot cross its own borders (preventing twisted "bow-tie" shapes).
+                            </p>
+                            {/* --- REPLACED WITH IMG TAG --- */}
+                            <div style={{ textAlign: 'center', background: '#f9f9f9', padding: '10px', borderRadius: '4px', border: '1px solid #eee' }}>
+                                <img
+                                    src={oSelfIntersectGif}
+                                    alt="Self Intersection Example"
+                                    style={{ maxWidth: '100%', maxHeight: '150px', objectFit: 'contain', borderRadius: '4px' }}
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <strong style={{color: '#2c3e50'}}>Polygon Overlap (Cross-Intersection)</strong>
+                            <p style={{fontSize: '13px', color: '#555', marginTop: '5px'}}>
+                                If turned OFF, two separate shapes cannot overlap, and you cannot draw a new shape inside an existing one.
+                            </p>
+                            {/* --- REPLACED WITH IMG TAG --- */}
+                            <div style={{ textAlign: 'center', background: '#f9f9f9', padding: '10px', borderRadius: '4px', border: '1px solid #eee' }}>
+                                <img
+                                    src={oCrossIntersectGif}
+                                    alt="Cross Intersection Example"
+                                    style={{ maxWidth: '100%', maxHeight: '150px', objectFit: 'contain', borderRadius: '4px' }}
+                                />
+                            </div>
+                        </div>
+
+                        <div style={{marginTop: '25px', display: 'flex', justifyContent: 'flex-end'}}>
+                            <AppButton sVariant="primary" fnOnClick={() => setBShowInfoModal(false)}>Got it!</AppButton>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* ------------------------ */}
 
             <div style={{width: '100%', maxWidth: '900px', display: 'flex', flexDirection: 'column', gap: '20px'}}>
 
@@ -278,30 +349,67 @@ const NewLabelTemplate = () => {
                         <AppTextArea disabled={bIsViewMode} sPlaceholder="Description..." sValue={sDescription}
                                      fnOnChange={(e) => setSDescription(e.target.value)}/>
                     </div>
+
                     <div style={{marginTop: '15px'}}>
                         <label style={subLabelStyle}>Geometry Types</label>
-                        <div style={{display: 'flex', gap: '20px', marginTop: '10px'}}>
+                        <div style={{display: 'flex', gap: '20px', marginTop: '10px', flexWrap: 'wrap'}}>
                             <AppCheckbox disabled={bIsViewMode} sLabel="Polygon" bChecked={oGeometries.polygon}
-                                         fnOnChange={(e) => setOGeometries({
-                                             ...oGeometries,
-                                             polygon: e.target.checked
-                                         })}/>
+                                         fnOnChange={(e) => setOGeometries({...oGeometries, polygon: e.target.checked})}/>
+                            <AppCheckbox disabled={bIsViewMode} sLabel="MultiPolygon" bChecked={oGeometries.multipolygon}
+                                         fnOnChange={(e) => setOGeometries({...oGeometries, multipolygon: e.target.checked})}/>
                             <AppCheckbox disabled={bIsViewMode} sLabel="Polyline" bChecked={oGeometries.polyline}
-                                         fnOnChange={(e) => setOGeometries({
-                                             ...oGeometries,
-                                             polyline: e.target.checked
-                                         })}/>
+                                         fnOnChange={(e) => setOGeometries({...oGeometries, polyline: e.target.checked})}/>
                             <AppCheckbox disabled={bIsViewMode} sLabel="Point" bChecked={oGeometries.point}
                                          fnOnChange={(e) => setOGeometries({...oGeometries, point: e.target.checked})}/>
                         </div>
                     </div>
+
+                    {/* --- NEW: CONDITIONAL INTERSECTION RULES --- */}
+                    {(oGeometries.polygon || oGeometries.multipolygon) && (
+                        <div style={{
+                            marginTop: '25px',
+                            padding: '15px',
+                            background: '#f9fafb',
+                            borderRadius: '6px',
+                            border: '1px solid #e2e8f0'
+                        }}>
+                            <div style={{display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px'}}>
+                                <label style={{...subLabelStyle, margin: 0, color: '#2c3e50'}}>Polygon Rules</label>
+                                <button
+                                    onClick={() => setBShowInfoModal(true)}
+                                    style={{
+                                        background: 'none', border: 'none', cursor: 'pointer',
+                                        fontSize: '15px', padding: 0, color: '#007bff'
+                                    }}
+                                    title="What does this mean?"
+                                >
+                                    ℹ️
+                                </button>
+                            </div>
+                            <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
+                                <AppCheckbox
+                                    disabled={bIsViewMode}
+                                    sLabel="Allow Self-Intersection (Kinks)"
+                                    bChecked={bSelfIntersectAllowed}
+                                    fnOnChange={(e) => setBSelfIntersectAllowed(e.target.checked)}
+                                />
+                                <AppCheckbox
+                                    disabled={bIsViewMode}
+                                    sLabel="Allow Polygons to Overlap"
+                                    bChecked={bPolygonsIntersectAllowed}
+                                    fnOnChange={(e) => setBPolygonsIntersectAllowed(e.target.checked)}
+                                />
+                            </div>
+                        </div>
+                    )}
+                    {/* ------------------------------------------- */}
+
                 </AppCard>
 
                 {/* 2. ATTRIBUTES BUILDER */}
                 <AppCard>
                     <h3 style={headerStyle}>2. Attributes Schema</h3>
 
-                    {/* ONLY SHOW ADD/EDIT BLOCK IF NOT IN VIEW MODE */}
                     {!bIsViewMode && (
                         <div style={{
                             background: '#f9f9f9',

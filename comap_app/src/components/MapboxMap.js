@@ -111,24 +111,30 @@ const doLinesIntersect = (p1, p2, p3, p4) => {
 };
 
 const hasSelfIntersection = (ring) => {
+    // We need at least A, B, C, Cursor, A (length 5) to have a crossing
     if (ring.length < 5) return false;
 
-    const cursor = ring[ring.length - 2];
-    const lastFixed = ring[ring.length - 3];
-    const p0 = ring[0];
+    const n = ring.length;
+    const cursor = ring[n - 2];     // The live mouse position
+    const lastFixed = ring[n - 3];  // The last clicked vertex
+    const firstFixed = ring[0];     // The very first vertex
 
-    for (let i = 0; i < ring.length - 4; i++) {
-        const p1 = ring[i];
-        const p2 = ring[i + 1];
-
-        if (i !== ring.length - 4) {
-            if (doLinesIntersect(lastFixed, cursor, p1, p2)) return true;
-        }
-
-        if (i !== 0) {
-            if (doLinesIntersect(cursor, p0, p1, p2)) return true;
+    // 1. Check trailing line (lastFixed -> cursor)
+    // We check this against all edges EXCEPT the last one (since they share a vertex)
+    for (let i = 0; i < n - 4; i++) {
+        if (doLinesIntersect(lastFixed, cursor, ring[i], ring[i+1])) {
+            return true;
         }
     }
+
+    // 2. Check the closing line (cursor -> firstFixed)
+    // We check this against all edges EXCEPT the first and last ones (since they share vertices)
+    for (let i = 1; i < n - 3; i++) {
+        if (doLinesIntersect(cursor, firstFixed, ring[i], ring[i+1])) {
+            return true;
+        }
+    }
+
     return false;
 };
 

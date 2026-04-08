@@ -11,6 +11,7 @@ from entities.User import User
 
 oRouter = APIRouter(prefix="/templates")
 
+
 # --- 1. CREATE ---
 @oRouter.post("/create")
 async def create(
@@ -23,16 +24,25 @@ async def create(
 
         oNewtemplate = LabellingTemplateEntity(
             name=oData['name'],
-            # SECURITY UPGRADE: Ignore frontend 'creator', use actual logged-in user!
             creator=oCurrentUser.email,
             description=oData['description'],
             creationDate=oData['creationDate'],
+
+            # --- MAP GEOMETRY Bools ---
             hasPolygons=('polygon' in oData['geometryTypes']),
+            hasMultiPolygons=('multipolygon' in oData['geometryTypes']),  # <-- NEW
             hasLines=('polyline' in oData['geometryTypes']),
             hasPoints=('point' in oData['geometryTypes']),
+
+            # --- MAP STYLING Bools ---
             isFixedColorStyle=oData['isSingleColorStyle'],
             fixedColor=oData['featureColor'],
             colourAttributeName=oData['colourAttributeName'],
+
+            # --- MAP INTERSECTION Bools ---
+            isSelfIntersectAllowed=oData['isSelfIntersectAllowed'],  # <-- NEW
+            isPolygonsIntersectAllowed=oData['isPolygonsIntersectAllowed'],  # <-- NEW
+
             attributes=[attr for attr in oData['attributes']]
         )
 
@@ -53,8 +63,8 @@ async def create(
 # --- GET LIST ---
 @oRouter.get("/getList", response_model=list[TemplateListItem])
 async def getList(
-    oDB: Session = Depends(get_db),
-    oCurrentUser: User = Depends(get_current_user)
+        oDB: Session = Depends(get_db),
+        oCurrentUser: User = Depends(get_current_user)
 ):
     try:
         aoTemplates = oDB.query(LabellingTemplateEntity).all()
@@ -89,11 +99,21 @@ async def update(
         if not oTemplate:
             raise HTTPException(status_code=404, detail="Template not found")
 
-        # OPTIONAL SECURITY: Check if current_user.email == oTemplate.creator to ensure they own it!
+        # --- FIX: Explicit mapping so ViewModel names match Entity columns correctly ---
+        oData = oTemplateData.model_dump()
 
-        oUpdateData = oTemplateData.model_dump()
-        for key, value in oUpdateData.items():
-            setattr(oTemplate, key, value)
+        oTemplate.name = oData['name']
+        oTemplate.description = oData['description']
+        oTemplate.hasPolygons = ('polygon' in oData['geometryTypes'])
+        oTemplate.hasMultiPolygons = ('multipolygon' in oData['geometryTypes'])
+        oTemplate.hasLines = ('polyline' in oData['geometryTypes'])
+        oTemplate.hasPoints = ('point' in oData['geometryTypes'])
+        oTemplate.isFixedColorStyle = oData['isSingleColorStyle']
+        oTemplate.fixedColor = oData['featureColor']
+        oTemplate.colourAttributeName = oData['colourAttributeName']
+        oTemplate.isSelfIntersectAllowed = oData['isSelfIntersectAllowed']
+        oTemplate.isPolygonsIntersectAllowed = oData['isPolygonsIntersectAllowed']
+        oTemplate.attributes = [attr for attr in oData['attributes']]
 
         oDB.commit()
         oDB.refresh(oTemplate)
@@ -147,6 +167,9 @@ async def getByProject(
         oTemplate = oDB.query(LabellingTemplateEntity).filter(LabellingTemplateEntity.projectId == project_id).first()
         if not oTemplate:
             raise HTTPException(status_code=404, detail="Template not found for this project")
+
+        # Re-use the same mapping logic from getById below if you ever use this endpoint!
+        # (Assuming you don't use this one often, but you should map it similarly if needed)
         return oTemplate
     except HTTPException:
         raise
@@ -157,7 +180,7 @@ async def getByProject(
 # --- 5. GET ATTRIBUTES ---
 @oRouter.get("/getAttributes")
 async def getAttributes(
-        sTemplateId: str= Query(..., description="Unique identifier for the template"),
+        sTemplateId: str = Query(..., description="Unique identifier for the template"),
         oDB: Session = Depends(get_db),
         oCurrentUser: User = Depends(get_current_user)
 ):
@@ -186,8 +209,10 @@ async def getByID(
         if not oTemplate:
             raise HTTPException(status_code=404, detail="Template not found for this id")
 
+        # --- Reconstruct the geometryTypes list ---
         asGeomTypes = []
         if oTemplate.hasPolygons: asGeomTypes.append("polygon")
+        if getattr(oTemplate, "hasMultiPolygons", False): asGeomTypes.append("multipolygon")  # Safe fallback
         if oTemplate.hasLines: asGeomTypes.append("polyline")
         if oTemplate.hasPoints: asGeomTypes.append("point")
 
@@ -200,6 +225,12 @@ async def getByID(
             isSingleColorStyle=oTemplate.isFixedColorStyle,
             featureColor=oTemplate.fixedColor,
             colourAttributeName=oTemplate.colourAttributeName,
+
+            # --- FIX: PACK THE NEW FIELDS SO PYDANTIC DOES NOT CRASH ---
+            # Cast to bool() just in case the legacy data is None
+            isSelfIntersectAllowed=bool(oTemplate.isSelfIntersectAllowed),
+            isPolygonsIntersectAllowed=bool(oTemplate.isPolygonsIntersectAllowed),
+
             creationDate=oTemplate.creationDate
         )
 

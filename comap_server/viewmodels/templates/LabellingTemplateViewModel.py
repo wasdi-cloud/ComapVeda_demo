@@ -23,6 +23,8 @@ class LabellingTemplateViewModel(BaseModel):
 
     # Styling
     isSingleColorStyle: bool = Field(..., description="Whether the template uses a single color style")
+    isSelfIntersectAllowed: bool = Field(..., description="Whether a polygon can self intersect")
+    isPolygonsIntersectAllowed: bool = Field(..., description="Whether the polygons can overlap/intersect")
     featureColor: Optional[str] = Field(None, description="Hex color for single style")
     colourAttributeName: Optional[str] = Field(None, description="Attribute name used for category coloring")
 
@@ -31,7 +33,7 @@ class LabellingTemplateViewModel(BaseModel):
     @field_validator('geometryTypes')
     @classmethod
     def validate_geometry_type(cls, v: List[str]) -> List[str]:
-        allowed = {'polygon', 'polyline', 'point'}
+        allowed = {'polygon','multipolygon', 'polyline', 'point'}
         for item in v:
             if item.lower() not in allowed:
                 raise ValueError(f"Invalid geometry: {item}")

@@ -701,8 +701,9 @@ const EditProject = () => {
 
                             sCurrentDrawColor={sDrawingColor}
                             sInitialMapStyle="mapbox://styles/mapbox/satellite-v9"
-                            bPreventSelfIntersection={true}
-                            bPreventPolygonIntersection={true}
+                            // Dynamically pull from template: If NOT allowed, then PREVENT = true
+                            bPreventSelfIntersection={oLabelTemplate ? !oLabelTemplate.isSelfIntersectAllowed : false}
+                            bPreventPolygonIntersection={oLabelTemplate ? !oLabelTemplate.isPolygonsIntersectAllowed : false}
                         />
                     </div>
 

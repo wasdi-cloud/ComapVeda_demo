@@ -16,8 +16,11 @@ class LabellingTemplateEntity(Base):
     description = Column(String, nullable=True)
     colourAttributeName = Column(String, nullable=True)
     hasPolygons = Column(Boolean, default=False)
+    hasMultiPolygons = Column(Boolean, default=False)
     hasLines = Column(Boolean, default=False)
     hasPoints = Column(Boolean, default=False)
+    isSelfIntersectAllowed = Column(Boolean, default=False)
+    isPolygonsIntersectAllowed = Column(Boolean, default=False)
     isFixedColorStyle = Column(Boolean, default=False)
     fixedColor = Column(String, nullable=True)
     # This stores the list of Attribute objects as a JSON blob
