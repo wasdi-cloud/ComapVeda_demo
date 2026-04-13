@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session as DBSession
 from database import get_db
 from entities.User import User
 from entities.Session import Session
+from utils import MailUtils
 from utils.auth_utils import hash_password, verify_password, generate_otp, generate_session_token
 from viewmodels.auth.LoginModel import LoginModel
 from viewmodels.auth.OtpModel import OtpModel
@@ -49,11 +50,16 @@ async def register(oRegistration: Registration, oDatabase: DBSession = Depends(g
         oDatabase.refresh(oNewUser)
         
         # TODO: Send OTP via email
+        sTitle="OTP"
+        sMessage=sOtp
+
+        MailUtils.sendEmailMailJet("sysadmin@wasdi.cloud", oRegistration.email, sTitle, sMessage,False)
+
         # For now, we return it in the response for testing
         return {
             "message": "Registration successful. Please check your email for the OTP.",
             "email": oRegistration.email,
-            "otp": sOtp  # TODO: Remove this in production, send via email instead
+            # "otp": sOtp  # TODO: Remove this in production, send via email instead
         }
         
     except HTTPException:
