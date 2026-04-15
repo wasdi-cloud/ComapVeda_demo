@@ -151,6 +151,15 @@ const ApproveProject = () => {
         return <div style={{ padding: '40px', textAlign: 'center', color: 'red' }}>⚠️ Error: Project data not found.</div>;
     }
 
+    // --- NEW: DYNAMIC HEADER STYLING ---
+    const bIsApproved = oRequestData.approved;
+    const bIsRejected = oRequestData.rejected;
+    const sStatusText = bIsApproved ? "Approved" : (bIsRejected ? "Rejected" : "Pending");
+    const sStatusIcon = bIsApproved ? "✅" : (bIsRejected ? "❌" : "⚠️");
+    const sStatusBg   = bIsApproved ? "#d4edda" : (bIsRejected ? "#f8d7da" : "#fff3cd");
+    const sStatusCol  = bIsApproved ? "#155724" : (bIsRejected ? "#721c24" : "#856404");
+    const sStatusBord = bIsApproved ? "#c3e6cb" : (bIsRejected ? "#f5c6cb" : "#ffeeba");
+
     return (
         <div style={{
             display: 'flex', flexDirection: 'column', height: '90vh',
@@ -191,11 +200,17 @@ const ApproveProject = () => {
                         ID: #{safeProjectId}
                     </p>
                 </div>
+                {/* --- FIX: DYNAMIC STATUS BADGE --- */}
                 <div style={{
-                    padding: '5px 10px', background: '#fff3cd', color: '#856404', borderRadius: '4px',
-                    fontSize: '13px', fontWeight: 'bold', border: '1px solid #ffeeba'
+                    padding: '5px 10px',
+                    background: sStatusBg,
+                    color: sStatusCol,
+                    borderRadius: '4px',
+                    fontSize: '13px',
+                    fontWeight: 'bold',
+                    border: `1px solid ${sStatusBord}`
                 }}>
-                    ⚠️ Status: Pending
+                    {sStatusIcon} Status: {sStatusText}
                 </div>
             </div>
 

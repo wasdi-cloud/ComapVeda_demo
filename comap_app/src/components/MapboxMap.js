@@ -157,6 +157,7 @@ const MapboxMap = ({
                        bHasLines               = true,
                        bPreventSelfIntersection = false,
                        bPreventPolygonIntersection = false,
+                       sHoveredFootprint       = null, // <-- ADDED BACK!
                    }) => {
 
     const [oSelectedMarker, setSelectedMarker] = useState(null);
@@ -169,7 +170,7 @@ const MapboxMap = ({
     const oActiveLayerIdRef = useRef(null);
 
     const bIsIntersectingRef = useRef(false);
-    const sInvalidReasonRef  = useRef(""); // <-- NEW: Stores the reason for the error
+    const sInvalidReasonRef  = useRef("");
 
     // --- LIVE REF FOR PREVIOUSLY SAVED FEATURES ---
     const aoFeaturesRef = useRef(aoFeatures);
@@ -454,6 +455,78 @@ const MapboxMap = ({
         map.on('styledata', onStyleData);
         return () => { map.off('styledata', onStyleData); };
     }, [sActiveGeoTIFF, sMapStyle]);
+
+    // ═══════════════════════════════════════════════════════════════════
+    // HOVER FOOTPRINT RENDERER
+    // ═══════════════════════════════════════════════════════════════════
+    useEffect(() => {
+        const map = oMapRef.current;
+        if (!map) return;
+
+        const SOURCE_ID = 'hover-footprint-source';
+        const FILL_ID   = 'hover-footprint-fill';
+        const LINE_ID   = 'hover-footprint-line';
+
+        // Helper to clean up the layers when you mouse-leave
+        const clearHover = () => {
+            if (map.getLayer(FILL_ID)) map.removeLayer(FILL_ID);
+            if (map.getLayer(LINE_ID)) map.removeLayer(LINE_ID);
+            if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID);
+        };
+
+        if (sHoveredFootprint) {
+            try {
+                let geojsonGeom;
+
+                // 1. If backend sends WKT string (e.g. "POLYGON((...))")
+                if (typeof sHoveredFootprint === 'string' && sHoveredFootprint.toUpperCase().includes('POLYGON')) {
+                    const coordsText = sHoveredFootprint.replace(/POLYGON\s*\(\(/i, "").replace(/\)\)/, "");
+                    const coords = coordsText.split(",").map(p => {
+                        const [x, y] = p.trim().split(/\s+/).map(Number);
+                        return [x, y];
+                    });
+                    geojsonGeom = { type: 'Polygon', coordinates: [coords] };
+                }
+                // 2. If backend sends standard GeoJSON object
+                else if (typeof sHoveredFootprint === 'object') {
+                    geojsonGeom = sHoveredFootprint;
+                }
+
+                if (geojsonGeom) {
+                    clearHover(); // Clean up just in case
+
+                    // Add the data source
+                    map.addSource(SOURCE_ID, {
+                        type: 'geojson',
+                        data: { type: 'Feature', geometry: geojsonGeom, properties: {} }
+                    });
+
+                    // Add the semi-transparent fill
+                    map.addLayer({
+                        id: FILL_ID,
+                        type: 'fill',
+                        source: SOURCE_ID,
+                        paint: { 'fill-color': '#e1aa07', 'fill-opacity': 0.15 }
+                    });
+
+                    // Add the dashed outline border
+                    map.addLayer({
+                        id: LINE_ID,
+                        type: 'line',
+                        source: SOURCE_ID,
+                        paint: { 'line-color': '#e1aa07', 'line-width': 2, 'line-dasharray': [2, 2] }
+                    });
+                }
+            } catch (err) {
+                console.error("Failed to render hovered footprint", err);
+            }
+        } else {
+            clearHover();
+        }
+
+        // Cleanup on unmount
+        return () => clearHover();
+    }, [sHoveredFootprint]);
 
     const handleDrawUpdate = (e, drawInstance) => {
         if (onDrawUpdate && drawInstance) onDrawUpdate(drawInstance.getAll());

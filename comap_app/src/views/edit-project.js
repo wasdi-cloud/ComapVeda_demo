@@ -563,8 +563,12 @@ const EditProject = () => {
                             >
                                 ⚙️ Properties
                             </AppButton>
-                            <AppButton fnOnClick={() => oNavigate('/project-collabs')} sVariant="outline"
-                                       oStyle={{fontSize: '13px', padding: '6px 12px'}}>👥 Collaborators</AppButton>
+                            <AppButton
+                                fnOnClick={() => oNavigate('/project-collabs', { state: { projectId: sProjectId } })}
+                                sVariant="outline"
+                                oStyle={{fontSize: '13px', padding: '6px 12px'}}>
+                                👥 Collaborators
+                            </AppButton>
                             <AppButton fnOnClick={() => oNavigate('/export-project')} sVariant="primary"
                                        oStyle={{fontSize: '13px', padding: '6px 12px'}}>📥 Export Project</AppButton>
                         </div>
