@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom'; // <-- 1. Import useNavigate
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 // REUSABLE COMPONENTS
 import AppCard from '../components/app-card';
@@ -8,54 +8,97 @@ import AppSelect from '../components/app-dropdown-input';
 import AppTextArea from '../components/app-text-area';
 import AppButton from '../components/app-button';
 
+// SERVICES
+import { getCollaborators, inviteCollab, removeCollab } from '../services/project-service';
+import {getUser} from "../services/session";
+
+
 const ProjectCollaborators = () => {
-    const navigate = useNavigate(); // <-- 2. Initialize navigate
+    const navigate = useNavigate();
+    const location = useLocation();
 
-    // --- 1. DUMMY DATA (Existing Team) ---
-    const [aoCollaborators, setAoCollaborators] = useState([
-        { id: 1, name: "Jihed (You)", email: "jihed@comap.com", role: "Owner", status: "Active" },
-        { id: 2, name: "Sarah Connor", email: "sarah@skynet.net", role: "Co-Owner", status: "Active" },
-        { id: 3, name: "John Doe", email: "john@example.com", role: "Annotator", status: "Pending" },
-    ]);
+    // Grab the Project ID from the router state
+    const sProjectId = location.state?.projectId || null;
 
-    // --- 2. FORM STATE ---
+    // --- GET CURRENT USER EMAIL FROM SESSION ---
+    const oUser = getUser();
+    const sCurrentUserEmail = oUser?.email || "";
+
+    // --- 1. STATE ---
+    const [aoCollaborators, setAoCollaborators] = useState([]);
+    const [bIsLoading, setIsLoading] = useState(true);
+
     const [sInviteEmail, setSInviteEmail] = useState("");
-    const [sInviteRole, setSInviteRole] = useState("Annotator");
+    const [sInviteRole, setSInviteRole] = useState("annotator"); // Matches Python Enum
     const [sInviteNote, setSInviteNote] = useState("");
+    const [bIsSubmitting, setIsSubmitting] = useState(false);
 
-    // --- 3. HANDLERS ---
-    const handleSendInvite = (e) => {
-        e.preventDefault();
-
-        if (!sInviteEmail) return alert("Please enter an email address.");
-
-        // Simulate API call
-        console.log("Sending Invite to:", sInviteEmail, "Role:", sInviteRole, "Note:", sInviteNote);
-
-        // Add to list visually (simulating a "Pending" user)
-        const oNewUser = {
-            id: Date.now(),
-            name: "Invited User", // We don't know the name yet until they accept
-            email: sInviteEmail,
-            role: sInviteRole,
-            status: "Pending"
-        };
-
-        setAoCollaborators([...aoCollaborators, oNewUser]);
-
-        // Reset Form
-        setSInviteEmail("");
-        setSInviteNote("");
-        setSInviteRole("Annotator"); // Reset to default
-
-        alert(`Invitation sent to ${sInviteEmail}! 📧`);
-    };
-
-    const handleRemove = (id) => {
-        if(window.confirm("Remove this collaborator from the project?")) {
-            setAoCollaborators(aoCollaborators.filter(c => c.id !== id));
+    // --- 2. FETCH REAL DATA ---
+    const loadCollaborators = async () => {
+        if (!sProjectId) return;
+        setIsLoading(true);
+        try {
+            const data = await getCollaborators(sProjectId);
+            setAoCollaborators(data || []);
+        } catch (error) {
+            console.error("Failed to load collaborators:", error);
+            setAoCollaborators([]); // Default to empty list on error
+        } finally {
+            setIsLoading(false);
         }
     };
+
+    useEffect(() => {
+        loadCollaborators();
+    }, [sProjectId]);
+
+    // --- 3. HANDLERS ---
+    const handleSendInvite = async (e) => {
+        e.preventDefault();
+        if (!sInviteEmail) return alert("Please enter an email address.");
+        if (!sProjectId) return alert("Project ID is missing!");
+
+        setIsSubmitting(true);
+        try {
+            const payload = {
+                userEmail: sInviteEmail,
+                role: sInviteRole,
+                note: sInviteNote || null
+            };
+
+            await inviteCollab(sProjectId, payload);
+            alert(`Invitation sent to ${sInviteEmail}! 📧`);
+
+            // Reset Form & Reload List
+            setSInviteEmail("");
+            setSInviteNote("");
+            setSInviteRole("annotator");
+            loadCollaborators();
+
+        } catch (error) {
+            alert("Failed to send invitation: " + error.message);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleRemove = async (email) => {
+        if (window.confirm(`Are you sure you want to remove ${email} from the project?`)) {
+            try {
+                await removeCollab(sProjectId, email);
+                alert(`${email} removed successfully.`);
+                loadCollaborators(); // Refresh the table
+            } catch (error) {
+                alert("Failed to remove collaborator: " + error.message);
+            }
+        }
+    };
+
+    // --- SECURITY CHECK: IS THE CURRENT USER AN OWNER? ---
+    // We look through the loaded list to see if the current user has the 'co-owner' role
+    const bIsCurrentUserOwner = aoCollaborators.some(
+        c => c.userEmail === sCurrentUserEmail && c.userRole.toLowerCase() === 'co-owner'
+    );
 
     return (
         <div style={{ padding: '30px', background: '#f4f6f8', minHeight: '100vh', display: 'flex', justifyContent: 'center' }}>
@@ -63,7 +106,6 @@ const ProjectCollaborators = () => {
 
                 {/* HEADER */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
-                    {/* --- 3. THE BACK BUTTON --- */}
                     <button
                         onClick={() => navigate(-1)}
                         style={{
@@ -74,7 +116,7 @@ const ProjectCollaborators = () => {
                             padding: '4px 12px',
                             borderRadius: '6px',
                             color: '#555',
-                            marginTop: '2px', // Aligns it nicely with the title
+                            marginTop: '2px',
                             transition: 'background 0.2s'
                         }}
                         onMouseOver={(e) => e.currentTarget.style.background = '#eee'}
@@ -89,102 +131,122 @@ const ProjectCollaborators = () => {
                     </div>
                 </div>
 
-                {/* --- 1. INVITATION FORM --- */}
-                <AppCard oStyle={{ borderTop: '4px solid #007bff' }}>
-                    <h3 style={headerStyle}>Invite New Member</h3>
+                {/* --- 1. INVITATION FORM (HIDDEN IF NOT OWNER) --- */}
+                {bIsCurrentUserOwner && (
+                    <AppCard oStyle={{ borderTop: '4px solid #007bff' }}>
+                        <h3 style={headerStyle}>Invite New Member</h3>
 
-                    <form onSubmit={handleSendInvite}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', marginBottom: '15px' }}>
-                            <AppTextInput
-                                sLabel="Collaborator Email"
-                                sPlaceholder="colleague@example.com"
-                                type="email"
-                                sValue={sInviteEmail}
-                                fnOnChange={(e) => setSInviteEmail(e.target.value)}
-                                required
-                            />
+                        <form onSubmit={handleSendInvite}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', marginBottom: '15px' }}>
+                                <AppTextInput
+                                    sLabel="Collaborator Email"
+                                    sPlaceholder="colleague@example.com"
+                                    type="email"
+                                    sValue={sInviteEmail}
+                                    fnOnChange={(e) => setSInviteEmail(e.target.value)}
+                                    required
+                                />
 
-                            {/* Role Select */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                                <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#555' }}>Role</label>
-                                <AppSelect
-                                    sValue={sInviteRole}
-                                    fnOnChange={(e) => setSInviteRole(e.target.value)}
-                                    aoOptions={[
-                                        { value: "Co-Owner", label: "Co-Owner (Full Access)" },
-                                        { value: "Reviewer", label: "Reviewer (QA/QC)" },
-                                        { value: "Annotator", label: "Annotator (Labeling Only)" }
-                                    ]}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                    <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#555' }}>Role</label>
+                                    <AppSelect
+                                        sValue={sInviteRole}
+                                        fnOnChange={(e) => setSInviteRole(e.target.value)}
+                                        aoOptions={[
+                                            { value: "co-owner", label: "Co-Owner (Full Access)" },
+                                            { value: "reviewer", label: "Reviewer (QA/QC)" },
+                                            { value: "annotator", label: "Annotator (Labeling Only)" }
+                                        ]}
+                                    />
+                                </div>
+                            </div>
+
+                            <div style={{ marginBottom: '20px' }}>
+                                <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#555', marginBottom: '5px', display: 'block' }}>Invitation Note (Optional)</label>
+                                <AppTextArea
+                                    sPlaceholder="Hi! Please join this project to help with the flood analysis..."
+                                    sValue={sInviteNote}
+                                    fnOnChange={(e) => setSInviteNote(e.target.value)}
+                                    iRows={2}
                                 />
                             </div>
-                        </div>
 
-                        <div style={{ marginBottom: '20px' }}>
-                            <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#555', marginBottom: '5px', display: 'block' }}>Invitation Note (Optional)</label>
-                            <AppTextArea
-                                sPlaceholder="Hi! Please join this project to help with the flood analysis..."
-                                sValue={sInviteNote}
-                                fnOnChange={(e) => setSInviteNote(e.target.value)}
-                                iRows={2}
-                            />
-                        </div>
-
-                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                            <AppButton type="submit" sVariant="primary">
-                                Send Invitation ✉️
-                            </AppButton>
-                        </div>
-                    </form>
-                </AppCard>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                <AppButton type="submit" sVariant="primary" disabled={bIsSubmitting}>
+                                    {bIsSubmitting ? "Sending..." : "Send Invitation ✉️"}
+                                </AppButton>
+                            </div>
+                        </form>
+                    </AppCard>
+                )}
 
                 {/* --- 2. COLLABORATORS LIST --- */}
                 <AppCard>
-                    <h3 style={headerStyle}>Current Team ({aoCollaborators.length})</h3>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', ...headerStyle }}>
+                        <h3 style={{ margin: 0 }}>Current Team ({aoCollaborators.length})</h3>
+                        {!bIsCurrentUserOwner && (
+                            <span style={{ fontSize: '12px', color: '#888', fontStyle: 'italic', background: '#f0f0f0', padding: '4px 8px', borderRadius: '4px' }}>
+                                View-Only Mode
+                            </span>
+                        )}
+                    </div>
 
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                        <thead style={{ background: '#f9f9f9', borderBottom: '2px solid #eee' }}>
-                        <tr style={{ textAlign: 'left', color: '#555' }}>
-                            <th style={thStyle}>User Name</th>
-                            <th style={thStyle}>Email</th>
-                            <th style={thStyle}>Role</th>
-                            <th style={thStyle}>Status</th>
-                            <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        {aoCollaborators.map(user => (
-                            <tr key={user.id} style={{ borderBottom: '1px solid #eee' }}>
-                                <td style={{ ...tdStyle, fontWeight: 'bold' }}>
-                                    {user.name}
-                                    {user.role === 'Owner' && <span style={{ marginLeft: '8px', fontSize: '10px', background: '#ffd700', padding: '2px 6px', borderRadius: '10px' }}>OWNER</span>}
-                                </td>
-                                <td style={tdStyle}>{user.email}</td>
-                                <td style={tdStyle}>
-                                        <span style={getRoleBadgeStyle(user.role)}>
-                                            {user.role}
-                                        </span>
-                                </td>
-                                <td style={tdStyle}>
-                                    {user.status === 'Pending' ? (
-                                        <span style={{ color: '#e6a23c', fontStyle: 'italic' }}>⏳ Pending</span>
-                                    ) : (
-                                        <span style={{ color: '#28a745' }}>Active</span>
-                                    )}
-                                </td>
-                                <td style={{ ...tdStyle, textAlign: 'right' }}>
-                                    {user.role !== 'Owner' && (
-                                        <button
-                                            onClick={() => handleRemove(user.id)}
-                                            style={{ border: 'none', background: 'transparent', color: '#dc3545', cursor: 'pointer', fontWeight: 'bold' }}
-                                        >
-                                            Remove
-                                        </button>
-                                    )}
-                                </td>
+                    {bIsLoading ? (
+                        <div style={{ textAlign: 'center', padding: '20px', color: '#666' }}>⏳ Loading team...</div>
+                    ) : (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                            <thead style={{ background: '#f9f9f9', borderBottom: '2px solid #eee' }}>
+                            <tr style={{ textAlign: 'left', color: '#555' }}>
+                                <th style={thStyle}>Email</th>
+                                <th style={thStyle}>Role</th>
+                                {/* Only show the Actions header if they are an owner */}
+                                {bIsCurrentUserOwner && <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>}
                             </tr>
-                        ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                            {aoCollaborators.map((user, idx) => {
+                                const bIsCurrentUser = user.userEmail === sCurrentUserEmail;
+
+                                return (
+                                    <tr key={idx} style={{ borderBottom: '1px solid #eee', background: bIsCurrentUser ? '#f8fdf8' : 'white' }}>
+                                        <td style={{ ...tdStyle, fontWeight: 'bold' }}>
+                                            {user.userEmail}
+                                            {bIsCurrentUser && (
+                                                <span style={{ marginLeft: '8px', fontSize: '10px', background: '#e2e8f0', color: '#475569', padding: '2px 6px', borderRadius: '10px' }}>YOU</span>
+                                            )}
+                                        </td>
+                                        <td style={tdStyle}>
+                                            <span style={getRoleBadgeStyle(user.userRole)}>
+                                                {user.userRole.toUpperCase()}
+                                            </span>
+                                        </td>
+
+                                        {/* Only render the Actions column if the current logged-in user is an owner */}
+                                        {bIsCurrentUserOwner && (
+                                            <td style={{ ...tdStyle, textAlign: 'right' }}>
+                                                {!bIsCurrentUser ? (
+                                                    <button
+                                                        onClick={() => handleRemove(user.userEmail)}
+                                                        style={{ border: 'none', background: 'transparent', color: '#dc3545', cursor: 'pointer', fontWeight: 'bold' }}
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                ) : (
+                                                    <span style={{ color: '#999', fontSize: '12px', fontStyle: 'italic' }}>Cannot remove self</span>
+                                                )}
+                                            </td>
+                                        )}
+                                    </tr>
+                                );
+                            })}
+                            {aoCollaborators.length === 0 && (
+                                <tr>
+                                    <td colSpan={bIsCurrentUserOwner ? "3" : "2"} style={{ textAlign: 'center', padding: '20px', color: '#999' }}>No collaborators found.</td>
+                                </tr>
+                            )}
+                            </tbody>
+                        </table>
+                    )}
                 </AppCard>
 
             </div>
@@ -199,10 +261,10 @@ const tdStyle = { padding: '12px 15px', color: '#333' };
 
 const getRoleBadgeStyle = (role) => {
     const base = { padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '500' };
-    switch(role) {
-        case 'Co-Owner': return { ...base, background: '#e6f7ff', color: '#1890ff' };
-        case 'Reviewer': return { ...base, background: '#f6ffed', color: '#52c41a' }; // Greenish
-        case 'Annotator': return { ...base, background: '#fff7e6', color: '#fa8c16' }; // Orange
+    switch(role?.toLowerCase()) {
+        case 'co-owner': return { ...base, background: '#e6f7ff', color: '#1890ff' };
+        case 'reviewer': return { ...base, background: '#f6ffed', color: '#52c41a' };
+        case 'annotator': return { ...base, background: '#fff7e6', color: '#fa8c16' };
         default: return { ...base, background: '#f5f5f5', color: '#666' };
     }
 };

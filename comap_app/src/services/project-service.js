@@ -49,18 +49,27 @@ export const rejectProject = async (projectId, note) => {
         method: 'GET'
     });
 };
-// 6. INVITE COLLAB (Admin)
-export const inviteCollab = async (projectId, note) => {
-    return await oRequest(`/projects/${projectId}/reject`, {
-        method: 'POST',
-        body: JSON.stringify({ note })
+
+// 6. LIST COLLABS
+export const getCollaborators = async (projectId) => {
+    return await oRequest(`projects/listCollaborators?project_id=${projectId}`, {
+        method: 'GET'
     });
 };
-// 7. REJECT PROJECT (Admin)
-export const removeCollab = async (projectId, note) => {
-    return await oRequest(`/projects/${projectId}/reject`, {
+
+// 7. INVITE COLLAB
+export const inviteCollab = async (projectId, payload) => {
+    return await oRequest(`projects/inviteCollaborator?project_id=${projectId}`, {
         method: 'POST',
-        body: JSON.stringify({ note })
+        body: JSON.stringify(payload)
+    });
+};
+
+// 8. REMOVE COLLAB
+export const removeCollab = async (projectId, userEmail) => {
+    // We encode the email so special characters like '@' don't break the URL
+    return await oRequest(`projects/removeCollaborator?userEmail=${encodeURIComponent(userEmail)}&project_id=${projectId}`, {
+        method: 'DELETE'
     });
 };
 // 8. Export Project

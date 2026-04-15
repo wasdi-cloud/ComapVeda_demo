@@ -414,28 +414,20 @@ async def listCollabs(
 ):
     try:
         oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
-
         if not oProject:
+            print("🚨 Throwing 404: Project was None!")
             raise HTTPException(status_code=404, detail="Project not found")
-
         aoResult = []
 
         # Helper to parse the JSON array into our ViewModels
         def add_to_results(collab_list, role_value):
             if not collab_list:
                 return
-            for item in collab_list:
-                if isinstance(item, dict):
-                    email = item.get("email", "")
-                    date_added = item.get("dateAdded", 0)
-                else:
-                    email = str(item)
-                    date_added = 0  # Default if stored purely as strings previously
-
+            for email in collab_list:
                 aoResult.append(CollaboratorListItem(
                     userEmail=email,
                     userRole=role_value,
-                    dateAdded=date_added
+                    dateAdded=0  # Hardcoded to 0 since we dropped tracking dates
                 ))
 
         add_to_results(oProject.owners, CollaboratorRole.CO_OWNER.value)
@@ -444,9 +436,9 @@ async def listCollabs(
 
         return aoResult
 
-    except HTTPException:
-        raise
+
     except Exception as oE:
+
         raise HTTPException(status_code=500, detail=f'Error fetching collaborators: {str(oE)}')
 
 
@@ -472,30 +464,27 @@ async def inviteCollabs(
         if not oInvitedUser:
             raise HTTPException(status_code=404, detail="User with this email does not exist.")
 
-        # 3. Create the data payload to store in JSON
-        new_collab_record = {
-            "email": payload.userEmail,
-            "dateAdded": int(time.time() * 1000)
-        }
-
-        # 4. Add them to the correct role list.
-        # Note: We duplicate the list and reassign it to force SQLAlchemy to notice the JSON update.
+        # 3. Add their email string to the correct role list.
+        # We assign it to a new list to force SQLAlchemy to detect the JSON update.
         if payload.role == CollaboratorRole.CO_OWNER:
             current_list = list(oProject.owners or [])
-            current_list.append(new_collab_record)
+            if payload.userEmail not in current_list:
+                current_list.append(payload.userEmail)
             oProject.owners = current_list
 
         elif payload.role == CollaboratorRole.ANNOTATOR:
             current_list = list(oProject.annotators or [])
-            current_list.append(new_collab_record)
+            if payload.userEmail not in current_list:
+                current_list.append(payload.userEmail)
             oProject.annotators = current_list
 
         elif payload.role == CollaboratorRole.REVIEWER:
             current_list = list(oProject.reviewers or [])
-            current_list.append(new_collab_record)
+            if payload.userEmail not in current_list:
+                current_list.append(payload.userEmail)
             oProject.reviewers = current_list
 
-        oDB.commit()
+            oDB.commit()
 
 
         sTitle = f"Invitation to collaborate on project: {oProject.name}"
@@ -534,16 +523,16 @@ async def deleteCollab(
         if not _is_user_owner(oProject, oCurrentUser.email) and oCurrentUser.email != userEmail:
             raise HTTPException(status_code=403, detail="Not authorized to remove this collaborator.")
 
-        # Helper to filter out the target email
-        def _remove_email_from_list(collab_list, target_email):
+        # Helper to filter out the target email string
+        def _remove_email(collab_list, target_email):
             if not collab_list:
                 return []
-            return [item for item in collab_list if _parse_email(item) != target_email]
+            return [email for email in collab_list if email != target_email]
 
         # 2. Clean them out of all role lists
-        oProject.owners = _remove_email_from_list(oProject.owners, userEmail)
-        oProject.annotators = _remove_email_from_list(oProject.annotators, userEmail)
-        oProject.reviewers = _remove_email_from_list(oProject.reviewers, userEmail)
+        oProject.owners = _remove_email(oProject.owners, userEmail)
+        oProject.annotators = _remove_email(oProject.annotators, userEmail)
+        oProject.reviewers = _remove_email(oProject.reviewers, userEmail)
 
         oDB.commit()
 
