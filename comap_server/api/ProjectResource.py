@@ -1,3 +1,5 @@
+import time
+
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -6,7 +8,11 @@ from database import get_db
 from entities.DatasetProject import DatasetProjectEntity
 from entities.ImageStyle import ImageStyleEntity
 from entities.User import User
+from utils import MailUtils
+from utils.CollaboratorRole import CollaboratorRole
 from utils.auth_utils import get_current_user
+from viewmodels.projects.CollaboratorListItem import CollaboratorListItem
+from viewmodels.projects.InviteCollaborator import InviteCollaborator
 from viewmodels.projects.ProjectListItem import ProjectPublic, AOI
 from viewmodels.projects.ProjectPropertiesViewModel import ProjectPropertiesViewModel
 from viewmodels.projects.ProjectRequest import ProjectRequestViewModel
@@ -383,3 +389,175 @@ async def getRequests(
         return oResult
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error fetching requests: {str(oE)}')
+
+
+# --- HELPER FUNCTIONS ---
+def _parse_email(collab_item):
+    """Safely extract email whether stored as a string or a dict in the JSON column."""
+    if isinstance(collab_item, dict):
+        return collab_item.get("email", "")
+    return str(collab_item)
+
+
+def _is_user_owner(project: DatasetProjectEntity, user_email: str) -> bool:
+    """Check if the user is in the owners JSON list."""
+    if not project.owners:
+        return False
+    return any(_parse_email(item) == user_email for item in project.owners)
+
+
+
+@oRouter.get("/listCollaborators", response_model=list[CollaboratorListItem])
+async def listCollabs(
+        project_id: str = Query(...),
+        oDB: Session = Depends(get_db)
+):
+    try:
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
+
+        if not oProject:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        aoResult = []
+
+        # Helper to parse the JSON array into our ViewModels
+        def add_to_results(collab_list, role_value):
+            if not collab_list:
+                return
+            for item in collab_list:
+                if isinstance(item, dict):
+                    email = item.get("email", "")
+                    date_added = item.get("dateAdded", 0)
+                else:
+                    email = str(item)
+                    date_added = 0  # Default if stored purely as strings previously
+
+                aoResult.append(CollaboratorListItem(
+                    userEmail=email,
+                    userRole=role_value,
+                    dateAdded=date_added
+                ))
+
+        add_to_results(oProject.owners, CollaboratorRole.CO_OWNER.value)
+        add_to_results(oProject.annotators, CollaboratorRole.ANNOTATOR.value)
+        add_to_results(oProject.reviewers, CollaboratorRole.REVIEWER.value)
+
+        return aoResult
+
+    except HTTPException:
+        raise
+    except Exception as oE:
+        raise HTTPException(status_code=500, detail=f'Error fetching collaborators: {str(oE)}')
+
+
+
+@oRouter.post("/inviteCollaborator")
+async def inviteCollabs(
+        payload: InviteCollaborator,
+        project_id: str = Query(...),
+        oDB: Session = Depends(get_db),
+        oCurrentUser: User = Depends(get_current_user)
+):
+    try:
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
+        if not oProject:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        # 1. Verify if current user has permission (Must be an owner)
+        if not _is_user_owner(oProject, oCurrentUser.email):
+            raise HTTPException(status_code=403, detail="Only project owners can invite collaborators.")
+
+        # 2. Check if invited user exists in the database
+        oInvitedUser = oDB.query(User).filter(User.email == payload.userEmail).first()
+        if not oInvitedUser:
+            raise HTTPException(status_code=404, detail="User with this email does not exist.")
+
+        # 3. Create the data payload to store in JSON
+        new_collab_record = {
+            "email": payload.userEmail,
+            "dateAdded": int(time.time() * 1000)
+        }
+
+        # 4. Add them to the correct role list.
+        # Note: We duplicate the list and reassign it to force SQLAlchemy to notice the JSON update.
+        if payload.role == CollaboratorRole.CO_OWNER:
+            current_list = list(oProject.owners or [])
+            current_list.append(new_collab_record)
+            oProject.owners = current_list
+
+        elif payload.role == CollaboratorRole.ANNOTATOR:
+            current_list = list(oProject.annotators or [])
+            current_list.append(new_collab_record)
+            oProject.annotators = current_list
+
+        elif payload.role == CollaboratorRole.REVIEWER:
+            current_list = list(oProject.reviewers or [])
+            current_list.append(new_collab_record)
+            oProject.reviewers = current_list
+
+        oDB.commit()
+
+
+        sTitle = f"Invitation to collaborate on project: {oProject.name}"
+
+        sMessage = f"Hello,\n\nYou have been invited to collaborate on the project '{oProject.name}' with the role of: {payload.role.value}.\n"
+
+        if payload.note:
+            sMessage += f"\nMessage from the administrator:\n\"{payload.note}\"\n"
+
+        sMessage += "\nPlease log in to the platform to access the project.\n\nBest regards,\nSystem Admin"
+        MailUtils.sendEmailMailJet("sysadmin@wasdi.cloud", oInvitedUser.email, sTitle, sMessage, False)
+
+        return {"message": f"Successfully invited {payload.userEmail} as {payload.role.value}"}
+
+    except HTTPException:
+        raise
+    except Exception as oE:
+        oDB.rollback()
+        raise HTTPException(status_code=500, detail=f'Error inviting collaborator: {str(oE)}')
+
+
+
+@oRouter.delete("/removeCollaborator")
+async def deleteCollab(
+        userEmail: str = Query(...),
+        project_id: str = Query(...),
+        oDB: Session = Depends(get_db),
+        oCurrentUser: User = Depends(get_current_user)
+):
+    try:
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
+        if not oProject:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        # 1. Verify permissions: Must be an owner, OR the user is removing themselves.
+        if not _is_user_owner(oProject, oCurrentUser.email) and oCurrentUser.email != userEmail:
+            raise HTTPException(status_code=403, detail="Not authorized to remove this collaborator.")
+
+        # Helper to filter out the target email
+        def _remove_email_from_list(collab_list, target_email):
+            if not collab_list:
+                return []
+            return [item for item in collab_list if _parse_email(item) != target_email]
+
+        # 2. Clean them out of all role lists
+        oProject.owners = _remove_email_from_list(oProject.owners, userEmail)
+        oProject.annotators = _remove_email_from_list(oProject.annotators, userEmail)
+        oProject.reviewers = _remove_email_from_list(oProject.reviewers, userEmail)
+
+        oDB.commit()
+
+        # --- SEND REMOVAL EMAIL ---
+        sTitle = f"Access update for project: {oProject.name}"
+
+        sMessage = f"Hello,\n\nThis is an automated notification to inform you that your access to the project '{oProject.name}' has been revoked by the project administrator.\n\nIf you believe this is a mistake or need your access restored, please reach out to the project owner.\n\nBest regards,\nSystem Admin"
+        MailUtils.sendEmailMailJet("sysadmin@wasdi.cloud", userEmail, sTitle, sMessage, False)
+
+
+        return {"message": f"Collaborator {userEmail} removed successfully."}
+
+    except HTTPException:
+        raise
+    except Exception as oE:
+        oDB.rollback()
+        raise HTTPException(status_code=500, detail=f'Error removing collaborator: {str(oE)}')

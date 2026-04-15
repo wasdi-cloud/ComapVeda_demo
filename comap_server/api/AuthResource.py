@@ -92,8 +92,8 @@ async def confirmRegistration(oOtpModel: OtpModel, oDatabase: DBSession = Depend
         
         # Verify OTP
         # Check Disabled until we do not implment the email sending.
-        #if oUser.registration_otp != oOtpModel.otp_code:
-        #   raise HTTPException(status_code=400, detail="Invalid OTP code")
+        if oUser.registration_otp != oOtpModel.otp_code:
+          raise HTTPException(status_code=400, detail="Invalid OTP code")
         
         # Confirm user
         oUser.confirmed = True
