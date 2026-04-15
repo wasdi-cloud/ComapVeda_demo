@@ -1,11 +1,13 @@
 import logging
 import asyncio
 from datetime import datetime
+import subprocess
 
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
 from dataproviders.copernicus_dataspace.QueryExecutorCopernicusDataspace import QueryExecutorCopernicusDataspace
 from database import get_db
+from concurrent.futures import ProcessPoolExecutor
 
 from viewmodels.search.SearchQueryParameters import SearchQueryParameters
 from viewmodels.images.SearchResultItem import SearchResultItem
@@ -19,6 +21,8 @@ from utils.auth_utils import canWriteProject
 
 oRouter = APIRouter(prefix="/images")
 
+# Global process pool (set max_workers based on your CPU cores)
+s_oConversionPool = ProcessPoolExecutor(max_workers=4)
 
 # TODO: add response model
 @oRouter.get("/search", response_model=list[SearchResultItem])
@@ -81,6 +85,58 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
 
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error processing template data: {str(oE)}')
+    
+def convert_s2_zip_to_cog(zip_path: str, sOutputPath: str):
+    """
+    Runs as a separate process. 
+    Uses gdal_translate to create a COG.
+    """
+    # Example gdal command to extract bands and create a COG
+    # We use /vsizip/ to let GDAL handle the internal files
+    sVsiPath = f"/vsizip/{zip_path}/path/to/granule/IMG_DATA/R10m/"
+    
+    # Using subprocess to call gdal_translate is often more stable 
+    # for 'ProcessPool' than using gdal python bindings directly.
+    asCmd = [
+        "gdal_translate",
+        sVsiPath,
+        sOutputPath,
+        "-of", "COG",
+        "-co", "COMPRESS=DEFLATE",
+        "-co", "NUM_THREADS=ALL_CPUS"
+    ]
+    
+    oProcessResult = subprocess.run(asCmd, capture_output=True, text=True)
+    if oProcessResult.returncode != 0:
+        raise Exception(f"GDAL Error: {oProcessResult.stderr}")
+    return sOutputPath    
+
+async def handle_download_and_convert(oImageImport):
+
+    oQueryExecutor = QueryExecutorCopernicusDataspace()
+
+    # Asynch Download 
+    sZipPath = await oQueryExecutor.downloadProduct(
+            sProductName = oImageImport.imageName,
+            sDownloadLink = oImageImport.imageUrl,
+            sPlatform = oImageImport.platform,
+            sProjectId = oImageImport.projectId        
+    )
+    
+    # Convert
+    oAsyncioRunningLoop = asyncio.get_running_loop()
+    sCogPath = sZipPath.replace(".zip", "_COG.tif")
+    
+    logging.info(f"Starting COG conversion for {sZipPath}")
+    try:
+        # This line is the key: it doesn't block the main FastAPI thread
+        await oAsyncioRunningLoop.run_in_executor(s_oConversionPool, convert_s2_zip_to_cog, sZipPath, sCogPath)
+        logging.info(f"Conversion complete: {sCogPath}")
+        
+        # 3. Update TiTiler / Database
+        # Here you update your catalog so TiTiler points to 'cog_path' instead of the .zip
+    except Exception as e:
+        logging.error(f"Background processing failed: {e}")
 
 
 
@@ -101,15 +157,8 @@ async def import_image(oImageImport: ImageImport,
         if not bCanWrite:
             raise HTTPException(status_code=403, detail="User does not have write access to this project")
 
-        oQueryExecutor = QueryExecutorCopernicusDataspace()
-
         # Schedule async task to run in background without blocking response
-        asyncio.create_task(oQueryExecutor.downloadProduct(
-            sProductName = oImageImport.imageName,
-            sDownloadLink = oImageImport.imageUrl,
-            sPlatform = oImageImport.platform,
-            sProjectId = oImageImport.projectId
-        ))
+        asyncio.create_task(handle_download_and_convert(oImageImport))
 
         logging.debug(f"ImageResource.import_image: Scheduled background task to download image {oImageImport.imageName} for project {oImageImport.projectId}")
         return oImageImport 

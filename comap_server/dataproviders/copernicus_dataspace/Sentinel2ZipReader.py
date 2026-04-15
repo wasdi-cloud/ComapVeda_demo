@@ -26,10 +26,16 @@ class Sentinel2ZipReader(MultiBaseReader):
         super().__init__(sNormalizedPath, **kwargs)
 
         self._assetUrls = self._loadAssetUrls(self.input)
-        
-        with self.reader(self._assetUrls[self.assets[0]]) as src:
-            self.crs = src.crs
-            self.bounds = src.bounds
+
+        self.crs, self.bounds = Sentinel2ZipReader._cachedBoundsAndCrs(self.input)
+
+    @staticmethod
+    @functools.lru_cache(maxsize=32)
+    def _cachedBoundsAndCrs(sFilePath: str):
+        """Cache CRS and bounds per file so GDAL is opened only once, not on every tile request."""
+        dAssetUrls = Sentinel2ZipReader._cachedAssetUrls(sFilePath)
+        with Reader(dAssetUrls[Sentinel2ZipReader.BANDS[0]]) as src:
+            return src.crs, src.bounds
 
     @staticmethod
     @functools.lru_cache(maxsize=32)

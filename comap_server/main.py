@@ -1,3 +1,4 @@
+import asyncio
 import time
 import logging
 import morecantile
@@ -26,7 +27,9 @@ from entities.DatasetProject import DatasetProjectEntity
 from utils.WebsocketManager import oWsManager
 
 # setting the level of the logger
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
+# Suppress noisy GDAL/rasterio debug messages that flood logs under concurrent load
+logging.getLogger("rasterio").setLevel(logging.WARNING)
 
 
 print("Building database tables...")
@@ -73,6 +76,21 @@ oApp.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Limit concurrent GDAL/rasterio tile operations to prevent thread-pool exhaustion.
+# A browser map view fires many parallel tile requests; without a cap all threads block
+# on GDAL's internal global lock, starving every other endpoint.
+_SENTINEL_TILE_SEMAPHORE = asyncio.Semaphore(4)
+
+
+@oApp.middleware("http")
+async def limit_sentinel_concurrency(request: Request, call_next):
+    """Serialize Sentinel tile rendering so the GDAL thread pool never saturates."""
+    if request.url.path.startswith("/sentinel/"):
+        async with _SENTINEL_TILE_SEMAPHORE:
+            return await call_next(request)
+    return await call_next(request)
+
 
 # Tiler factory instance
 oCog = TilerFactory()
