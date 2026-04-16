@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import * as turf from '@turf/turf';
 
 // REUSABLE COMPONENTS
 import MapboxMap from '../components/MapboxMap';
@@ -7,12 +8,12 @@ import AppTextInput from '../components/app-text-input';
 import AppDropdown from '../components/app-dropdown-input';
 import AppButton from '../components/app-button';
 import AppCard from '../components/app-card';
-import AppNotification from '../dialogues/app-notifications'; // <-- Added Notification
+import AppNotification from '../dialogues/app-notifications';
+import AppCheckbox from '../components/app-checkbox';
 
 // SERVICES
 import { getPublicProjects, getProjectsByUser, deleteProject, leaveProject } from "../services/project-service";
-import { seedDemoImages } from "../services/images-service";
-import { isAuthenticated, getUser } from '../services/session'; // <-- Import Real Auth
+import { isAuthenticated, getUser } from '../services/session';
 
 const HomePage = () => {
     const navigate = useNavigate();
@@ -21,7 +22,6 @@ const HomePage = () => {
     // --- REAL AUTH STATE ---
     const bIsLoggedIn = isAuthenticated();
     const oUser = getUser();
-    // Assuming your backend uses email as the user identifier
     const sCurrentUserId = oUser?.email || null;
 
     // --- NOTIFICATION STATE ---
@@ -38,8 +38,8 @@ const HomePage = () => {
     const [sSearchText, setSearchText] = useState("");
     const [sSelectedMission, setSelectedMission] = useState("");
     const [sSelectedTask, setSelectedTask] = useState("");
-
-
+    const [aoDrawnSearchArea, setAoDrawnSearchArea] = useState([]);
+    const [bIncludeGlobal, setBIncludeGlobal] = useState(true);
 
     const loadProjects = async () => {
         try {
@@ -47,7 +47,6 @@ const HomePage = () => {
             setError(null);
 
             let oData;
-            // Fetch personal projects if logged in, otherwise public projects
             if (bIsLoggedIn && sCurrentUserId) {
                 oData = await getProjectsByUser(sCurrentUserId);
             } else {
@@ -56,7 +55,7 @@ const HomePage = () => {
 
             const safeData = oData || [];
             setAllProjects(safeData);
-            setProjects(safeData);
+            setProjects(safeData); // Will be immediately filtered by the useEffect below
         } catch (error) {
             console.error("Failed to load projects:", error);
             setError("Could not load projects. Please try again later.");
@@ -69,27 +68,99 @@ const HomePage = () => {
         loadProjects();
     }, [bIsLoggedIn, sCurrentUserId]);
 
-    // --- FILTER LOGIC ---
-    const handleSearchClick = () => {
+    // --- HELPER: Parse WKT to Turf Polygon ---
+    const parseWKTToTurf = (wkt) => {
+        if (!wkt) return null;
+        try {
+            const coordsText = wkt.replace(/POLYGON\s*\(\(/i, "").replace(/\)\)/, "");
+            const pairs = coordsText.split(",").map(p => p.trim());
+            const coords = pairs.map(pair => {
+                const [x, y] = pair.split(/\s+/).map(Number);
+                return [x, y];
+            });
+            return turf.polygon([coords]);
+        } catch (e) {
+            return null;
+        }
+    };
+
+    // --- COMPUTE MARKERS FOR MAP ---
+    const projectMarkers = aoProjects
+        .filter(p => p.aoi && p.aoi.bbox && !p.aoi.isGlobal)
+        .map(p => {
+            const oPoly = parseWKTToTurf(p.aoi.bbox);
+            if (!oPoly) return null;
+
+            const oCenter = turf.center(oPoly);
+            const lng = oCenter.geometry.coordinates[0];
+            const lat = oCenter.geometry.coordinates[1];
+
+            return {
+                position: [lat, lng],
+                title: p.name
+            };
+        })
+        .filter(Boolean);
+
+    // --- NEW: INSTANT FILTERING EFFECT ---
+    // This runs automatically whenever ANY filter state changes!
+    useEffect(() => {
         let oResult = [...aoAllProjects];
+
+        if (!bIncludeGlobal) {
+            oResult = oResult.filter(p => !p.aoi?.isGlobal);
+        }
 
         if (sSearchText) {
             oResult = oResult.filter(p => p.name.toLowerCase().includes(sSearchText.toLowerCase()));
         }
+
         if (sSelectedMission) {
             oResult = oResult.filter(p => p.mission === sSelectedMission);
         }
 
-        setProjects(oResult);
-    };
-
-    // --- USE CASE: LEAVE PROJECT ---
-    const handleLeaveProject = async (project) => {
-        if (project.userRole === 'OWNER' && project.ownersCount <= 1) {
-            return showNotif("Action Denied: You are the only owner of this project. Please invite a co-owner before leaving, or delete the project entirely.", "warning");
+        if (sSelectedTask) {
+            oResult = oResult.filter(p => p.tasks && p.tasks.includes(sSelectedTask));
         }
 
-        if (window.confirm(`Are you sure you want to leave ${project.name}? You will be removed from the collaborators.`)) {
+        if (aoDrawnSearchArea.length > 0) {
+            const oSearchPolygon = aoDrawnSearchArea[0];
+
+            oResult = oResult.filter(p => {
+                if (p.aoi?.isGlobal) return true;
+                if (!p.aoi?.bbox) return false;
+
+                const oProjectPolygon = parseWKTToTurf(p.aoi.bbox);
+                if (!oProjectPolygon) return false;
+
+                try {
+                    return turf.booleanIntersects(oSearchPolygon, oProjectPolygon);
+                } catch (e) {
+                    return false;
+                }
+            });
+        }
+
+        setProjects(oResult);
+    }, [sSearchText, sSelectedMission, sSelectedTask, aoDrawnSearchArea, bIncludeGlobal, aoAllProjects]);
+
+    // --- UX UPGRADE: CLEAR FILTERS ---
+    const handleClearFilters = () => {
+        setSearchText("");
+        setSelectedMission("");
+        setSelectedTask("");
+        setAoDrawnSearchArea([]);
+        setBIncludeGlobal(true);
+    };
+
+    const bHasActiveFilters = sSearchText || sSelectedMission || sSelectedTask || aoDrawnSearchArea.length > 0 || !bIncludeGlobal;
+
+    // --- USE CASES ---
+    const handleLeaveProject = async (project) => {
+        if (project.userRole === 'OWNER' && project.ownersCount <= 1) {
+            return showNotif("Action Denied: You are the only owner of this project. Please invite a co-owner before leaving.", "warning");
+        }
+        if (window.confirm(`Are you sure you want to leave ${project.name}?`)) {
             try {
                 await leaveProject(project.id, sCurrentUserId);
                 showNotif("You have successfully left the project.", "success");
@@ -100,9 +171,8 @@ const HomePage = () => {
         }
     };
 
-    // --- USE CASE: DELETE PROJECT ---
     const handleDeleteProject = async (project) => {
-        if (window.confirm(`⚠️ WARNING: Are you sure you want to completely delete "${project.name}"? This action cannot be undone and will notify all collaborators.`)) {
+        if (window.confirm(`⚠️ WARNING: Are you sure you want to completely delete "${project.name}"? This action cannot be undone.`)) {
             try {
                 await deleteProject(project.id);
                 showNotif("Project deleted successfully.", "success");
@@ -136,33 +206,101 @@ const HomePage = () => {
 
             {/* --- SEARCH SECTION --- */}
             <AppCard>
-                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '10px', color: '#555' }}>
-                    {bIsLoggedIn ? "Search My Projects" : "Search Public Projects"}
-                </label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                    <label style={{ fontWeight: 'bold', color: '#555', margin: 0 }}>
+                        {bIsLoggedIn ? "Search My Projects" : "Search Public Projects"}
+                    </label>
+                    {bHasActiveFilters && (
+                        <button onClick={handleClearFilters} style={{ background: 'none', border: 'none', color: '#dc3545', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}>
+                            ✖ Clear Filters
+                        </button>
+                    )}
+                </div>
 
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                    <AppTextInput
-                        sValue={sSearchText}
-                        fnOnChange={(e) => setSearchText(e.target.value)}
-                        sPlaceholder="Type project name..."
-                        oStyle={{ flex: 2 }}
+                {/* UX UPGRADE: FORCED FLEX-END TO NEUTRALIZE HIDDEN MARGINS */}
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '15px' }}>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#666', marginBottom: '5px' }}>Search by Name</label>
+                        <AppTextInput
+                            sValue={sSearchText}
+                            fnOnChange={(e) => setSearchText(e.target.value)}
+                            sPlaceholder="Type project name..."
+                            oStyle={{ width: '100%', margin: 0 }} // <-- Force margin to 0 here!
+                        />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#666', marginBottom: '5px' }}>Mission</label>
+                        <AppDropdown
+                            sValue={sSelectedMission}
+                            fnOnChange={(e) => setSelectedMission(e.target.value)}
+                            aoOptions={[
+                                { value: "", label: "All Missions" },
+                                { value: "S2", label: "Sentinel-2" },
+                                { value: "CUSTOM", label: "Custom Mission" }
+                            ]}
+                            oStyle={{ width: '100%', margin: 0 }} // <-- Force margin to 0 here!
+                        />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#666', marginBottom: '5px' }}>Task Type</label>
+                        <AppDropdown
+                            sValue={sSelectedTask}
+                            fnOnChange={(e) => setSelectedTask(e.target.value)}
+                            aoOptions={[
+                                { value: "", label: "All Tasks" },
+                                { value: "SEMANTING_SEGMENTATION", label: "Semantic Segmentation" },
+                                { value: "OBJECT_DETECTION", label: "Object Detection" },
+                                { value: "OTHER", label: "Other" }
+                            ]}
+                            oStyle={{ width: '100%', margin: 0 }} // <-- Force margin to 0 here!
+                        />
+                    </div>
+
+                </div>
+
+                <div style={{ marginTop: '20px', paddingTop: '15px', borderTop: '1px solid #eee' }}>
+                    <AppCheckbox
+                        sLabel="Include Global Projects (Projects with no specific boundaries)"
+                        bChecked={bIncludeGlobal}
+                        fnOnChange={(e) => setBIncludeGlobal(e.target.checked)}
                     />
-                    <AppDropdown
-                        sValue={sSelectedMission}
-                        fnOnChange={(e) => setSelectedMission(e.target.value)}
-                        aoOptions={["Sentinel-2", "Landsat 8", "MODIS"]}
-                        sPlaceholder="Select Mission"
-                        oStyle={{ flex: 1 }}
-                    />
-                    <AppButton sVariant="primary" fnOnClick={handleSearchClick}>
-                        Search
-                    </AppButton>
                 </div>
             </AppCard>
 
-            {/* MAP SECTION */}
-            <div style={{ height: '350px', width: '100%', borderRadius: '8px', overflow: 'hidden', marginBottom: '20px', border: '1px solid #ddd', background: '#e0e0e0' }}>
-                <MapboxMap aoMarkers={[]} oInitialView={oHomeMapView} bEnableDraw={false} bEnableGeocoder={false} />
+            {/* --- MAP SECTION --- */}
+            <div style={{ height: '350px', width: '100%', borderRadius: '8px', overflow: 'hidden', marginBottom: '20px', border: '1px solid #ddd', background: '#e0e0e0', position: 'relative' }}>
+                <div style={{ position: 'absolute', top: 10, left: 50, zIndex: 10, background: 'rgba(255,255,255,0.95)', padding: '6px 12px', borderRadius: '4px', fontSize: '13px', fontWeight: 'bold', color: '#444', pointerEvents: 'none', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span>✏️ Draw a shape to filter by location</span>
+                </div>
+
+                {/* UX UPGRADE: CLEAR MAP SHAPE BUTTON */}
+                {aoDrawnSearchArea.length > 0 && (
+                    <button
+                        onClick={() => setAoDrawnSearchArea([])}
+                        style={{ position: 'absolute', top: 10, right: 50, zIndex: 10, background: '#dc3545', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                        🗑️ Clear Area Filter
+                    </button>
+                )}
+
+                <MapboxMap
+                    aoMarkers={projectMarkers}
+                    oInitialView={oHomeMapView}
+                    bEnableDraw={true}
+                    bEnableGeocoder={true}
+                    bHasLines={false}
+                    aoFeatures={aoDrawnSearchArea}
+                    onDrawUpdate={(data) => {
+                        if (data && data.features && data.features.length > 0) {
+                            const latestFeature = data.features[data.features.length - 1];
+                            setAoDrawnSearchArea([latestFeature]);
+                        } else {
+                            setAoDrawnSearchArea([]);
+                        }
+                    }}
+                />
             </div>
 
             {/* --- PROJECTS LIST --- */}
@@ -174,15 +312,20 @@ const HomePage = () => {
                     </span>
                 </div>
 
-                {bIsLoading && <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>⏳ Loading projects...</div>}
-                {sError && <div style={{ padding: '20px', textAlign: 'center', color: '#dc3545' }}>⚠️ {sError}</div>}
+                {bIsLoading && <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>⏳ Loading projects...</div>}
 
                 {!bIsLoading && !sError && aoProjects.map((project, index) => (
                     <div key={project.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px', borderBottom: index !== aoProjects.length - 1 ? '1px solid #eee' : 'none', background: 'white' }}>
                         <div>
                             <div style={{ fontWeight: 'bold', color: '#333', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 {project.name}
-                                {/* If logged in, show their role */}
+
+                                {project.aoi?.isGlobal && (
+                                    <span style={{ fontSize: '10px', background: '#e0f7fa', color: '#006064', padding: '3px 6px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid #b2ebf2' }}>
+                                        🌍 GLOBAL
+                                    </span>
+                                )}
+
                                 {bIsLoggedIn && getRoleBadge(project.userRole)}
                             </div>
                             <div style={{ color: '#666', fontSize: '13px', marginTop: '4px' }}>
@@ -201,7 +344,6 @@ const HomePage = () => {
                                 Open
                             </AppButton>
 
-                            {/* Show Leave and Delete only if Logged In */}
                             {bIsLoggedIn && (
                                 <>
                                     <AppButton
@@ -228,8 +370,14 @@ const HomePage = () => {
                 ))}
 
                 {!bIsLoading && !sError && aoProjects.length === 0 && (
-                    <div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>
-                        No projects found.
+                    <div style={{ padding: '40px', textAlign: 'center', color: '#999', background: '#fcfcfc' }}>
+                        <div style={{ fontSize: '30px', marginBottom: '10px' }}>🕵️‍♂️</div>
+                        <div>No projects found matching your filters.</div>
+                        {bHasActiveFilters && (
+                            <button onClick={handleClearFilters} style={{ background: 'none', border: 'none', color: '#007bff', cursor: 'pointer', marginTop: '10px', fontWeight: 'bold' }}>
+                                Clear all filters
+                            </button>
+                        )}
                     </div>
                 )}
             </AppCard>
