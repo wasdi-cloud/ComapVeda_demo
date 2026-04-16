@@ -51,6 +51,10 @@ const Register = () => {
         e.preventDefault();
 
         if (sEmail !== sConfirmEmail) return showNotif("Emails do not match!", "error");
+
+        // --- NEW: Check Password Length ---
+        if (sPassword.length < 8) return showNotif("Password must be at least 8 characters long.", "error");
+
         if (sPassword !== sConfirmPassword) return showNotif("Passwords do not match!", "error");
         if (!bTermsAccepted) return showNotif("You must accept the Terms and Conditions.", "warning");
 
@@ -113,41 +117,53 @@ const Register = () => {
                         <AppTextInput type="email" sPlaceholder="Confirm Email" required sValue={sConfirmEmail} fnOnChange={(e)=> setSConfirmEmail(e.target.value)}/>
 
                         {/* --- Password Wrapper --- */}
-                        <div style={{ position: 'relative', width: '100%' }}>
-                            <AppTextInput
-                                type={bShowPassword ? "text" : "password"}
-                                sPlaceholder="Password"
-                                required
-                                sValue={sPassword}
-                                fnOnChange={(e)=> setSPassword(e.target.value)}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setShowPassword(!bShowPassword)}
-                                tabIndex="-1"
-                                style={eyeButtonStyle}
-                            >
-                                {bShowPassword ? <EyeOffIcon /> : <EyeIcon />}
-                            </button>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ position: 'relative', width: '100%' }}>
+                                <AppTextInput
+                                    type={bShowPassword ? "text" : "password"}
+                                    sPlaceholder="Password"
+                                    required
+                                    sValue={sPassword}
+                                    fnOnChange={(e)=> setSPassword(e.target.value)}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!bShowPassword)}
+                                    tabIndex="-1"
+                                    style={eyeButtonStyle}
+                                >
+                                    {bShowPassword ? <EyeOffIcon /> : <EyeIcon />}
+                                </button>
+                            </div>
+                            {/* --- NEW: Password Helper Text --- */}
+                            <span style={{
+                                fontSize: '11px',
+                                marginTop: '4px',
+                                color: sPassword.length > 0 && sPassword.length < 8 ? '#dc3545' : '#666'
+                            }}>
+                                • Must be at least 8 characters
+                            </span>
                         </div>
 
                         {/* --- Confirm Password Wrapper --- */}
-                        <div style={{ position: 'relative', width: '100%' }}>
-                            <AppTextInput
-                                type={bShowConfirmPassword ? "text" : "password"}
-                                sPlaceholder="Confirm Password"
-                                required
-                                sValue={sConfirmPassword}
-                                fnOnChange={(e)=> setSConfirmPassword(e.target.value)}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setShowConfirmPassword(!bShowConfirmPassword)}
-                                tabIndex="-1"
-                                style={eyeButtonStyle}
-                            >
-                                {bShowConfirmPassword ? <EyeOffIcon /> : <EyeIcon />}
-                            </button>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ position: 'relative', width: '100%' }}>
+                                <AppTextInput
+                                    type={bShowConfirmPassword ? "text" : "password"}
+                                    sPlaceholder="Confirm Password"
+                                    required
+                                    sValue={sConfirmPassword}
+                                    fnOnChange={(e)=> setSConfirmPassword(e.target.value)}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowConfirmPassword(!bShowConfirmPassword)}
+                                    tabIndex="-1"
+                                    style={eyeButtonStyle}
+                                >
+                                    {bShowConfirmPassword ? <EyeOffIcon /> : <EyeIcon />}
+                                </button>
+                            </div>
                         </div>
                     </div>
 
