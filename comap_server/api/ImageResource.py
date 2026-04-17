@@ -1,7 +1,10 @@
 import logging
 import asyncio
 from datetime import datetime
+import os
+import os
 import subprocess
+import zipfile
 
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
@@ -86,17 +89,39 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error processing template data: {str(oE)}')
     
-def convert_s2_zip_to_cog(zip_path: str, sOutputPath: str):
+    import zipfile
+
+def find_s2_internal_path(sZipPath: str, sTarget: str = "TCI") -> str | None:
     """
-    Runs as a separate process. 
-    Uses gdal_translate to create a COG.
+    Scans the ZIP to find the actual internal path to the image data.
+    Works for both L1C and L2A structures.
     """
-    # Example gdal command to extract bands and create a COG
-    # We use /vsizip/ to let GDAL handle the internal files
-    sVsiPath = f"/vsizip/{zip_path}/path/to/granule/IMG_DATA/R10m/"
+    with zipfile.ZipFile(sZipPath, 'r') as oZipFile:
+        # look for any .jp2 file inside an IMG_DATA folder
+        for sFileName in oZipFile.namelist():
+            if "IMG_DATA/" in sFileName and sFileName.endswith(".jp2"):
+                # If it's L2A, we usually want the 10m bands by default
+                # TODO: is it really the resolution we want? Maybe we should be more flexible here?
+                if "MSIL2A" in sZipPath:
+                    if "/R10m/" in sFileName and f"_{sTarget}" in sFileName:
+                        return sFileName
+                else:
+                    if f"_{sTarget}" in sFileName:
+                        # L1C structure: IMG_DATA is the direct parent
+                        return sFileName
+    return None
     
-    # Using subprocess to call gdal_translate is often more stable 
-    # for 'ProcessPool' than using gdal python bindings directly.
+def convert_s2_zip_to_cog(sZipPath: str, sOutputPath: str):
+    # 1. Now returns a FILE path, not a FOLDER path
+    sInternalFile = find_s2_internal_path(sZipPath, sTarget="TCI")
+    
+    if not sInternalFile:
+        raise Exception(f"Could not find TCI image inside {sZipPath}")
+
+    sNormalizedZip = sZipPath.replace('\\', '/')
+    sVsiPath = f"/vsizip/{sNormalizedZip}/{sInternalFile}"
+
+    # 3. GDAL will now see a .jp2 file and be happy
     asCmd = [
         "gdal_translate",
         sVsiPath,
@@ -109,7 +134,8 @@ def convert_s2_zip_to_cog(zip_path: str, sOutputPath: str):
     oProcessResult = subprocess.run(asCmd, capture_output=True, text=True)
     if oProcessResult.returncode != 0:
         raise Exception(f"GDAL Error: {oProcessResult.stderr}")
-    return sOutputPath    
+        
+    return sOutputPath
 
 async def handle_download_and_convert(oImageImport):
 
@@ -122,21 +148,25 @@ async def handle_download_and_convert(oImageImport):
             sPlatform = oImageImport.platform,
             sProjectId = oImageImport.projectId        
     )
+
+    if not sZipPath:
+        logging.error(f"ImageResource.handle_download_and_convert: Failed to download image {oImageImport.imageName} from {oImageImport.imageUrl}")
+        return
     
     # Convert
     oAsyncioRunningLoop = asyncio.get_running_loop()
     sCogPath = sZipPath.replace(".zip", "_COG.tif")
     
-    logging.info(f"Starting COG conversion for {sZipPath}")
+    logging.info(f"ImageResource.handle_download_and_convert: Starting COG conversion for {sZipPath}")
     try:
         # This line is the key: it doesn't block the main FastAPI thread
         await oAsyncioRunningLoop.run_in_executor(s_oConversionPool, convert_s2_zip_to_cog, sZipPath, sCogPath)
-        logging.info(f"Conversion complete: {sCogPath}")
+        logging.info(f"ImageResource.handle_download_and_convert: Conversion complete: {sCogPath}")
         
         # 3. Update TiTiler / Database
         # Here you update your catalog so TiTiler points to 'cog_path' instead of the .zip
-    except Exception as e:
-        logging.error(f"Background processing failed: {e}")
+    except Exception as oE:
+        logging.error(f"ImageResource.handle_download_and_convert: Background processing failed: {oE}")
 
 
 
