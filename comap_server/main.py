@@ -29,6 +29,10 @@ from utils.WebsocketManager import oWsManager
 
 # setting the level of the logger
 logging.basicConfig(level=logging.DEBUG)
+# Ensure named loggers (e.g. api.ProjectResource) propagate to the root handler
+# even when Uvicorn resets the root logger on startup
+logging.getLogger("api").setLevel(logging.DEBUG)
+logging.getLogger("utils").setLevel(logging.DEBUG)
 # Suppress noisy GDAL/rasterio debug messages that flood logs under concurrent load
 logging.getLogger("rasterio").setLevel(logging.WARNING)
 

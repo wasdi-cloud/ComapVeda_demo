@@ -1,6 +1,8 @@
 import logging
 
 from fastapi import HTTPException, Depends
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session
 from database import get_db
 from entities.DatasetImage import DatasetImageEntity
@@ -25,9 +27,9 @@ class CogIdParams:
         oImage = db.query(DatasetImageEntity).filter(DatasetImageEntity.id == dataset_id).first()
 
         if not oImage:
-            logging.error(f"ERROR Resolving COG path for dataset_id: {dataset_id}, image not found in DB")
+            logger.error(f"ERROR Resolving COG path for dataset_id: {dataset_id}, image not found in DB")
             raise HTTPException(status_code=404, detail="Image ID not found")
         
-        logging.info(f"Resolving COG path for dataset_id: {dataset_id}, found link: {oImage.link}")
+        logger.info(f"Resolving COG path for dataset_id: {dataset_id}, found link: {oImage.link}")
 
         self.url = oImage.link

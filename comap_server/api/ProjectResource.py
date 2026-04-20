@@ -1,6 +1,8 @@
 import logging
 import time
 
+logger = logging.getLogger(__name__)
+
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -223,8 +225,8 @@ async def getProject(
         oCurrentUser: User = Depends(get_current_user)
 ):
     try:
-        logging.info(f"User {oCurrentUser.email} is requesting details for project_id: {project_id}")
-        
+        logger.info(f"User {oCurrentUser.email} is requesting details for project_id: {project_id}")
+
         bCanRead = canReadProject(oCurrentUser, project_id, oDB)
         if not bCanRead:
             raise HTTPException(status_code=403, detail="User does not have access to this project")
