@@ -225,7 +225,7 @@ async def getProject(
         oCurrentUser: User = Depends(get_current_user)
 ):
     try:
-        logger.info(f"User {oCurrentUser.email} is requesting details for project_id: {project_id}")
+        print(f"User {oCurrentUser.email} is requesting details for project_id: {project_id}")
 
         bCanRead = canReadProject(oCurrentUser, project_id, oDB)
         if not bCanRead:

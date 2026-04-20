@@ -27,9 +27,9 @@ class CogIdParams:
         oImage = db.query(DatasetImageEntity).filter(DatasetImageEntity.id == dataset_id).first()
 
         if not oImage:
-            logger.error(f"ERROR Resolving COG path for dataset_id: {dataset_id}, image not found in DB")
+            print(f"ERROR Resolving COG path for dataset_id: {dataset_id}, image not found in DB")
             raise HTTPException(status_code=404, detail="Image ID not found")
         
-        logger.info(f"Resolving COG path for dataset_id: {dataset_id}, found link: {oImage.link}")
+        print(f"Resolving COG path for dataset_id: {dataset_id}, found link: {oImage.link}")
 
         self.url = oImage.link
