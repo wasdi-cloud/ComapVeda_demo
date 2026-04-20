@@ -428,7 +428,7 @@ const MapboxMap = ({
                 oActiveLayerIdRef.current = null;
             }
             if (sActiveGeoTIFF) {
-                const sAssets  = "bidx=B04&bidx=B03&bidx=B02";
+                const sAssets  = "bidx=3&bidx=2&bidx=1";
                 const sParams  = `dataset_id=${sActiveGeoTIFF}&${sAssets}&rescale=0,3000`;
                 const uniqueId = `geotiff-${Date.now()}`;
                 const sTileUrl = `${process.env.REACT_APP_API_URL}sentinel/tiles/WebMercatorQuad/{z}/{x}/{y}.png?${sParams}`;

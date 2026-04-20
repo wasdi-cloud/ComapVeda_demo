@@ -98,7 +98,7 @@ oCog = TilerFactory(path_dependency=CogIdParams)
 #oSentinelRouter = MultiBaseTilerFactory(reader=Sentinel2ZipReader, path_dependency=DatasetPathParams)
 
 # TiTiler endpoints
-oApp.include_router(oCog.router, tags=["Cloud Optimized GeoTIFF"])
+#oApp.include_router(oCog.router, tags=["Cloud Optimized GeoTIFF"])
 #oApp.include_router(oSentinelRouter.router, prefix="/sentinel", tags=["Sentinel-2 ZIP Tiler"])
 oApp.include_router(oCog.router, prefix="/sentinel", tags=["Cloud Optimized GeoTIFF"])
 
