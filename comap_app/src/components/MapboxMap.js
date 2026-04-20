@@ -429,7 +429,8 @@ const MapboxMap = ({
             }
             if (sActiveGeoTIFF) {
                 const sAssets  = "bidx=3&bidx=2&bidx=1";
-                const sParams  = `dataset_id=${sActiveGeoTIFF}&${sAssets}&rescale=0,3000`;
+                // const sParams  = `dataset_id=${sActiveGeoTIFF}&${sAssets}&rescale=0,3000`;
+                const sParams  = `encoded_path=${encodeURIComponent(sActiveGeoTIFF)}&${sAssets}&rescale=0,3000`;
                 const uniqueId = `geotiff-${Date.now()}`;
                 const sTileUrl = `${process.env.REACT_APP_API_URL}sentinel/tiles/WebMercatorQuad/{z}/{x}/{y}.png?${sParams}`;
                 try {

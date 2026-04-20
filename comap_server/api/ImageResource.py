@@ -3,6 +3,7 @@ import asyncio
 from datetime import datetime
 import os
 import os
+from pathlib import Path
 import subprocess
 import zipfile
 import tempfile
@@ -354,11 +355,19 @@ async def getListByProject(project_id: str, oDB: Session = Depends(get_db),
 
         oResult = []
         for oImg in aoImages:
+            sPath = oImg.link
+            if sPath:
+                oPath = Path(sPath)
+                sFileName = oPath.name
+                sProjectId = oPath.parent.name
+                sRelativePath = f"{sProjectId}/{sFileName}"
+
             # Safely map the DB Entity to our new React-friendly ViewModel
             oResult.append(ProjectImageResponse(
                 id=oImg.id,
                 name=oImg.fileName or "Unknown Image",
                 filename=oImg.fileName or "",
+                relative_path= sRelativePath or "",
                 date=oImg.date or 0,
                 bbox=oImg.bbox,
                 annotator="System"
