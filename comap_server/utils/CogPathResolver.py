@@ -28,7 +28,7 @@ def get_dataset_url(dataset_id: str, db: Session = Depends(get_db)) -> str:
     return sNormalizedPath
 """
 
-s_sBASE_STORAGE_PATH = os.environ.get("BASE_STORAGE_PATH")
+s_sBASE_STORAGE_PATH = os.environ.get("COMAP_PROJECTS_BASE_PATH")
 
 def get_dataset_url(encoded_path: str) -> str:
     """
