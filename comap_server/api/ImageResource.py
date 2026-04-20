@@ -5,12 +5,14 @@ import os
 import os
 import subprocess
 import zipfile
+import tempfile
 
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
 from dataproviders.copernicus_dataspace.QueryExecutorCopernicusDataspace import QueryExecutorCopernicusDataspace
 from database import get_db
 from concurrent.futures import ProcessPoolExecutor
+from database import SessionLocal
 
 from viewmodels.search.SearchQueryParameters import SearchQueryParameters
 from viewmodels.images.SearchResultItem import SearchResultItem
@@ -21,11 +23,23 @@ from entities.User import User
 from utils.auth_utils import get_current_user
 from utils.auth_utils import canReadProject
 from utils.auth_utils import canWriteProject
+from utils.WebsocketManager import oWsManager
 
 oRouter = APIRouter(prefix="/images")
 
 # Global process pool (set max_workers based on your CPU cores)
-s_oConversionPool = ProcessPoolExecutor(max_workers=4)
+
+
+def init_worker_logging():
+    """
+    This runs once when each worker process in the pool starts.
+    """
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s [%(levelname)s] (Worker %(process)d): %(message)s"
+    )
+
+s_oConversionPool = ProcessPoolExecutor(max_workers=4, initializer=init_worker_logging)
 
 # TODO: add response model
 @oRouter.get("/search", response_model=list[SearchResultItem])
@@ -89,7 +103,42 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error processing template data: {str(oE)}')
     
-    import zipfile
+
+
+def find_s2_bands(sZipPath: str):
+    """
+    Returns a list of VSI paths for all spectral bands in the ZIP.
+    Priority is give to 10m bands and includes 20m bands for a complete stack
+    """
+    # Standard S2 band order for a logical stack
+    # B02, B03, B04 (10m) | B08 (10m) | B05, B06, B07, B8A, B11, B12 (20m)
+    sTargetBands = ["B02", "B03", "B04", "B08", "B05", "B06", "B07", "B8A", "B11", "B12"]
+    dFoundBands = {}
+
+    sNormalizedZip = sZipPath.replace('\\', '/')
+    
+    logging.debug(f"find_s2_bands: Scanning ZIP file {sZipPath} for target bands")
+
+    with zipfile.ZipFile(sZipPath, 'r') as oZipFile:
+        for sFileName in oZipFile.namelist():
+            if "IMG_DATA/" in sFileName and sFileName.endswith(".jp2"):
+                # Extract band ID from filename (e.g., ..._B02_10m.jp2 -> B02)
+                for sBand in sTargetBands:
+                    if f"_{sBand}" in sFileName:
+                        # For L2A, prefer R10m for the first 4 bands, R20m for the rest
+                        vsi_path = f"/vsizip/{sNormalizedZip}/{sFileName}"
+                        
+                        # Logic to avoid duplicates (e.g., B02 at 10m vs 20m)
+                        if sBand not in dFoundBands:
+                            dFoundBands[sBand] = vsi_path
+                        elif "10m" in sFileName: # Favor higher res if found later
+                            dFoundBands[sBand] = vsi_path
+
+    # Return paths in the specific order defined in sTargetBands
+    logging.debug(f"find_s2_bands: Found bands: {list(dFoundBands.keys())}")
+    return [dFoundBands[b] for b in sTargetBands if b in dFoundBands]
+
+
 
 def find_s2_internal_path(sZipPath: str, sTarget: str = "TCI") -> str | None:
     """
@@ -111,7 +160,72 @@ def find_s2_internal_path(sZipPath: str, sTarget: str = "TCI") -> str | None:
                         return sFileName
     return None
     
+
 def convert_s2_zip_to_cog(sZipPath: str, sOutputPath: str):
+    """
+    Stacks all S2 bands into a single multi-band COG.
+    """
+    sBaseDir = os.path.dirname(sZipPath)
+
+    # 1. Get all band paths
+    asBandPaths = find_s2_bands(sZipPath)
+
+    if not asBandPaths:
+        logging.error(f"convert_s2_zip_to_cog: No spectral bands found in {sZipPath}")
+        raise Exception(f"No spectral bands found in {sZipPath}")
+
+    logging.debug(f"convert_s2_zip_to_cog: Found band paths")
+
+    # 2. Create a temporary VRT to stack them
+    # We use a context manager to ensure the temp file is cleaned up
+    # TODO: I want to create this temp file in the same folder of the S2 path
+    with tempfile.NamedTemporaryFile(suffix=".vrt", dir=sBaseDir, delete=False) as oTempVrt:
+        sVrtPath = oTempVrt.name
+
+    try:
+        # Step A: Build the Virtual Stack
+        # -separate: puts each input file into a separate band
+        # -resolution highest: upsamples 20m bands to 10m automatically
+        asVrtCmd = [
+            "gdalbuildvrt",
+            "-separate",
+            "-resolution", "highest",
+            sVrtPath
+        ] + asBandPaths
+        
+        logging.debug(f"convert_s2_zip_to_cog: Running GDAL command gdalbuildvrt")
+        subprocess.run(asVrtCmd, check=True, capture_output=True)
+        logging.debug(f"convert_s2_zip_to_cog: VRT created at {sVrtPath}")
+
+        # Step B: Translate VRT to Multi-band COG
+        asCogCmd = [
+            "gdal_translate",
+            sVrtPath,
+            sOutputPath,
+            "-of", "COG",
+            "-co", "COMPRESS=DEFLATE",
+            "-co", "NUM_THREADS=ALL_CPUS",
+            "-co", "BIGTIFF=YES" # Stacked S2 can exceed 4GB
+        ]
+        
+        logging.debug(f"convert_s2_zip_to_cog: Running GDAL command: gdal_translate")
+        oResult = subprocess.run(asCogCmd, capture_output=True, text=True)
+        logging.debug(f"GDAL Output: {oResult.stdout}")
+
+        if oResult.returncode != 0:
+            raise Exception(f"GDAL Stack Error: {oResult.stderr}")
+        
+        logging.debug(f"convert_s2_zip_to_cog: COG created at {sOutputPath}")
+
+    finally:
+        # Clean up the temporary VRT file
+        if os.path.exists(sVrtPath):
+            os.remove(sVrtPath)
+            
+    return sOutputPath
+
+
+def convert_s2_zip_to_cog_easy(sZipPath: str, sOutputPath: str):
     # 1. Now returns a FILE path, not a FOLDER path
     sInternalFile = find_s2_internal_path(sZipPath, sTarget="TCI")
     
@@ -142,7 +256,7 @@ async def handle_download_and_convert(oImageImport):
     oQueryExecutor = QueryExecutorCopernicusDataspace()
 
     # Asynch Download 
-    sZipPath = await oQueryExecutor.downloadProduct(
+    sZipPath, sFootprint, sProductId = await oQueryExecutor.downloadProduct(
             sProductName = oImageImport.imageName,
             sDownloadLink = oImageImport.imageUrl,
             sPlatform = oImageImport.platform,
@@ -152,16 +266,42 @@ async def handle_download_and_convert(oImageImport):
     if not sZipPath:
         logging.error(f"ImageResource.handle_download_and_convert: Failed to download image {oImageImport.imageName} from {oImageImport.imageUrl}")
         return
+
+    logging.debug(f"ImageResource.handle_download_and_convert: Downloaded image to {sZipPath}")
     
     # Convert
     oAsyncioRunningLoop = asyncio.get_running_loop()
     sCogPath = sZipPath.replace(".zip", "_COG.tif")
     
-    logging.info(f"ImageResource.handle_download_and_convert: Starting COG conversion for {sZipPath}")
+    logging.debug(f"ImageResource.handle_download_and_convert: Starting COG conversion for {sZipPath}")
+
     try:
         # This line is the key: it doesn't block the main FastAPI thread
-        await oAsyncioRunningLoop.run_in_executor(s_oConversionPool, convert_s2_zip_to_cog, sZipPath, sCogPath)
-        logging.info(f"ImageResource.handle_download_and_convert: Conversion complete: {sCogPath}")
+        sPathToCOG = await oAsyncioRunningLoop.run_in_executor(s_oConversionPool, convert_s2_zip_to_cog, sZipPath, sCogPath)
+        logging.debug(f"ImageResource.handle_download_and_convert: Conversion complete: {sCogPath}")
+
+        oNow = datetime.now()
+        oDatasetImage = DatasetImageEntity(
+                projectId=oImageImport.projectId,
+                fileName=os.path.basename(sPathToCOG),
+                link=sPathToCOG,
+                bandpaths="", # TODO: remove
+                bbox=sFootprint,
+                date=int(oNow.timestamp() * 1000)
+            )
+        oDB = SessionLocal()
+        oDB.add(oDatasetImage)
+        oDB.commit()
+        oDB.refresh(oDatasetImage)
+
+        await oWsManager.broadcastToProject(oImageImport.projectId, {
+            "type": "import_completed",
+            "productId": sProductId,
+            "message": f"Image {sProductId} successfully imported!",
+            "messageType": "success"
+        })
+
+        # TODO: delete the s2 zip file
         
         # 3. Update TiTiler / Database
         # Here you update your catalog so TiTiler points to 'cog_path' instead of the .zip

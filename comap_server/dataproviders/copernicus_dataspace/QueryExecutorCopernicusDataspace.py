@@ -282,7 +282,7 @@ class QueryExecutorCopernicusDataspace:
             sFootprint =oJsonMetadataData.get("Footprint", "")
             if sFootprint.startswith("geography'SRID=4326;POLYGON"):
                 sFootprint = sFootprint[len("geography'SRID=4326;"):-1]
-
+            """
             oNow = datetime.now()
             dBandPaths = self._extractBandPaths(sDownloadedFilePath)
             sBandPathsJson = json.dumps(dBandPaths) if dBandPaths else None
@@ -309,6 +309,8 @@ class QueryExecutorCopernicusDataspace:
                 "message": f"Image {sProductId} successfully imported!",
                 "messageType": "success"
             })
+            """
+            return sDownloadedFilePath, sFootprint, sProductId
         
         except Exception as oE:
             logging.error(f"QueryExecutorCopernicusDataspace.downloadProduct.Error: An error occurred while downloading product {sProductName}: {str(oE)}")
@@ -318,6 +320,9 @@ class QueryExecutorCopernicusDataspace:
                 "message": f"Failed to import image {sProductId}",
                 "messageType": "error"
             })
+
         finally:
             if oDB is not None:
                 oDB.close()
+
+        return None

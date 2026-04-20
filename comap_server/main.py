@@ -19,6 +19,7 @@ from api.LabelsResource import oRouter as oLabelsRouter
 from api.ProjectResource import oRouter as oProjectRouter
 from api.TemplateResource import oRouter as oTemplateRouter
 from api.DatasetPathParams import DatasetPathParams
+from utils.CogPathResolver import CogIdParams
 from dataproviders.copernicus_dataspace.Sentinel2ZipReader import Sentinel2ZipReader
 from database import Base, engine, ensure_legacy_schema_compatibility
 from database import get_db
@@ -27,7 +28,7 @@ from entities.DatasetProject import DatasetProjectEntity
 from utils.WebsocketManager import oWsManager
 
 # setting the level of the logger
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 # Suppress noisy GDAL/rasterio debug messages that flood logs under concurrent load
 logging.getLogger("rasterio").setLevel(logging.WARNING)
 
@@ -93,12 +94,13 @@ async def limit_sentinel_concurrency(request: Request, call_next):
 
 
 # Tiler factory instance
-oCog = TilerFactory()
-oSentinelRouter = MultiBaseTilerFactory(reader=Sentinel2ZipReader, path_dependency=DatasetPathParams)
+oCog = TilerFactory(path_dependency=CogIdParams)
+#oSentinelRouter = MultiBaseTilerFactory(reader=Sentinel2ZipReader, path_dependency=DatasetPathParams)
 
 # TiTiler endpoints
 oApp.include_router(oCog.router, tags=["Cloud Optimized GeoTIFF"])
-oApp.include_router(oSentinelRouter.router, prefix="/sentinel", tags=["Sentinel-2 ZIP Tiler"])
+#oApp.include_router(oSentinelRouter.router, prefix="/sentinel", tags=["Sentinel-2 ZIP Tiler"])
+oApp.include_router(oCog.router, prefix="/sentinel", tags=["Cloud Optimized GeoTIFF"])
 
 # Endpoints for business logic
 oApp.include_router(oProjectRouter, tags=["Project Management"])
