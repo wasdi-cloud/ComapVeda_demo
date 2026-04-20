@@ -25,6 +25,7 @@ from utils.auth_utils import canWriteProject
 from utils.auth_utils import isProjectOwner
 
 
+logger = logging.getLogger(__name__)
 
 oRouter = APIRouter(prefix="/projects")
 

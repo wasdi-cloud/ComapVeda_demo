@@ -18,8 +18,7 @@ from api.ImageResource import oRouter as oImageRouter
 from api.LabelsResource import oRouter as oLabelsRouter
 from api.ProjectResource import oRouter as oProjectRouter
 from api.TemplateResource import oRouter as oTemplateRouter
-from api.DatasetPathParams import DatasetPathParams
-from utils.CogPathResolver import CogIdParams
+from utils.CogPathResolver import get_dataset_url
 from dataproviders.copernicus_dataspace.Sentinel2ZipReader import Sentinel2ZipReader
 from database import Base, engine, ensure_legacy_schema_compatibility
 from database import get_db
@@ -98,7 +97,7 @@ async def limit_sentinel_concurrency(request: Request, call_next):
 
 
 # Tiler factory instance
-oCog = TilerFactory(path_dependency=CogIdParams)
+oCog = TilerFactory(path_dependency=get_dataset_url)
 #oSentinelRouter = MultiBaseTilerFactory(reader=Sentinel2ZipReader, path_dependency=DatasetPathParams)
 
 # TiTiler endpoints
