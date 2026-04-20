@@ -297,7 +297,7 @@ async def handle_download_and_convert(oImageImport):
         await oWsManager.broadcastToProject(oImageImport.projectId, {
             "type": "import_completed",
             "productId": sProductId,
-            "message": f"Image {sProductId} successfully imported!",
+            "message": f"Image {oImageImport.imageName} successfully imported!",
             "messageType": "success"
         })
 
