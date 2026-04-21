@@ -3,31 +3,34 @@ import * as turf from '@turf/turf';
 import {useLocation, useNavigate} from 'react-router-dom';
 import AppButton from "../components/app-button";
 import MapboxMap from "../components/MapboxMap";
-import {getProject} from "../services/project-service";
+import {getProject, getCollaborators} from "../services/project-service"; // <-- ADDED getCollaborators
 import {getLabelTemplateById} from "../services/labelling-template-service";
 import {getLabelsByImage, syncLabels} from "../services/labels-service";
 import {getProjectImages} from "../services/images-service";
 import AppNotification from "../dialogues/app-notifications";
 import {useNotifications} from "../contexts/NotificationContext";
 
-const MOCK_COLLABS = [
-    {id: 'all', name: 'All Annotators'},
-    {id: 'jihed', name: 'Jihed'},
-    {id: 'sarah', name: 'Sarah'},
-    {id: 'mike', name: 'Mike'}
-];
+// --- NEW: IMPORT REAL USER SESSION ---
+import { getUser } from '../services/session'; // Adjust path to session.js if needed!
 
 const EditProject = () => {
     const oNavigate = useNavigate();
     const oLocation = useLocation();
     const sProjectTitle = oLocation.state?.projectTitle || "High-Res Flood Analysis";
     const sProjectId = oLocation.state?.projectId || null;
-    const sCurrentUser = "Jihed";
-    const [oNotification, setNotification] = useState({show: false, message: '', type: 'info'});
 
+    // --- 1. DYNAMIC CURRENT USER ---
+    const oUser = getUser();
+    const sCurrentUser = oUser?.email || "Unknown User"; // Using email ensures it matches the collaborator list perfectly
+
+    const [oNotification, setNotification] = useState({show: false, message: '', type: 'info'});
     const { notifications } = useNotifications();
 
     const [aoImages, setAoImages] = useState([]);
+
+    // --- 2. DYNAMIC COLLABORATORS STATE ---
+    // Default to an array with just the "All" option
+    const [aoCollaborators, setAoCollaborators] = useState([{id: 'all', name: 'All Annotators'}]);
 
     // --- UI STATE ---
     const [aoFeatures, setAoFeatures] = useState([]);
@@ -44,7 +47,6 @@ const EditProject = () => {
     const [sSelectedFeatureId, setSelectedFeatureId] = useState(null);
     const [sDrawingColor, setDrawingColor] = useState("#3b82f6");
 
-    // --- NEW: DEDICATED ZOOM STATE ---
     const [aoMapZoomView, setMapZoomView] = useState(null);
 
     const [oEditingCell, setEditingCell] = useState({featureId: null, attrName: null});
@@ -93,7 +95,7 @@ const EditProject = () => {
                     const val = feature.properties[attr.name];
 
                     if (val === "" || val === null || val === undefined) {
-                        let sNotifMessage = "🛑 Cannot save! The field" + attr.name + " is required. Please check your attribute table and fill in the missing values."
+                        let sNotifMessage = "🛑 Cannot save! The field " + attr.name + " is required. Please check your attribute table and fill in the missing values."
                         showNotif(sNotifMessage, "error")
                         return;
                     }
@@ -113,11 +115,9 @@ const EditProject = () => {
             }));
 
             await syncLabels(String(iSelectedImageId), payload);
-            let sNotifMessage = "Labels saved to database successfully! 💾"
-            showNotif(sNotifMessage, "success");
+            showNotif("Labels saved to database successfully! 💾", "success");
         } catch (error) {
-            let sNotifMessage = "Failed to save labels"
-            showNotif(sNotifMessage, "error");
+            showNotif("Failed to save labels", "error");
             console.error(error);
         } finally {
             setIsSavingLabels(false);
@@ -132,7 +132,6 @@ const EditProject = () => {
         setAoFeatures([]);
     }, [iSelectedImageId]);
 
-    // Helper to convert "POLYGON((30 10...))" to [minX, minY, maxX, maxY]
     const parseWKTBbox = (wkt) => {
         if (!wkt) return null;
         try {
@@ -150,21 +149,18 @@ const EditProject = () => {
                 }
             });
 
-            const bbox = [
+            return [
                 Math.min(...xValues),
                 Math.min(...yValues),
                 Math.max(...xValues),
                 Math.max(...yValues)
             ];
-
-            return bbox;
         } catch (e) {
             console.error("Failed to parse BBOX:", e);
             return null;
         }
     };
 
-    // --- LOAD PROJECT DATA ---
     const loadImages = useCallback(async () => {
         try {
             const aoProjectImages = await getProjectImages(sProjectId);
@@ -180,8 +176,9 @@ const EditProject = () => {
         }
     }, [sProjectId]);
 
+    // --- 3. FETCH PROJECT & REAL COLLABORATORS ---
     useEffect(() => {
-        const loadProject = async () => {
+        const loadProjectAndCollabs = async () => {
             if (!sProjectId) {
                 console.error("No project ID found! Redirecting to home...");
                 oNavigate('/');
@@ -189,8 +186,8 @@ const EditProject = () => {
             }
 
             try {
+                // Fetch basic project data
                 const oData = await getProject(sProjectId);
-
                 if (oData) {
                     setProject(oData);
 
@@ -202,21 +199,32 @@ const EditProject = () => {
                     if (oData.bbox) {
                         const parsedBox = parseWKTBbox(oData.bbox);
                         setProjectBBox(parsedBox);
-                        // --- Set the initial map zoom view ---
                         setMapZoomView(parsedBox);
                     }
 
                     await loadImages();
                 }
+
+                // FETCH REAL COLLABORATORS
+                const collabData = await getCollaborators(sProjectId);
+                if (collabData && collabData.length > 0) {
+                    // Map the backend data into {id, name} objects for the dropdown
+                    const formattedCollabs = collabData.map(c => ({
+                        id: c.userEmail,
+                        name: c.userEmail
+                    }));
+                    // Set state: keep "All Annotators" at the top!
+                    setAoCollaborators([{id: 'all', name: 'All Annotators'}, ...formattedCollabs]);
+                }
+
             } catch (error) {
-                console.log("Error loading project data:", error);
+                console.log("Error loading project data or collabs:", error);
             }
         }
 
-        loadProject();
+        loadProjectAndCollabs();
     }, [sProjectId, oNavigate, loadImages]);
 
-    // --- REFRESH IMAGES ON IMPORT SUCCESS NOTIFICATION ---
     useEffect(() => {
         if (notifications.length > 0) {
             const latestNotification = notifications[notifications.length - 1];
@@ -229,7 +237,6 @@ const EditProject = () => {
         }
     }, [notifications, sProjectId, loadImages]);
 
-    // --- HANDLE COLOR CHANGE ---
     const handleColorChange = (newColor) => {
         setDrawingColor(newColor);
         if (sSelectedFeatureId) {
@@ -242,7 +249,6 @@ const EditProject = () => {
         }
     };
 
-    // --- SYNC PICKER TO SELECTION ---
     useEffect(() => {
         if (sSelectedFeatureId) {
             const selectedFeature = aoFeatures.find(f => f.id === sSelectedFeatureId);
@@ -252,7 +258,6 @@ const EditProject = () => {
         }
     }, [sSelectedFeatureId, aoFeatures]);
 
-    // --- HANDLER: DRAW UPDATE ---
     const handleDrawUpdate = (featureCollection) => {
         if (!featureCollection) return;
 
@@ -288,7 +293,7 @@ const EditProject = () => {
                         properties: {
                             ...feature.properties,
                             id: feature.id,
-                            annotator: sCurrentUser,
+                            annotator: sCurrentUser, // <-- This now correctly stamps the real user's email
                             status: "Pending",
                             timestamp: new Date().toISOString(),
                             measurement: sMeasurement,
@@ -309,7 +314,6 @@ const EditProject = () => {
         }
     };
 
-    // --- IN-PLACE EDITING HANDLERS ---
     const startEditing = (featureId, attrName, currentValue, e) => {
         e.stopPropagation();
         setEditingCell({featureId, attrName});
@@ -352,7 +356,6 @@ const EditProject = () => {
         setSelectedFeatureId(null);
         setTimeout(() => setSelectedFeatureId(featureId), 10);
     };
-
 
     const handleEditKeyDown = (e) => {
         if (e.key === 'Enter') saveEdit();
@@ -447,7 +450,6 @@ const EditProject = () => {
                                 >
                                     <div style={{display: 'flex', alignItems: 'center'}}>
                                         {renderThumbnail(img.name)}
-                                        {/* Added flex: 1 here to push the target button to the right */}
                                         <div style={{marginLeft: '12px', overflow: 'hidden', flex: 1}}>
                                             <div style={{
                                                 fontWeight: 'bold',
@@ -465,7 +467,6 @@ const EditProject = () => {
                                                 }}>{img.date}</div>
                                         </div>
 
-                                        {/* --- NEW TARGET BUTTON --- */}
                                         <button
                                             disabled={!bIsSelected}
                                             title="Zoom to image"
@@ -479,9 +480,8 @@ const EditProject = () => {
                                                 marginLeft: '5px'
                                             }}
                                             onClick={(e) => {
-                                                e.stopPropagation(); // Prevents selecting the row
+                                                e.stopPropagation();
                                                 if (img.bbox) {
-                                                    // Spreading into a new array forces Mapbox to zoom even if clicked twice
                                                     setMapZoomView([...parseWKTBbox(img.bbox)]);
                                                 } else {
                                                     showNotif("No bounding box available for this image.", "warning");
@@ -539,7 +539,10 @@ const EditProject = () => {
                             <span style={{
                                 fontSize: '12px',
                                 color: '#999'
-                            }}>Owner: Jihed_123 | Template: {oLabelTemplate?.name}</span>
+                            }}>
+                                {/* --- DISPLAY REAL CURRENT USER HERE TOO --- */}
+                                Current User: {sCurrentUser} | Template: {oLabelTemplate?.name}
+                            </span>
                         </div>
                         <div style={{display: 'flex', gap: '10px'}}>
                             <AppButton
@@ -646,6 +649,8 @@ const EditProject = () => {
                                     </label>
                                 </div>
                                 <div style={{height: '20px', borderLeft: '1px solid #ccc'}}></div>
+
+                                {/* --- 4. RENDER DYNAMIC DROPDOWN --- */}
                                 <select value={sFilterCollab}
                                         onChange={(e) => setFilterCollab(e.target.value)} style={{
                                     padding: '4px 8px',
@@ -653,8 +658,9 @@ const EditProject = () => {
                                     border: '1px solid #ccc',
                                     fontSize: '13px'
                                 }}>
-                                    {MOCK_COLLABS.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    {aoCollaborators.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                 </select>
+
                                 <label style={{
                                     display: 'flex',
                                     alignItems: 'center',
@@ -699,13 +705,9 @@ const EditProject = () => {
                             bHasLines={
                                 oLabelTemplate?.geometryTypes?.some(t => t.toLowerCase().includes('line')) ?? true
                             }
-
-                            // --- UPDATED TO USE THE NEW ZOOM STATE ---
                             oZoomToBBox={aoMapZoomView}
-
                             sCurrentDrawColor={sDrawingColor}
                             sInitialMapStyle="mapbox://styles/mapbox/satellite-v9"
-                            // Dynamically pull from template: If NOT allowed, then PREVENT = true
                             bPreventSelfIntersection={oLabelTemplate ? !oLabelTemplate.isSelfIntersectAllowed : false}
                             bPreventPolygonIntersection={oLabelTemplate ? !oLabelTemplate.isPolygonsIntersectAllowed : false}
                         />

@@ -7,9 +7,16 @@ import AppButton from '../components/app-button';
 import AppTextInput from '../components/app-text-input';
 import {getLabelTemplates} from "../services/labelling-template-service";
 
+// --- NEW: IMPORT REAL USER SESSION ---
+import { getUser } from '../services/session'; // Adjust path if needed!
+
 const LabelTemplatesLibrary = () => {
     const navigate = useNavigate();
-    const sCurrentUserId = "jihed-admin";
+
+    // --- DYNAMIC CURRENT USER ---
+    const oUser = getUser();
+    // Assuming your backend stores the creator's email in 'item.user'
+    const sCurrentUserId = oUser?.email || "Unknown User";
 
     // 1. STATE MANAGEMENT
     const [aoLabelTemplates, setLabelTemplates] = useState([]);
@@ -56,7 +63,6 @@ const LabelTemplatesLibrary = () => {
     );
 
     // --- RENDER ---
-    // Note: No background color or minHeight here. Layout handles it.
     return (
         <div style={{padding: '10px'}}>
             {/* HEADER */}
@@ -131,6 +137,7 @@ const LabelTemplatesLibrary = () => {
                                                 View
                                             </AppButton>
 
+                                            {/* Only show Edit/Delete if the logged-in user owns the template */}
                                             {item.user === sCurrentUserId && (
                                                 <>
                                                     {/* --- FIX: EDIT BUTTON --- */}
