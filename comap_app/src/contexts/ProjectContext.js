@@ -11,10 +11,19 @@ export const useProject = () => {
 };
 
 export const ProjectProvider = ({ children }) => {
+    // Your existing state
     const [currentProjectId, setCurrentProjectId] = useState(null);
 
+    // NEW: State to lock the UI during background imports
+    const [isImporting, setIsImporting] = useState(false);
+
     return (
-        <ProjectContext.Provider value={{ currentProjectId, setCurrentProjectId }}>
+        <ProjectContext.Provider value={{
+            currentProjectId,
+            setCurrentProjectId,
+            isImporting,       // <-- Shared with the app
+            setIsImporting     // <-- Shared with the app
+        }}>
             {children}
         </ProjectContext.Provider>
     );

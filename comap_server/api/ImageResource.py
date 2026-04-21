@@ -205,30 +205,30 @@ def convertS2ZipToCog(sZipPath: str, sOutputPath: str):
 
 
 async def downloadAndConvert(oImageImport):
-
-    oQueryExecutor = QueryExecutorCopernicusDataspace()
-
-    # download  S2 zip file
-    sZipPath, sFootprint, sProductId = await oQueryExecutor.downloadProduct(
-            sProductName = oImageImport.imageName,
-            sDownloadLink = oImageImport.imageUrl,
-            sPlatform = oImageImport.platform,
-            sProjectId = oImageImport.projectId        
-    )
-
-    if not sZipPath:
-        logging.error(f"downloadAndConvert: Failed to download image {oImageImport.imageName} from {oImageImport.imageUrl}")
-        return
-
-    logging.debug(f"downloadAndConvert: Downloaded image to {sZipPath}")
-    
-    # convert to COG
-    oAsyncioRunningLoop = asyncio.get_running_loop()
-    sCogPath = sZipPath.replace(".zip", "_COG.tif")
-    
-    logging.info(f"downloadAndConvert: Starting COG conversion for {sZipPath}")
-
     try:
+        oQueryExecutor = QueryExecutorCopernicusDataspace()
+
+        # download  S2 zip file
+        sZipPath, sFootprint, sProductId = await oQueryExecutor.downloadProduct(
+                sProductName = oImageImport.imageName,
+                sDownloadLink = oImageImport.imageUrl,
+                sPlatform = oImageImport.platform,
+                sProjectId = oImageImport.projectId
+        )
+
+        if not sZipPath:
+            logging.error(f"downloadAndConvert: Failed to download image {oImageImport.imageName} from {oImageImport.imageUrl}")
+            return
+
+        logging.debug(f"downloadAndConvert: Downloaded image to {sZipPath}")
+
+        # convert to COG
+        oAsyncioRunningLoop = asyncio.get_running_loop()
+        sCogPath = sZipPath.replace(".zip", "_COG.tif")
+
+        logging.info(f"downloadAndConvert: Starting COG conversion for {sZipPath}")
+
+
         # launch the conversion in anoter process, so that it doesn't block the main FastAPI thread
         sPathToCOG = await oAsyncioRunningLoop.run_in_executor(s_oConversionPool, convertS2ZipToCog, sZipPath, sCogPath)
         logging.info(f"downloadAndConvert: Conversion complete: {sCogPath}")
@@ -258,7 +258,11 @@ async def downloadAndConvert(oImageImport):
         
     except Exception as oE:
         logging.error(f"downloadAndConvert: Background processing failed: {oE}")
-
+        await oWsManager.broadcastToProject(oImageImport.projectId, {
+            "type": "import_failed",
+            "message": f"Failed to process image {oImageImport.imageName}: {str(oE)}",
+            "messageType": "error"
+        })
 
 
 @oRouter.post("/import")

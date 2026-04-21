@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useNotifications } from '../contexts/NotificationContext';
+import { useProject } from '../contexts/ProjectContext'; // <-- 1. Import Project Context
 
 const getWsUrl = (projectId) => {
     const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
@@ -9,6 +10,7 @@ const getWsUrl = (projectId) => {
 
 export const useWebSocket = (projectId) => {
     const { addNotification } = useNotifications();
+    const { setIsImporting } = useProject(); // <-- 2. Grab the loading setter
     const wsRef = useRef(null);
 
     useEffect(() => {
@@ -32,7 +34,6 @@ export const useWebSocket = (projectId) => {
 
         ws.onopen = () => {
             console.log('[WS] ✅ Connected to project:', projectId);
-            // Removed notification for connection - too noisy
         };
 
         ws.onmessage = (event) => {
@@ -42,8 +43,17 @@ export const useWebSocket = (projectId) => {
                 console.log('[WS] Parsed payload:', payload);
                 const msg = payload.message || payload.text || 'New event from server';
                 const type = payload.messageType || payload.type || 'info';
+
                 console.log('[WS] Displaying notification:', msg, type);
                 addNotification(msg, type);
+
+                // --- 3. THE UNLOCK LOGIC ---
+                // If the backend sends a success or error message, we assume the import background task is finished!
+                // (You can adjust these strings to match EXACTLY what your Python backend sends)
+                if (type === 'success' || type === 'error' || type === 'IMPORT_COMPLETE') {
+                    setIsImporting(false); // Turns off the spinning earth globally!
+                }
+
             } catch (e) {
                 console.warn('[WS] Message parse failed:', event.data, e);
                 addNotification('Received invalid interim message from server.', 'warning');
@@ -52,12 +62,12 @@ export const useWebSocket = (projectId) => {
 
         ws.onclose = (e) => {
             console.log('[WS] ❌ Closed:', e.code, e.reason);
-            // Removed notification for disconnection - too noisy
         };
 
         ws.onerror = (e) => {
             console.error('[WS] ⚠️ Error:', e);
             addNotification('WebSocket error occurred.', 'error');
+            setIsImporting(false); // Also unlock the UI if the websocket completely crashes
         };
 
         // Cleanup on unmount
@@ -67,7 +77,7 @@ export const useWebSocket = (projectId) => {
                 ws.close();
             }
         };
-    }, [projectId, addNotification]  );
+    }, [projectId, addNotification, setIsImporting]); // <-- Added setIsImporting to dependencies
 
     return wsRef.current;
 };

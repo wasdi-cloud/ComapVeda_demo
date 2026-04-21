@@ -43,7 +43,7 @@ export const clearSession = () => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     // Optional: Force reload to clear React state
-    // window.location.href = '/login';
+    window.location.href = '/login';
 };
 
 export const isAuthenticated = () => {
