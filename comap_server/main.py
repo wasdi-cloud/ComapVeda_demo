@@ -6,7 +6,6 @@ load_dotenv()
 
 # set up logging configuration at the start up, before fast api imports
 # so that all loggers (including those in imported modules) are configured correctly.
-
 setupLogging()  
 
 import morecantile
