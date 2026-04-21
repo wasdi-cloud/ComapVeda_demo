@@ -1,6 +1,7 @@
+from datetime import datetime
 import logging
 import asyncio
-from datetime import datetime
+import time
 import os
 import os
 from pathlib import Path
@@ -155,20 +156,16 @@ def convertS2ZipToCog(sZipPath: str, sOutputPath: str):
 
     logging.debug(f"convertS2ZipToCog: Found band paths")
 
-    # 2. Create a temporary VRT to stack them
-    # We use a context manager to ensure the temp file is cleaned up
-    # TODO: I want to create this temp file in the same folder of the S2 path
+    # Create a temporary VRT to stack the bands
     with tempfile.NamedTemporaryFile(suffix=".vrt", dir=sBaseDir, delete=False) as oTempVrt:
         sVrtPath = oTempVrt.name
 
     try:
-        # Step A: Build the Virtual Stack
-        # -separate: puts each input file into a separate band
-        # -resolution highest: upsamples 20m bands to 10m automatically
+        # Build the Virtual Stack
         asVrtCmd = [
             "gdalbuildvrt",
-            "-separate",
-            "-resolution", "highest",
+            "-separate",                # -separate: puts each input file into a separate band
+            "-resolution", "highest",   # -resolution highest: upsamples 20m bands to 10m automatically
             sVrtPath
         ] + asBandPaths
         
@@ -176,7 +173,7 @@ def convertS2ZipToCog(sZipPath: str, sOutputPath: str):
         subprocess.run(asVrtCmd, check=True, capture_output=True)
         logging.debug(f"convertS2ZipToCog: VRT created at {sVrtPath}")
 
-        # Step B: Translate VRT to Multi-band COG
+        # Translate VRT to Multi-band COG
         asCogCmd = [
             "gdal_translate",
             sVrtPath,
@@ -231,7 +228,11 @@ async def downloadAndConvert(oImageImport):
 
         # launch the conversion in anoter process, so that it doesn't block the main FastAPI thread
         sPathToCOG = await oAsyncioRunningLoop.run_in_executor(s_oConversionPool, convertS2ZipToCog, sZipPath, sCogPath)
-        logging.info(f"downloadAndConvert: Conversion complete: {sCogPath}")
+        logging.info(f"downloadAndConvert: Conversion complete: {sPathToCOG}")
+
+        if not sPathToCOG:
+            logging.error(f"downloadAndConvert: Failed to convert {sZipPath} to COG")
+            return
 
         oNow = datetime.now()
         oDatasetImage = DatasetImageEntity(
@@ -254,8 +255,15 @@ async def downloadAndConvert(oImageImport):
             "messageType": "success"
         })
 
-        # TODO: delete the s2 zip file
-        
+        # delete the s2 zip file
+        oZipPath = Path(sZipPath)
+
+        try:
+            oZipPath.unlink(missing_ok=True)
+            logger.info(f"downloadAndConvert: Deleted temporary ZIP file {sZipPath}")
+        except Exception as oE:
+            logger.error(f"downloadAndConvert: Failed to delete temporary ZIP file {sZipPath}: {oE}")
+
     except Exception as oE:
         logging.error(f"downloadAndConvert: Background processing failed: {oE}")
         await oWsManager.broadcastToProject(oImageImport.projectId, {
