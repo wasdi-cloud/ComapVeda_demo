@@ -4,20 +4,18 @@ import json
 import os
 import re
 import urllib
-import zipfile
 import logging
 import aiohttp
 from aiohttp import ClientTimeout
 import aiofiles
-import asyncio
 from pathlib import Path
-from database import SessionLocal
 from dataproviders.copernicus_dataspace.CopernicusDataspaceAuth import CopernicusDataspaceAuth
 from viewmodels.images.SearchResultItem import SearchResultItem
 from viewmodels.search.SearchQueryParameters import SearchQueryParameters
 from utils.WebsocketManager import oWsManager
-from entities.DatasetImage import DatasetImageEntity
-from sqlalchemy.orm import Session
+
+
+logger = logging.getLogger(__name__)
 
 class QueryExecutorCopernicusDataspace:
 
@@ -64,14 +62,14 @@ class QueryExecutorCopernicusDataspace:
                 if iStatusCode == 200:
                     sResponseBody = oResponse.read().decode('utf-8')
                     oJson = json.loads(sResponseBody)
-                    logging.debug(f"QueryExecutorCopernicusDataspace.executeQuery: Received response with {len(oJson.get('value', []))} items.")
+                    logging.debug(f"executeQuery: Received response with {len(oJson.get('value', []))} items.")
                     oResultList = self._parseODataResponse(oJson)
                     return oResultList
                 else:
-                    logging.debug(f"QueryExecutorCopernicusDataspace.executeQuery.Error: Received status code {iStatusCode} from API.")
+                    logging.debug(f"executeQuery.Error: Received status code {iStatusCode} from API.")
             
         except Exception as oE:
-            logging.error(f"QueryExecutorCopernicusDataspace.executeQuery.Error: An error occurred: {str(oE)}")
+            logging.error(f"executeQuery.Error: An error occurred: {str(oE)}")
         
         return None
 
@@ -87,24 +85,6 @@ class QueryExecutorCopernicusDataspace:
         return None
 
 
-    def _extractBandPaths(self, sFilePath: str) -> dict[str, str]:
-        """Scan a Sentinel-2 ZIP and return a JSON-serializable band path map."""
-        sNormalizedPath = sFilePath.replace("\\", "/")
-        if not sNormalizedPath.lower().endswith(".zip"):
-            return {}
-
-        dBandPaths: dict[str, str] = {}
-        with zipfile.ZipFile(sNormalizedPath, 'r') as oZipFile:
-            for sName in oZipFile.namelist():
-                for sBand in QueryExecutorCopernicusDataspace.SENTINEL_BANDS:
-                    if sBand in dBandPaths:
-                        continue
-                    if re.search(rf"_{sBand}(?:_.*)?\.jp2$", sName):
-                        dBandPaths[sBand] = f"/vsizip/{sNormalizedPath}/{sName}"
-
-        return dBandPaths
-
-
     def _parseODataResponse(self, oData: str) -> list[SearchResultItem]:
         """
         Parse the OData response from the Copernicus Data Space API and convert it into a list of `SearchResultItem` objects.
@@ -116,7 +96,6 @@ class QueryExecutorCopernicusDataspace:
             for oItem in oData.get("value", []):
 
                 sId = oItem.get("Id", "")
-                logging.debug('** ' + sId + ' **')
 
                 sTitle = oItem.get("Name", "")
                 sDownloadLink = "https://download.dataspace.copernicus.eu/odata/v1/Products(" + oItem.get("Id", "") + ")/$value"
@@ -158,10 +137,10 @@ class QueryExecutorCopernicusDataspace:
 
                 oSearchResultsList.append(oSearchResultItem)
             
-            logging.debug(f"QueryExecutorCopernicusDataspace.parseODataResponse: Parsed {len(oSearchResultsList)} items from OData response.")
+            logging.debug(f"parseODataResponse: Parsed {len(oSearchResultsList)} items from OData response.")
             return oSearchResultsList
         except Exception as oE:
-            logging.error(f"QueryExecutorCopernicusDataspace.parseODataResponse.Error: An error occurred while parsing OData response: {str(oE)}")
+            logging.error(f"parseODataResponse.Error: An error occurred while parsing OData response: {str(oE)}")
         
         return None
 
@@ -177,7 +156,7 @@ class QueryExecutorCopernicusDataspace:
         
         sUrl = f"https://catalogue.dataspace.copernicus.eu/odata/v1/Products({sProductId})?$expand=Attributes"
 
-        logging.debug(f"QueryExecutorCopernicusDataspace.searchProductDetails: Fetching product details from URL: {sUrl}")
+        logging.debug(f"searchProductDetails: Fetching product details from URL: {sUrl}")
 
         try:
             with urllib.request.urlopen(sUrl) as oResponse:
@@ -185,13 +164,13 @@ class QueryExecutorCopernicusDataspace:
                 if iStatusCode == 200:
                     sResponseBody = oResponse.read().decode('utf-8')
                     oJson = json.loads(sResponseBody)
-                    logging.debug(f"QueryExecutorCopernicusDataspace.searchProductDetails: Received product details for product ID {sProductId}.")
+                    logging.debug(f"searchProductDetails: Received product details for product ID {sProductId}.")
                     return oJson
                 else:
-                    logging.error(f"QueryExecutorCopernicusDataspace.searchProductDetails.Error: Received status code {iStatusCode} from API when fetching product details for product ID {sProductId}.")
+                    logging.error(f"searchProductDetails.Error: Received status code {iStatusCode} from API when fetching product details for product ID {sProductId}.")
             
         except Exception as oE:
-            logging.error(f"QueryExecutorCopernicusDataspace.searchProductDetails.Error: An error occurred while fetching product details for product ID {sProductId}: {str(oE)}")
+            logging.error(f"searchProductDetails.Error: An error occurred while fetching product details for product ID {sProductId}: {str(oE)}")
         
         return None
 
@@ -206,15 +185,15 @@ class QueryExecutorCopernicusDataspace:
         """
 
         if sProjectId is None or sProjectId == "":
-            logging.error("QueryExecutorCopernicusDataspace.downloadProduct.Error: Project ID is missing. Cannot download product.")
+            logging.error("downloadProduct.Error: Project ID is missing. Cannot download product.")
             return None
         
         if sDownloadLink is None or sDownloadLink == "":
-            logging.error("QueryExecutorCopernicusDataspace.downloadProduct.Error: Download link is missing. Cannot download product.")
+            logging.error("downloadProduct.Error: Download link is missing. Cannot download product.")
             return None
         
         if sProductName is None or sProductName == "":
-            logging.error("QueryExecutorCopernicusDataspace.downloadProduct.Error: Product name is missing. Cannot download product.")
+            logging.error("downloadProduct.Error: Product name is missing. Cannot download product.")
             return None
         
         # extract the Copernicus Dataspace product id from the download url
@@ -222,15 +201,15 @@ class QueryExecutorCopernicusDataspace:
         sProductId = None
         if oMatch:
             sProductId = oMatch.group(1)
-            logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct: Extracted product ID: {sProductId}")
+            logging.debug(f"downloadProduct: Extracted product ID: {sProductId}")
         else:
-            logging.warning("QueryExecutorCopernicusDataspace.downloadProduct: Could not extract product ID from URL.")
+            logging.warning("downloadProduct: Could not extract product ID from URL.")
             return None
         
         sDownloadBasePath = os.environ.get("COMAP_PROJECTS_BASE_PATH")
 
         if sDownloadBasePath is None:
-            logging.error("QueryExecutorCopernicusDataspace.downloadProduct.Error: Base path for CoMap projects is not set. Cannot download product. Set the COMAP_PROJECTS_BASE_PATH environment variable.")
+            logging.error("downloadProduct.Error: Base path for CoMap projects is not set. Cannot download product. Set the COMAP_PROJECTS_BASE_PATH environment variable.")
             return None
 
         oDownloadFolderPath = Path(sDownloadBasePath) / sProjectId
@@ -238,16 +217,15 @@ class QueryExecutorCopernicusDataspace:
         try:
             oDownloadFolderPath.mkdir(parents=False, exist_ok=True)
         except Exception as oE:
-            logging.error(f"QueryExecutorCopernicusDataspace.downloadProduct.Error: An error occurred while creating the download folder: {str(oE)}")
+            logging.error(f"downloadProduct.Error: An error occurred while creating the download folder: {str(oE)}")
             return None
         
 
         oFullFilePath = oDownloadFolderPath / (sProductName + ".zip")
 
         if os.path.exists(oFullFilePath):
-            logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct: File '{oFullFilePath}' already exists. Skipping download.")
+            logging.info(f"downloadProduct: File '{oFullFilePath}' already exists. Skipping download.")
             return str(oFullFilePath)
-        oDB = None
 
         try:
             oTimeout = ClientTimeout(total=1800)  # 30 minutes timeout for large downloads
@@ -255,7 +233,7 @@ class QueryExecutorCopernicusDataspace:
                 async with session.get(sDownloadLink) as response:
                     if response.status == 401:
                         # If we get a 401 Unauthorized, it likely means the access token has expired. In that case, we attempt to refresh the token and retry the download once.
-                        logging.warning("QueryExecutorCopernicusDataspace.downloadProduct: Received 401 Unauthorized. Attempting to refresh token and retry")
+                        logging.warning("downloadProduct: Received 401 Unauthorized. Attempting to refresh token and retry")
                         self.oCopernicusAuth.refreshToken()
                         session.headers.update(self.oCopernicusAuth.getHeader())
                         async with session.get(sDownloadLink) as retry_response:
@@ -267,14 +245,14 @@ class QueryExecutorCopernicusDataspace:
                         async for chunk in response.content.iter_chunked(8192):
                             await file.write(chunk)
 
-            logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct: Successfully downloaded product '{sProductName}' to '{oFullFilePath}'.")
+            logging.debug(f"downloadProduct: Successfully downloaded product '{sProductName}' to '{oFullFilePath}'.")
 
             sDownloadedFilePath = str(oFullFilePath)
 
             if str(sDownloadedFilePath) is None:
                 raise HTTPException(status_code=500, detail=f'Failed to download image from {sDownloadLink}')
         
-            logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct: Image downloaded successfully to {sDownloadedFilePath}")
+            logging.debug(f"downloadProduct: Image downloaded successfully to {sDownloadedFilePath}")
 
             # with the product Id, we query again Copernicus Dataspace to get the metadata of the product, in order to extract the bbox and the date
             oJsonMetadataData = self.searchProductDetails(sProductId)
@@ -282,47 +260,16 @@ class QueryExecutorCopernicusDataspace:
             sFootprint =oJsonMetadataData.get("Footprint", "")
             if sFootprint.startswith("geography'SRID=4326;POLYGON"):
                 sFootprint = sFootprint[len("geography'SRID=4326;"):-1]
-            """
-            oNow = datetime.now()
-            dBandPaths = self._extractBandPaths(sDownloadedFilePath)
-            sBandPathsJson = json.dumps(dBandPaths) if dBandPaths else None
 
-            # now we need to store the image in the database
-            oDatasetImage = DatasetImageEntity(
-                projectId=sProjectId,
-                fileName=os.path.basename(sDownloadedFilePath),
-                link=sDownloadedFilePath,
-                bandpaths=sBandPathsJson,
-                bbox=sFootprint,
-                date=int(oNow.timestamp() * 1000)
-            )
-            oDB = SessionLocal()
-            oDB.add(oDatasetImage)
-            oDB.commit()
-            oDB.refresh(oDatasetImage)
-        
-            logging.debug(f"QueryExecutorCopernicusDataspace.downloadProduct: Image stored in database with ID: {oDatasetImage.id}")
-
-            await oWsManager.broadcastToProject(sProjectId, {
-                "type": "import_completed",
-                "productId": sProductId,
-                "message": f"Image {sProductId} successfully imported!",
-                "messageType": "success"
-            })
-            """
             return sDownloadedFilePath, sFootprint, sProductId
         
         except Exception as oE:
-            logging.error(f"QueryExecutorCopernicusDataspace.downloadProduct.Error: An error occurred while downloading product {sProductName}: {str(oE)}")
+            logging.error(f"downloadProduct.Error: An error occurred while downloading product {sProductName}: {str(oE)}")
             await oWsManager.broadcastToProject(sProjectId, {
                 "type": "import_failed",
                 "productId": sProductId,
                 "message": f"Failed to import image {sProductId}",
                 "messageType": "error"
             })
-
-        finally:
-            if oDB is not None:
-                oDB.close()
 
         return None

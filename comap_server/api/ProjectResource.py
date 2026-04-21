@@ -1,8 +1,5 @@
 import logging
 import time
-
-logger = logging.getLogger(__name__)
-
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -183,7 +180,7 @@ async def delete_project(
         oDB.delete(oProject)
         oDB.commit()
 
-        print(f"MOCK EMAIL: Sent to collaborators of project {project_id} notifying deletion.")
+        logging.debug(f"delete_project: mock email. Sent to collaborators of project {project_id} notifying deletion.")
 
         return {"status": "success", "message": "Project completely removed from the system"}
     except HTTPException:
@@ -226,7 +223,7 @@ async def getProject(
         oCurrentUser: User = Depends(get_current_user)
 ):
     try:
-        print(f"User {oCurrentUser.email} is requesting details for project_id: {project_id}")
+        logging.debug(f"getProject. User {oCurrentUser.email} is requesting details for project_id: {project_id}")
 
         bCanRead = canReadProject(oCurrentUser, project_id, oDB)
         if not bCanRead:
@@ -421,7 +418,7 @@ async def listCollabs(
     try:
         oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
         if not oProject:
-            print("🚨 Throwing 404: Project was None!")
+            logging.error("listCollaborators.Throwing 404: Project was None!")
             raise HTTPException(status_code=404, detail="Project not found")
         aoResult = []
 

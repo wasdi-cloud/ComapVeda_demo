@@ -1,6 +1,7 @@
 import logging
 from fastapi import WebSocket
 
+logger = logging.getLogger(__name__)
 class WebSocketManager:
 
     def __init__(self):
@@ -13,7 +14,7 @@ class WebSocketManager:
         if sProjectId not in self.dActiveConnections:
             self.dActiveConnections[sProjectId] = []
         self.dActiveConnections[sProjectId].append(oWebsocket)
-        logging.info(f"WebSocketManager.connect: Client connected to project {sProjectId}")
+        logging.info(f"connect: Client connected to project {sProjectId}")
 
 
     def disconnect(self, sProjectId: str, oWebsocket: WebSocket):
@@ -26,7 +27,7 @@ class WebSocketManager:
             if not self.dActiveConnections[sProjectId]:
                 del self.dActiveConnections[sProjectId]
 
-        logging.info(f"WebSocketManager.disconnect: Client disconnected from project {sProjectId}")
+        logging.info(f"disconnect: Client disconnected from project {sProjectId}")
 
 
     async def _sendJson(self, oConnection: WebSocket, dMessage: dict):
@@ -34,7 +35,7 @@ class WebSocketManager:
             await oConnection.send_json(dMessage)
             return True
         except Exception as oE:
-            logging.error(f"WebSocketManager._sendJson: Error sending WebSocket message: {oE}")
+            logging.error(f"_sendJson: Error sending WebSocket message: {oE}")
             return False
 
 

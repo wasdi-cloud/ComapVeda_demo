@@ -3,6 +3,11 @@ import time
 import logging
 import morecantile
 
+from utils.LoggingConfiguration import setupLogging
+# set up logging configuration at the start up, before fast api imports
+# so that all loggers (including those in imported modules) are configured correctly.
+setupLogging()  
+
 from fastapi import FastAPI, Request, HTTPException, Query, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from rasterio import RasterioIOError
@@ -11,32 +16,21 @@ from rio_tiler.io import Reader
 from rio_tiler.types import BBox
 from sqlalchemy.orm import Session
 from starlette.middleware.cors import CORSMiddleware
-from titiler.core.factory import MultiBaseTilerFactory, TilerFactory
+from titiler.core.factory import TilerFactory
 from api.AuthResource import oRouter as oAuthRouter
 from api.UserResource import oRouter as oUserRouter
 from api.ImageResource import oRouter as oImageRouter
 from api.LabelsResource import oRouter as oLabelsRouter
 from api.ProjectResource import oRouter as oProjectRouter
 from api.TemplateResource import oRouter as oTemplateRouter
-from utils.CogPathResolver import get_dataset_url
-from dataproviders.copernicus_dataspace.Sentinel2ZipReader import Sentinel2ZipReader
+from utils.CogPathResolver import getDatasetUrl
 from database import Base, engine, ensure_legacy_schema_compatibility
 from database import get_db
 from entities.DatasetImage import DatasetImageEntity
 from entities.DatasetProject import DatasetProjectEntity
 from utils.WebsocketManager import oWsManager
 
-# setting the level of the logger
-logging.basicConfig(level=logging.DEBUG)
-# Ensure named loggers (e.g. api.ProjectResource) propagate to the root handler
-# even when Uvicorn resets the root logger on startup
-logging.getLogger("api").setLevel(logging.DEBUG)
-logging.getLogger("utils").setLevel(logging.DEBUG)
-# Suppress noisy GDAL/rasterio debug messages that flood logs under concurrent load
-logging.getLogger("rasterio").setLevel(logging.WARNING)
-
-
-print("Building database tables...")
+logging.info("Building database tables...")
 Base.metadata.create_all(bind=engine)
 ensure_legacy_schema_compatibility()
 
@@ -97,7 +91,7 @@ async def limit_sentinel_concurrency(request: Request, call_next):
 
 
 # Tiler factory instance
-oCog = TilerFactory(path_dependency=get_dataset_url)
+oCog = TilerFactory(path_dependency=getDatasetUrl)
 #oSentinelRouter = MultiBaseTilerFactory(reader=Sentinel2ZipReader, path_dependency=DatasetPathParams)
 
 # TiTiler endpoints
@@ -249,6 +243,6 @@ if __name__ == "__main__":
 
     import uvicorn
 
-    print("Starting FastAPI server")
+    logging.info("Starting FastAPI server")
 
     uvicorn.run("main:oApp", host="127.0.0.1", port=8000, reload=True)

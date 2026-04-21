@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
 
@@ -10,6 +12,8 @@ from utils.auth_utils import canWriteTemplate, get_current_user
 from entities.User import User
 
 oRouter = APIRouter(prefix="/templates")
+
+logger = logging.getLogger(__name__)
 
 
 # --- 1. CREATE ---
