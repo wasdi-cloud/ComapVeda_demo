@@ -37,3 +37,4 @@ comap_server/TCI.tif
 node_modules
 .vscode/launch.json
 comap_app/package-lock.json
+docker-compose.override.yml

@@ -14,7 +14,18 @@ if env_local_path.exists():
 # Get the URL (returns None if not found, so handle that if needed)
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-engine = create_engine(DATABASE_URL)
+engine = create_engine(
+    DATABASE_URL,
+    # --- Connection pool ---
+    # Each gunicorn worker process has its own pool.
+    # Total max DB connections = workers × (pool_size + max_overflow)
+    # With 8 workers: 8 × (3 + 5) = 64 connections max, well below pg max_connections.
+    pool_size=3,          # persistent connections kept alive per worker
+    max_overflow=5,       # extra connections allowed during bursts, then discarded
+    pool_timeout=30,      # seconds to wait for a free connection before raising an error
+    pool_recycle=1800,    # recycle connections after 30 min to avoid stale/dead connections
+    pool_pre_ping=True,   # test connection health before use; discards dead connections silently
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
