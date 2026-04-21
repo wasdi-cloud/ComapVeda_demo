@@ -281,7 +281,7 @@ async def import_image(oImageImport: ImageImport,
         # Schedule async task to run in background without blocking response
         asyncio.create_task(downloadAndConvert(oImageImport))
 
-        logging.debug(f"ImageResource.import_image: Scheduled background task to download image {oImageImport.imageName} for project {oImageImport.projectId}")
+        logging.debug(f"import_image: Scheduled background task to download image {oImageImport.imageName} for project {oImageImport.projectId}")
         return oImageImport 
         
 

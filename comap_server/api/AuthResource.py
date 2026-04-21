@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Query, Depends, Header
 from sqlalchemy.orm import Session as DBSession
 
@@ -12,6 +14,8 @@ from viewmodels.auth.Registration import Registration
 
 
 oRouter = APIRouter(prefix="/auth")
+
+logger = logging.getLogger(__name__)
 
 @oRouter.post("/register")
 async def register(oRegistration: Registration, oDatabase: DBSession = Depends(get_db)):

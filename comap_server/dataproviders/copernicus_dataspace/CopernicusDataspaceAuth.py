@@ -3,6 +3,9 @@ import requests
 import logging
 from threading import Lock
 
+logger = logging.getLogger(__name__)
+
+
 class CopernicusDataspaceAuth:
     _oInstance = None
     _oLock = Lock()
@@ -27,7 +30,7 @@ class CopernicusDataspaceAuth:
 
     def login(self) -> str:
         """Initial login to obtain access and refresh tokens"""
-        logging.debug("CopernicusDataspaceAuth.login: Executing initial login.")
+        logging.debug("login: Executing initial login.")
         
         oData = {
             'client_id': 'cdse-public',
@@ -42,7 +45,7 @@ class CopernicusDataspaceAuth:
         if not self.sRefreshToken:
             return self.login()
         
-        logging.debug("CopernicusDataspaceAuth.refreshToken: Refreshing access token...")
+        logging.debug("refreshToken: Refreshing access token...")
         
         oData = {
             'client_id': 'cdse-public',
@@ -63,7 +66,7 @@ class CopernicusDataspaceAuth:
             
             return self.sAccessToken
         except Exception as oE:
-            logging.error(f"CopernicusDataspaceAuth._fetchTokens.Error: {str(oE)}")
+            logging.error(f"_fetchTokens.Error: {str(oE)}")
             raise
 
     def getHeader(self) -> dict:

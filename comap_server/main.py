@@ -1,12 +1,17 @@
-import asyncio
-import time
 import logging
-import morecantile
-
 from utils.LoggingConfiguration import setupLogging
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # set up logging configuration at the start up, before fast api imports
 # so that all loggers (including those in imported modules) are configured correctly.
+
 setupLogging()  
+
+import morecantile
+import asyncio
+import time
 
 from fastapi import FastAPI, Request, HTTPException, Query, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
