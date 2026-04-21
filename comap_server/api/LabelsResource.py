@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query, Depends, Body
@@ -16,6 +17,7 @@ from utils.auth_utils import canWriteProject
 
 oRouter = APIRouter(prefix="/labels")
 
+logger = logging.getLogger(__name__)
 
 # --- 1. GET LABELS BY IMAGE ---
 @oRouter.get("/getByImage", response_model=list[LabelItem])

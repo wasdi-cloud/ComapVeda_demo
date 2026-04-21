@@ -1,6 +1,5 @@
 import logging.config
 import os
-import sys
 
 s_sLOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 
@@ -26,6 +25,7 @@ s_oLOGGING_CONFIG = {
             "handlers": ["console"],
             "level": s_sLOG_LEVEL,
         },
+        "rio_tiler": { "level": "WARNING" },
         "rasterio": { "level": "WARNING" },
         "boto3": { "level": "WARNING" },
         "botocore": { "level": "WARNING" },
@@ -36,4 +36,5 @@ s_oLOGGING_CONFIG = {
 }
 
 def setupLogging():
+    print(f"Log level letto prima di inizializzare la configurazione: {s_sLOG_LEVEL}")
     logging.config.dictConfig(s_oLOGGING_CONFIG)

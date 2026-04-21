@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -7,6 +9,8 @@ from entities.User import User
 from utils.auth_utils import get_current_user
 
 oRouter = APIRouter(prefix="/users")
+
+logger = logging.getLogger(__name__)
 
 # todo verify this and then create seprate files , also add change password and change email
 # --- PYDANTIC VIEWMODELS ---

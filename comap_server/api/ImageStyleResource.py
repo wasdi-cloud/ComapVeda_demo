@@ -1,9 +1,10 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
 
 from database import get_db
 from entities.ImageStyle import ImageStyleEntity
-# Import your Pydantic model
 from viewmodels.imagesStyle import ImageStyleItem
 from entities.User import User
 from utils.auth_utils import get_current_user
@@ -12,8 +13,9 @@ from utils.auth_utils import canWriteProject
 
 oRouter = APIRouter(prefix="/imagestyle")
 
+logger = logging.getLogger(__name__)
 
-# --- 1. ADD IMAGE STYLE ---
+
 @oRouter.post("/add")  
 async def add(
         oImageStyleData: ImageStyleItem,
@@ -84,7 +86,6 @@ async def add(
         raise HTTPException(status_code=500, detail=f'Error adding image style: {str(oE)}')
 
 
-# --- 2. UPDATE IMAGE STYLE ---
 @oRouter.put("/update")
 async def update(
         oImageStyleData: ImageStyleItem,
@@ -141,7 +142,6 @@ async def update(
         raise HTTPException(status_code=500, detail=f'Error updating image oStyle: {str(oE)}')
 
 
-# --- 3. GET IMAGE STYLE ---
 @oRouter.get("/get")
 async def get(
         sImageStyleId: str = Query(..., description="Unique identifier for the image oStyle"),
