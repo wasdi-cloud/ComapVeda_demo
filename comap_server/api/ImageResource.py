@@ -67,28 +67,35 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
     try:
 
         # check the inputs 
-        if not bbox or not start_date or not end_date or not platform or not product_level:
-            raise HTTPException(status_code=400, detail="Missing required query parameters: bbox, start_date, end_date, platform")
         
-        if not bbox.startswith("POLYGON"):
-            raise HTTPException(status_code=400, detail="Invalid bbox format. Expected WKT POLYGON format.")
-        
-        if platform != "Sentinel-2":
-            raise HTTPException(status_code=400, detail="Invalid platform.")
-        
-        if product_level not in ["L1C", "L2A"]:
-            raise HTTPException(status_code=400, detail="Invalid product level.")
-        
-        if max_cloud_cover < 0 or max_cloud_cover > 100:
-            raise HTTPException(status_code=400, detail="Invalid cloud cover percentage. Must be between 0 and 100.")
-        
-        try:
-            datetime.strptime(start_date, "%Y-%m-%dT%H:%M:%S.%fZ")
-            datetime.strptime(end_date, "%Y-%m-%dT%H:%M:%S.%fZ")
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DDTHH:MM:SS.sssZ.")
+        if not product_name:
+
+            # all these checks make sense only if the user is not searching for a specific product by name
+            # if product_name is provided, we can skip the checks and let the query executor handle it, since the query is more specific
+
+            if not bbox or not start_date or not end_date or not platform or not product_level:
+                raise HTTPException(status_code=400, detail="Missing required query parameters: bbox, start_date, end_date, platform")
+            
+            if not bbox.startswith("POLYGON"):
+                raise HTTPException(status_code=400, detail="Invalid bbox format. Expected WKT POLYGON format.")
+            
+            if platform != "Sentinel-2":
+                raise HTTPException(status_code=400, detail="Invalid platform.")
+            
+            if product_level not in ["L1C", "L2A"]:
+                raise HTTPException(status_code=400, detail="Invalid product level.")
+            
+            if max_cloud_cover < 0 or max_cloud_cover > 100:
+                raise HTTPException(status_code=400, detail="Invalid cloud cover percentage. Must be between 0 and 100.")
+            
+            try:
+                datetime.strptime(start_date, "%Y-%m-%dT%H:%M:%S.%fZ")
+                datetime.strptime(end_date, "%Y-%m-%dT%H:%M:%S.%fZ")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DDTHH:MM:SS.sssZ.")
 
         oSearchQueryParameters = SearchQueryParameters(
+            sProductName = product_name,
             sPlatform = platform,
             sStartDate = start_date,
             sEndDate = end_date,

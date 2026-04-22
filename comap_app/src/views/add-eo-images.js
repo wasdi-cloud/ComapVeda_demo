@@ -92,7 +92,8 @@ const AddEoImages = () => {
                 end_date: isoEndDate,
                 platform: sSatellitePlatform,
                 product_level: sProductType,
-                max_cloud_cover: parseFloat(sCloudCoverage) || 100.0
+                max_cloud_cover: parseFloat(sCloudCoverage) || 100.0,
+                ...(sProductName && { product_name: sProductName }) // Optional filter
             };
 
             const results = await searchImages(queryParams);
