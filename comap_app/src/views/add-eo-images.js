@@ -229,7 +229,7 @@ const AddEoImages = () => {
                                 <AppSelect sLabel="Platform" sValue={sSatellitePlatform} fnOnChange={(e) => setSSatellitePlatform(e.target.value)} aoOptions={["Sentinel-2"]} oStyle={{width: '100%'}} />
 
                                 <div style={{ gridColumn: 'span 2' }}>
-                                    <AppTextInput sLabel="Product Name (Optional)" sPlaceholder="e.g. S2_MSI_L2A" sValue={sProductName} fnOnChange={(e) => setSProductName(e.target.value)} oStyle={{width: '100%'}} />
+                                    <AppTextInput sLabel="Product Name (Optional)" sPlaceholder="e.g. S2C_MSIL1C_20260331T102021_.SAFE" sValue={sProductName} fnOnChange={(e) => setSProductName(e.target.value)} oStyle={{width: '100%'}} />
                                 </div>
 
                                 <AppDateInput sLabel="From Date" sName="start" sValue={sStartDate} fnOnChange={(e) => setSStartDate(e.target.value)}/>

@@ -45,6 +45,7 @@ services:
       - COPERNICUS_DATASPACE_ACCESS_TOKEN=${COPERNICUS_DATASPACE_ACCESS_TOKEN}
       - COMAP_PROJECTS_BASE_PATH=${COMAP_PROJECTS_BASE_PATH}
       - LOG_LEVEL=${LOG_LEVEL}
+      - MAX_STORAGE_GB=${MAX_STORAGE_GB}
     volumes:
       - ./comap_server:/app
       - /opt/comap/docker/data:${COMAP_PROJECTS_BASE_PATH}

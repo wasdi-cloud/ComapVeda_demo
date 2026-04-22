@@ -280,6 +280,27 @@ async def downloadAndConvert(oImageImport):
         })
 
 
+def getDirSize(sPath: str) -> int | None:
+    """
+    Recursively calculates the total size of all files in the given directory.
+    Returns the value in bytes, or None if an error occurs.
+    """
+    sTotalSize = 0
+    try:
+        with os.scandir(sPath) as oIt:
+            for oEntry in oIt:
+                if oEntry.is_file():
+                    sTotalSize += oEntry.stat().st_size
+                elif oEntry.is_dir():
+                    sTotalSize += getDirSize(oEntry.path)
+
+    except Exception as oE:
+        logging.error(f"getDirSize: Error occurred while calculating directory size for {sPath}: {oE}")
+        return None
+
+    return sTotalSize
+
+
 @oRouter.post("/import")
 async def import_image(oImageImport: ImageImport, 
                        oDB: Session = Depends(get_db), 
@@ -292,10 +313,32 @@ async def import_image(oImageImport: ImageImport,
     :return: dict confirming the import of the image
     """
     try:
-
+        # check user permissions
         bCanWrite = canWriteProject(oCurrentUser, oImageImport.projectId, oDB)
         if not bCanWrite:
             raise HTTPException(status_code=403, detail="User does not have write access to this project")
+        
+        # check if the user is not exceeding the storage limitations
+        sProjectId = oImageImport.projectId
+        if not sProjectId:
+            raise HTTPException(status_code=400, detail="Project ID is required for importing an image")
+        
+        oProjectFolderPath = Path(os.environ.get("COMAP_PROJECTS_BASE_PATH", "")) / sProjectId
+
+        logging.debug(f"import_image: Checking storage limits for project {oProjectFolderPath}")
+
+        iProjectSize = getDirSize(oProjectFolderPath)
+
+        if iProjectSize is None:
+            logging.error(f"import_image: Could not determine project size for {oProjectFolderPath}")
+            raise HTTPException(status_code=500, detail="Could not determine project storage usage. Import aborted.")
+        
+        iMaxStorageBytes = int(os.environ.get("MAX_STORAGE_GB", "1")) * 1024 * 1024 * 1024 
+
+        if iProjectSize >= iMaxStorageBytes:
+            logging.warning(f"import_image: Storage limit exceeded for project {sProjectId}. Current size: {iProjectSize / (1024 * 1024 * 1024):.2f} GB")
+            raise HTTPException(status_code=400, detail=f"Storage limit exceeded for this project. Current usage: {iProjectSize / (1024 * 1024 * 1024):.2f} GB / {iMaxStorageBytes / (1024 * 1024 * 1024)} GB")
+
 
         # Schedule async task to run in background without blocking response
         asyncio.create_task(downloadAndConvert(oImageImport))
