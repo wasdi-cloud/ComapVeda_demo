@@ -327,18 +327,24 @@ async def import_image(oImageImport: ImageImport,
 
         logging.debug(f"import_image: Checking storage limits for project {oProjectFolderPath}")
 
-        iProjectSize = getDirSize(oProjectFolderPath)
+        if oProjectFolderPath.exists() and oProjectFolderPath.is_dir():
+            iProjectSize = getDirSize(oProjectFolderPath)
 
-        if iProjectSize is None:
-            logging.error(f"import_image: Could not determine project size for {oProjectFolderPath}")
-            raise HTTPException(status_code=500, detail="Could not determine project storage usage. Import aborted.")
+            if iProjectSize is None:
+                logging.error(f"import_image: Could not determine project size for {oProjectFolderPath}")
+                raise HTTPException(status_code=500, detail="Could not determine project storage usage. Import aborted.")
+            
+            iMaxStorageBytes = int(os.environ.get("MAX_STORAGE_GB", "1")) * 1024 * 1024 * 1024 
+
+            if iProjectSize >= iMaxStorageBytes:
+                logging.warning(f"import_image: Storage limit exceeded for project {sProjectId}. Current size: {iProjectSize / (1024 * 1024 * 1024):.2f} GB")
+                raise HTTPException(status_code=400, detail=f"Storage limit exceeded for this project. Current usage: {iProjectSize / (1024 * 1024 * 1024):.2f} GB / {iMaxStorageBytes / (1024 * 1024 * 1024)} GB")
         
-        iMaxStorageBytes = int(os.environ.get("MAX_STORAGE_GB", "1")) * 1024 * 1024 * 1024 
-
-        if iProjectSize >= iMaxStorageBytes:
-            logging.warning(f"import_image: Storage limit exceeded for project {sProjectId}. Current size: {iProjectSize / (1024 * 1024 * 1024):.2f} GB")
-            raise HTTPException(status_code=400, detail=f"Storage limit exceeded for this project. Current usage: {iProjectSize / (1024 * 1024 * 1024):.2f} GB / {iMaxStorageBytes / (1024 * 1024 * 1024)} GB")
-
+        elif oProjectFolderPath.exists() and not oProjectFolderPath.is_dir():
+            logging.error(f"import_image: Project path {oProjectFolderPath} exists but is not a directory")
+            raise HTTPException(status_code=500, detail="Project storage path is invalid. Import aborted.")
+        
+        # if the path does not exist, it will be created later when the image is saved, so we can proceed with the import
 
         # Schedule async task to run in background without blocking response
         asyncio.create_task(downloadAndConvert(oImageImport))
