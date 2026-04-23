@@ -67,28 +67,35 @@ async def search(bbox: str = Query(..., description="Bounding box coordinates in
     try:
 
         # check the inputs 
-        if not bbox or not start_date or not end_date or not platform or not product_level:
-            raise HTTPException(status_code=400, detail="Missing required query parameters: bbox, start_date, end_date, platform")
         
-        if not bbox.startswith("POLYGON"):
-            raise HTTPException(status_code=400, detail="Invalid bbox format. Expected WKT POLYGON format.")
-        
-        if platform != "Sentinel-2":
-            raise HTTPException(status_code=400, detail="Invalid platform.")
-        
-        if product_level not in ["L1C", "L2A"]:
-            raise HTTPException(status_code=400, detail="Invalid product level.")
-        
-        if max_cloud_cover < 0 or max_cloud_cover > 100:
-            raise HTTPException(status_code=400, detail="Invalid cloud cover percentage. Must be between 0 and 100.")
-        
-        try:
-            datetime.strptime(start_date, "%Y-%m-%dT%H:%M:%S.%fZ")
-            datetime.strptime(end_date, "%Y-%m-%dT%H:%M:%S.%fZ")
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DDTHH:MM:SS.sssZ.")
+        if not product_name:
+
+            # all these checks make sense only if the user is not searching for a specific product by name
+            # if product_name is provided, we can skip the checks and let the query executor handle it, since the query is more specific
+
+            if not bbox or not start_date or not end_date or not platform or not product_level:
+                raise HTTPException(status_code=400, detail="Missing required query parameters: bbox, start_date, end_date, platform")
+            
+            if not bbox.startswith("POLYGON"):
+                raise HTTPException(status_code=400, detail="Invalid bbox format. Expected WKT POLYGON format.")
+            
+            if platform != "Sentinel-2":
+                raise HTTPException(status_code=400, detail="Invalid platform.")
+            
+            if product_level not in ["L1C", "L2A"]:
+                raise HTTPException(status_code=400, detail="Invalid product level.")
+            
+            if max_cloud_cover < 0 or max_cloud_cover > 100:
+                raise HTTPException(status_code=400, detail="Invalid cloud cover percentage. Must be between 0 and 100.")
+            
+            try:
+                datetime.strptime(start_date, "%Y-%m-%dT%H:%M:%S.%fZ")
+                datetime.strptime(end_date, "%Y-%m-%dT%H:%M:%S.%fZ")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DDTHH:MM:SS.sssZ.")
 
         oSearchQueryParameters = SearchQueryParameters(
+            sProductName = product_name,
             sPlatform = platform,
             sStartDate = start_date,
             sEndDate = end_date,
@@ -273,6 +280,27 @@ async def downloadAndConvert(oImageImport):
         })
 
 
+def getDirSize(sPath: str) -> int | None:
+    """
+    Recursively calculates the total size of all files in the given directory.
+    Returns the value in bytes, or None if an error occurs.
+    """
+    sTotalSize = 0
+    try:
+        with os.scandir(sPath) as oIt:
+            for oEntry in oIt:
+                if oEntry.is_file():
+                    sTotalSize += oEntry.stat().st_size
+                elif oEntry.is_dir():
+                    sTotalSize += getDirSize(oEntry.path)
+
+    except Exception as oE:
+        logging.error(f"getDirSize: Error occurred while calculating directory size for {sPath}: {oE}")
+        return None
+
+    return sTotalSize
+
+
 @oRouter.post("/import")
 async def import_image(oImageImport: ImageImport, 
                        oDB: Session = Depends(get_db), 
@@ -285,10 +313,38 @@ async def import_image(oImageImport: ImageImport,
     :return: dict confirming the import of the image
     """
     try:
-
+        # check user permissions
         bCanWrite = canWriteProject(oCurrentUser, oImageImport.projectId, oDB)
         if not bCanWrite:
             raise HTTPException(status_code=403, detail="User does not have write access to this project")
+        
+        # check if the user is not exceeding the storage limitations
+        sProjectId = oImageImport.projectId
+        if not sProjectId:
+            raise HTTPException(status_code=400, detail="Project ID is required for importing an image")
+        
+        oProjectFolderPath = Path(os.environ.get("COMAP_PROJECTS_BASE_PATH", "")) / sProjectId
+
+        logging.debug(f"import_image: Checking storage limits for project {oProjectFolderPath}")
+
+        if oProjectFolderPath.exists() and oProjectFolderPath.is_dir():
+            iProjectSize = getDirSize(oProjectFolderPath)
+
+            if iProjectSize is None:
+                logging.error(f"import_image: Could not determine project size for {oProjectFolderPath}")
+                raise HTTPException(status_code=500, detail="Could not determine project storage usage. Import aborted.")
+            
+            iMaxStorageBytes = int(os.environ.get("MAX_STORAGE_GB", "1")) * 1024 * 1024 * 1024 
+
+            if iProjectSize >= iMaxStorageBytes:
+                logging.warning(f"import_image: Storage limit exceeded for project {sProjectId}. Current size: {iProjectSize / (1024 * 1024 * 1024):.2f} GB")
+                raise HTTPException(status_code=400, detail=f"Storage limit exceeded for this project. Current usage: {iProjectSize / (1024 * 1024 * 1024):.2f} GB / {iMaxStorageBytes / (1024 * 1024 * 1024)} GB")
+        
+        elif oProjectFolderPath.exists() and not oProjectFolderPath.is_dir():
+            logging.error(f"import_image: Project path {oProjectFolderPath} exists but is not a directory")
+            raise HTTPException(status_code=500, detail="Project storage path is invalid. Import aborted.")
+        
+        # if the path does not exist, it will be created later when the image is saved, so we can proceed with the import
 
         # Schedule async task to run in background without blocking response
         asyncio.create_task(downloadAndConvert(oImageImport))

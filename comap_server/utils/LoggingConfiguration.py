@@ -38,5 +38,4 @@ def setupLogging():
         },
     }
 
-    print(f"Log level letto prima di inizializzare la configurazione: {sLOG_LEVEL}")
     logging.config.dictConfig(oLOGGING_CONFIG)

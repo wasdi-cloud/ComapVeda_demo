@@ -26,27 +26,60 @@ class QueryExecutorCopernicusDataspace:
     def __init__(self):
         self.oCopernicusAuth = CopernicusDataspaceAuth()
 
+
+    def _buildStringAttributeFilter(self, sAttrName: str, sAttrValue: str) -> str:
+        """
+        Build an OData filter string for a string attribute in the Copernicus Data Space API.
+        """
+        return f"(Attributes/OData.CSC.StringAttribute/any(att:att/Name eq '{sAttrName}' and att/OData.CSC.StringAttribute/Value eq '{sAttrValue}'))"
+    
+    def _buildNumericAttributeFilter(self, sAttrName: str, sOperator: str, fAttrValue: float) -> str:
+        """
+        Build an OData filter string for a numeric attribute in the Copernicus Data Space API.
+        """
+        return f"(Attributes/OData.CSC.DoubleAttribute/any(att:att/Name eq '{sAttrName}' and att/OData.CSC.DoubleAttribute/Value {sOperator} {fAttrValue}))"
+
     def executeQuery(self, oQuery: SearchQueryParameters):
         """
         Execute a search query against the Copernicus Data Space API using the provided `SearchQueryParameters`.
         """
         
-        # TODO: add a check for the platform. 
-    
-        sCollectionName = '(Collection/Name eq \'' +   oQuery.platform.upper() + '\')'
-        sStartDate = '(ContentDate/Start ge ' + oQuery.startDate + ')'
-        sEndDate = '(ContentDate/End le ' + oQuery.endDate + ')'
-        sInstrumentShortName = '(Attributes/OData.CSC.StringAttribute/any(att:att/Name eq \'instrumentShortName\' and att/OData.CSC.StringAttribute/Value eq \'MSI\'))'
-        sCloudCover = '(Attributes/OData.CSC.DoubleAttribute/any(att:att/Name eq \'cloudCover\' and att/OData.CSC.DoubleAttribute/Value le ' + oQuery.cloudCover + '))'
-        sProductLevel = '(contains(Name, \'' + oQuery.productLevel + '\'))'
-        sBbox = '(OData.CSC.Intersects(area=geography\'SRID=4326;' + oQuery.boundingBox + '\'))'
+        if oQuery is None:
+            logging.error("executeQuery. SearchQueryParameters object is None. Cannot execute query.")
+            return None
+        
+        sFilter = ''
 
-        sFilter = '&$filter=' + sCollectionName + ' and ' + sStartDate + ' and ' + sEndDate + ' and ' + sInstrumentShortName + ' and ' + sCloudCover + ' and ' + sProductLevel + ' and ' + sBbox
+        if oQuery.productName:
+            logging.debug(f"executeQuery: Searching for product with name: {oQuery.productName}")
+            if not oQuery.productName.endswith(".SAFE"):
+                logging.debug("executeQuery: Product name does not end with .SAFE, trying to add it")
+                oQuery.productName += ".SAFE"
+            sFilter = '$filter=Name eq \'' + oQuery.productName + '\''
+
+        else:
+            asFilters = []
+            # collection name
+            asFilters.append('(Collection/Name eq \'' +   oQuery.platform.upper() + '\')')
+            # start date
+            asFilters.append('(ContentDate/Start ge ' + oQuery.startDate + ')')
+            # end date
+            asFilters.append('(ContentDate/End le ' + oQuery.endDate + ')')
+            # instrument short name
+            asFilters.append(self._buildStringAttributeFilter("instrumentShortName", "MSI"))
+            # cloud cover
+            asFilters.append(self._buildNumericAttributeFilter("cloudCover", "le", float(oQuery.cloudCover)))
+            # product level
+            asFilters.append('(contains(Name, \'' + oQuery.productLevel + '\'))')
+            # bounding box
+            asFilters.append('(OData.CSC.Intersects(area=geography\'SRID=4326;' + oQuery.boundingBox + '\'))')
+
+            sFilter = '&$filter=' + ' and '.join(asFilters)
 
         sFilter += '&$orderby=ContentDate/Start desc'
         sFilter += '&$expand=Attributes'
         sFilter += '&$count=True'
-        sFilter += '&$top=10'
+        sFilter += '&$top=100'
         sFilter += '&$expand=Assets'
         sFilter += '&$skip=0'
 
@@ -173,8 +206,6 @@ class QueryExecutorCopernicusDataspace:
             logging.error(f"searchProductDetails.Error: An error occurred while fetching product details for product ID {sProductId}: {str(oE)}")
         
         return None
-
-
     async def downloadProduct(self, sProductName: str, sDownloadLink: str, sPlatform: str, sProjectId: str):
         """
         Download a product from the Copernicus Data Space API using the provided download link.

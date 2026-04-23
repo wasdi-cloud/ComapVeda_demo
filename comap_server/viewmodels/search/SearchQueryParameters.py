@@ -1,6 +1,7 @@
 class SearchQueryParameters:
     
-    def __init__(self, sPlatform, sStartDate, sEndDate, sBoundingBox, sProductLevel, fCloudCover):
+    def __init__(self, sProductName: str, sPlatform: str, sStartDate: str, sEndDate: str, sBoundingBox: str, sProductLevel: str, fCloudCover: float):
+        self.productName: str = sProductName
         self.platform: str = sPlatform
         self.startDate: str = sStartDate
         self.endDate: str = sEndDate
