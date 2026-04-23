@@ -127,29 +127,58 @@ async def getByUser(
         oCurrentUser: User = Depends(get_current_user)
 ):
     try:
-        # Currently fetches all approved projects.
-        # TODO: Add filtering to only show projects where current_user.email is in owners/annotators/reviewers
-        aoUserProjects = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.approved == True).all()
+        # Fetch all projects ordered by newest.
+        # We will filter them in Python to safely handle list/array matching regardless of DB type.
+        aoAllProjects = oDB.query(DatasetProjectEntity).order_by(desc(DatasetProjectEntity.creationDate)).all()
 
         oResult = []
-        for oProject in aoUserProjects:
+        for oProject in aoAllProjects:
 
-            # Basic logic to determine user role based on their actual email
-            role = "ANNOTATOR"
-            if oProject.owners and oCurrentUser.email in oProject.owners:
+            # Safely grab the lists (fallback to empty list if None in the DB)
+            aoOwners = oProject.owners if oProject.owners else []
+            aoReviewers = oProject.reviewers if oProject.reviewers else []
+            aoAnnotators = oProject.annotators if oProject.annotators else []
+
+            # --- 1. Is the current user involved in this project? ---
+            bIsOwner = oCurrentUser.email in aoOwners
+            bIsReviewer = oCurrentUser.email in aoReviewers
+            bIsAnnotator = oCurrentUser.email in aoAnnotators
+
+            bIsInvolved = bIsOwner or bIsReviewer or bIsAnnotator
+
+            # --- 2. Is the project public and approved? ---
+            bIsPublicAndApproved = (oProject.isPublic == True and oProject.approved == True)
+
+            # --- 3. THE FILTER ---
+            # If they are NOT involved, and it is NOT a public/approved project... hide it!
+            if not bIsInvolved and not bIsPublicAndApproved:
+                continue
+
+            # --- 4. Determine their actual role ---
+            if bIsOwner:
                 role = "OWNER"
-            elif oProject.reviewers and oCurrentUser.email in oProject.reviewers:
+            elif bIsReviewer:
                 role = "REVIEWER"
+            elif bIsAnnotator:
+                role = "ANNOTATOR"
+            else:
+                # If they aren't on any list, they are only seeing this because it's public.
+                # You can change this to "ANNOTATOR" if public users are allowed to label!
+                role = "GUEST"
 
-            owners_list = oProject.owners if oProject.owners else []
-            count = len(owners_list)
+                # Fix for owners count div-by-zero UI bugs
+            count = len(aoOwners)
             if count == 0: count = 1
 
             oResult.append(ProjectPublic(
                 id=oProject.id,
                 name=oProject.name,
                 description=oProject.description,
-                aoi=AOI(isGlobal=oProject.isGlobal, bbox=oProject.bbox[0] if oProject.bbox else None),
+                # Added the safe len() check you used in the public endpoint to prevent index errors
+                aoi=AOI(
+                    isGlobal=oProject.isGlobal,
+                    bbox=oProject.bbox[0] if oProject.bbox and len(oProject.bbox) > 0 else None
+                ),
                 mission=oProject.mission.value if oProject.mission else None,
                 tasks=oProject.task if oProject.task else [],
                 userRole=role,
@@ -159,8 +188,6 @@ async def getByUser(
         return oResult
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error fetching user projects: {str(oE)}')
-
-
 # --- DELETE PROJECT ---
 @oRouter.delete("/delete")
 async def delete_project(
@@ -172,15 +199,38 @@ async def delete_project(
         oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
         if not oProject:
             raise HTTPException(status_code=404, detail="Project not found")
-
-        bIsOwner = isProjectOwner(oCurrentUser, oProject, oDB)
-        if not bIsOwner:
+        if not oProject.owners or oCurrentUser.email not in oProject.owners:
             raise HTTPException(status_code=403, detail="Only project owners can delete the project")
 
+
+
+        # 1. Collect all unique collaborator emails BEFORE we delete the project
+        setAllCollabs = set()
+        if oProject.owners: setAllCollabs.update(oProject.owners)
+        if oProject.reviewers: setAllCollabs.update(oProject.reviewers)
+        if oProject.annotators: setAllCollabs.update(oProject.annotators)
+
+        # 2. Remove the person actually pressing the delete button (they already know!)
+        if oCurrentUser.email in setAllCollabs:
+            setAllCollabs.remove(oCurrentUser.email)
+
+        # Save the name for the email
+        sProjectName = oProject.name
+
+        # 3. Actually delete the project from the DB
         oDB.delete(oProject)
         oDB.commit()
 
-        logging.debug(f"delete_project: mock email. Sent to collaborators of project {project_id} notifying deletion.")
+        # 4. SEND REAL EMAILS TO EVERYONE
+        sTitle = f"Project Deleted: {sProjectName}"
+        sMessage = f"Hello,\n\nThis is an automated notification to inform you that the project '{sProjectName}' has been completely removed from the system by the owner ({oCurrentUser.email}).\n\nBest regards,\nSystem Admin"
+
+        for sEmail in setAllCollabs:
+            try:
+                # Assuming MailUtils is imported at the top of your file!
+                MailUtils.sendEmailMailJet("sysadmin@wasdi.cloud", sEmail, sTitle, sMessage, False)
+            except Exception as e:
+                logging.error(f"Failed to send delete notification email to {sEmail}: {str(e)}")
 
         return {"status": "success", "message": "Project completely removed from the system"}
     except HTTPException:
@@ -203,17 +253,24 @@ async def leave_project(
         if not oProject:
             raise HTTPException(status_code=404, detail="Project not found")
 
-        # Automatically remove the logged in user
-        # if current_user.email in oProject.annotators: oProject.annotators.remove(current_user.email)
+        # Helper to safely strip an email out of a JSON list array
+        def _remove_email(collab_list, target_email):
+            if not collab_list:
+                return []
+            return [email for email in collab_list if email != target_email]
+
+        # ACTUALLY remove the user from all possible lists!
+        oProject.owners = _remove_email(oProject.owners, oCurrentUser.email)
+        oProject.annotators = _remove_email(oProject.annotators, oCurrentUser.email)
+        oProject.reviewers = _remove_email(oProject.reviewers, oCurrentUser.email)
 
         oDB.commit()
-        return {"status": "success", "message": f"User {oCurrentUser.email} dropped from collaborators"}
+        return {"status": "success", "message": f"User {oCurrentUser.email} successfully left the project."}
     except HTTPException:
         raise
     except Exception as oE:
         oDB.rollback()
         raise HTTPException(status_code=500, detail=f'Error leaving project: {str(oE)}')
-
 
 # --- 4. GET SINGLE PROJECT ---
 @oRouter.get("/getProject", response_model=ProjectViewModel)
@@ -487,7 +544,7 @@ async def inviteCollabs(
                 current_list.append(payload.userEmail)
             oProject.reviewers = current_list
 
-            oDB.commit()
+        oDB.commit()
 
 
         sTitle = f"Invitation to collaborate on project: {oProject.name}"

@@ -158,7 +158,8 @@ const HomePage = () => {
     // --- USE CASES ---
     const handleLeaveProject = async (project) => {
         if (project.userRole === 'OWNER' && project.ownersCount <= 1) {
-            return showNotif("Action Denied: You are the only owner of this project. Please invite a co-owner before leaving.", "warning");
+            // Updated to perfectly match your required text!
+            return showNotif("Not possible: You are the only owner of this project. Please invite another co-owner or entirely delete the project.", "warning");
         }
         if (window.confirm(`Are you sure you want to leave ${project.name}?`)) {
             try {
@@ -186,9 +187,23 @@ const HomePage = () => {
     const getRoleBadge = (role) => {
         if (!role) return null;
         const sRoleStr = role.toUpperCase();
-        if (sRoleStr === 'OWNER') return <span style={{ padding: '3px 8px', background: '#cce5ff', color: '#004085', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>👑 OWNER</span>;
-        if (sRoleStr === 'REVIEWER') return <span style={{ padding: '3px 8px', background: '#d4edda', color: '#155724', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>👀 REVIEWER</span>;
-        return <span style={{ padding: '3px 8px', background: '#e2e3e5', color: '#383d41', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>✍️ ANNOTATOR</span>;
+
+        if (sRoleStr === 'OWNER') {
+            return <span style={{ padding: '3px 8px', background: '#cce5ff', color: '#004085', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>👑 OWNER</span>;
+        }
+        if (sRoleStr === 'REVIEWER') {
+            return <span style={{ padding: '3px 8px', background: '#d4edda', color: '#155724', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>👀 REVIEWER</span>;
+        }
+        if (sRoleStr === 'ANNOTATOR') {
+            return <span style={{ padding: '3px 8px', background: '#fff3cd', color: '#856404', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>✍️ ANNOTATOR</span>;
+        }
+
+        // NEW: Handle the Guest role for public projects!
+        if (sRoleStr === 'GUEST') {
+            return <span style={{ padding: '3px 8px', background: '#e2e3e5', color: '#383d41', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>🌍 GUEST</span>;
+        }
+
+        return null;
     };
 
     return (
@@ -346,13 +361,16 @@ const HomePage = () => {
 
                             {bIsLoggedIn && (
                                 <>
-                                    <AppButton
-                                        sVariant="outline"
-                                        oStyle={{ padding: '6px 15px', fontSize: '12px', color: '#856404', borderColor: '#ffeeba' }}
-                                        fnOnClick={() => handleLeaveProject(project)}
-                                    >
-                                        Leave
-                                    </AppButton>
+                                    {/* FIX: Hide Leave button if they are just a GUEST browsing a public project */}
+                                    {project.userRole?.toUpperCase() !== 'GUEST' && (
+                                        <AppButton
+                                            sVariant="outline"
+                                            oStyle={{ padding: '6px 15px', fontSize: '12px', color: '#856404', borderColor: '#ffeeba' }}
+                                            fnOnClick={() => handleLeaveProject(project)}
+                                        >
+                                            Leave
+                                        </AppButton>
+                                    )}
 
                                     {project.userRole?.toUpperCase() === 'OWNER' && (
                                         <AppButton
