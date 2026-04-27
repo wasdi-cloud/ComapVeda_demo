@@ -1,5 +1,5 @@
 import oRequest from './api';
-import { clearSession, setSession } from "./session";
+import {clearSession, setSession} from "./session";
 
 // --- 1. AUTHENTICATION API CALLS ---
 
@@ -15,6 +15,14 @@ export const confirmRegistration = async (oPayload) => {
         method: 'POST',
         body: JSON.stringify(oPayload)
     });
+};
+export const resendOtp = async (oPayload) => {
+    try {
+        // oPayload should be: { email: "user@example.com" }
+        return await oRequest('/auth/resendOtp', {method:'POST',body:JSON.stringify(oPayload)});
+    } catch (error) {
+        throw error;
+    }
 };
 
 export const login = async (oCredentials) => {

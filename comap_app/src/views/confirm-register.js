@@ -5,7 +5,8 @@ import AppCard from '../components/app-card';
 import AppInput from '../components/app-text-input';
 import AppButton from '../components/app-button';
 import AppNotification from '../dialogues/app-notifications';
-import { confirmRegistration } from '../services/auth-service';
+// --- IMPORT THE NEW SERVICE ---
+import { confirmRegistration, resendOtp } from '../services/auth-service';
 
 const ConfirmRegister = () => {
     const navigate = useNavigate();
@@ -16,6 +17,9 @@ const ConfirmRegister = () => {
 
     const [sOtpCode, setSOtpCode] = useState("");
     const [bIsSubmitting, setIsSubmitting] = useState(false);
+
+    // --- NEW: RESEND LOADING STATE ---
+    const [bIsResending, setIsResending] = useState(false);
 
     const [oNotification, setNotification] = useState({ show: false, message: '', type: 'info' });
     const showNotif = (message, type = 'info') => setNotification({ show: true, message, type });
@@ -49,6 +53,22 @@ const ConfirmRegister = () => {
         }
     };
 
+    // --- NEW: RESEND HANDLER ---
+    const handleResend = async () => {
+        if (!sEmail) return showNotif("Missing email address. Cannot resend.", "error");
+
+        setIsResending(true);
+        try {
+            const oPayload = { email: sEmail };
+            await resendOtp(oPayload);
+            showNotif("A new OTP code has been sent to your email! 📧", "success");
+        } catch (error) {
+            showNotif(error.message || "Failed to resend OTP.", "error");
+        } finally {
+            setIsResending(false);
+        }
+    };
+
     return (
         <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f9f9f9' }}>
 
@@ -76,9 +96,19 @@ const ConfirmRegister = () => {
                     </AppButton>
                 </form>
 
+                {/* --- UPDATED: RESEND BUTTON LOGIC --- */}
                 <div style={{ textAlign: 'center', marginTop: '15px', fontSize: '12px' }}>
                     Didn't receive code?{' '}
-                    <span style={{ color: '#007bff', cursor: 'pointer', textDecoration: 'underline' }}>Resend</span>
+                    {bIsResending ? (
+                        <span style={{ color: '#888', cursor: 'wait' }}>Sending...</span>
+                    ) : (
+                        <span
+                            onClick={handleResend}
+                            style={{ color: '#007bff', cursor: 'pointer', textDecoration: 'underline' }}
+                        >
+                            Resend
+                        </span>
+                    )}
                 </div>
             </AppCard>
         </div>

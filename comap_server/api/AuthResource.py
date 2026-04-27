@@ -8,6 +8,7 @@ from entities.User import User
 from entities.Session import Session
 from utils import MailUtils
 from utils.auth_utils import hash_password, verify_password, generate_otp, generate_session_token
+from viewmodels.auth.ResendOtpRequest import ResendOtpRequest
 from viewmodels.auth.LoginModel import LoginModel
 from viewmodels.auth.OtpModel import OtpModel
 from viewmodels.auth.Registration import Registration
@@ -71,8 +72,53 @@ async def register(oRegistration: Registration, oDatabase: DBSession = Depends(g
     except Exception as oE:
         oDatabase.rollback()
         raise HTTPException(status_code=500, detail=f'Error registering user: {str(oE)}')
-    
 
+
+@oRouter.post("/resendOtp")
+async def resendOtp(oRequest: ResendOtpRequest, oDatabase: DBSession = Depends(get_db)):
+    """
+    Generate and send a new OTP for an unconfirmed user.
+
+    :param oRequest: Request containing the user's email
+    :param oDatabase: Database session
+    :return: dict confirming the new OTP was sent
+    """
+    try:
+        # 1. Check if user actually exists
+        oExistingUser = oDatabase.query(User).filter(User.email == oRequest.email).first()
+
+        if not oExistingUser:
+            # Standard security practice: Don't reveal if an email exists or not to prevent enumeration attacks.
+            # Just return a generic success message, or if it's an internal app, a 404 is fine.
+            raise HTTPException(status_code=404, detail="User with this email not found")
+
+        # 2. Check if they are already confirmed!
+        if oExistingUser.confirmed:
+            raise HTTPException(status_code=400, detail="User is already confirmed. Please log in.")
+
+        # 3. Generate a fresh OTP
+        sNewOtp = generate_otp(6)
+
+        # 4. Update the database with the new OTP
+        oExistingUser.registration_otp = sNewOtp
+        oDatabase.commit()
+
+        # 5. Send the new OTP via email
+        sTitle = "Your New Verification Code"
+        sMessage = f"Hello {oExistingUser.name},\n\nYour new OTP code is: {sNewOtp}\n\nPlease use this to confirm your account."
+
+        MailUtils.sendEmailMailJet("sysadmin@wasdi.cloud", oExistingUser.email, sTitle, sMessage, False)
+
+        return {
+            "message": "A new OTP has been sent to your email address.",
+            "email": oExistingUser.email
+        }
+
+    except HTTPException:
+        raise
+    except Exception as oE:
+        oDatabase.rollback()
+        raise HTTPException(status_code=500, detail=f'Error resending OTP: {str(oE)}')
 
 @oRouter.post("/confirmRegistration")
 async def confirmRegistration(oOtpModel: OtpModel, oDatabase: DBSession = Depends(get_db)):
