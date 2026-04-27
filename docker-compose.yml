@@ -46,6 +46,8 @@ services:
       - COMAP_PROJECTS_BASE_PATH=${COMAP_PROJECTS_BASE_PATH}
       - LOG_LEVEL=${LOG_LEVEL}
       - MAX_STORAGE_GB=${MAX_STORAGE_GB}
+      - MAILJET_API_KEY=${MAILJET_API_KEY}
+      - MAILJET_API_SECRET=${MAILJET_API_SECRET}
     volumes:
       - ./comap_server:/app
       - /opt/comap/docker/data:${COMAP_PROJECTS_BASE_PATH}
