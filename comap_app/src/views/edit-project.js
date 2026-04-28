@@ -55,6 +55,43 @@ const EditProject = () => {
 
     const [bIsSavingLabels, setIsSavingLabels] = useState(false);
 
+
+    // Catch the style coming back from the styling page
+    const incomingStyle = oLocation.state?.appliedStyle || null;
+
+    // Create a state to hold styles for our images (in case they style multiple images)
+    // It will look like: { "image-id-123": { renderType: 'multi', bands: {...} } }
+    const [oImageStyles, setImageStyles] = useState({});
+
+    // If we just came back from the styling page with a new style, save it!
+    useEffect(() => {
+        // Did we just come back from the Image Styling page?
+        if (oLocation.state?.restoreImageId || oLocation.state?.restoreStyles) {
+
+            // 1. Restore the memory of all styled images
+            if (oLocation.state.restoreStyles) {
+                setImageStyles(oLocation.state.restoreStyles);
+            }
+
+            // 2. Re-select the exact image we were just working on
+            if (oLocation.state.restoreImageId) {
+                setISelectedImageId(oLocation.state.restoreImageId);
+            }
+
+            // 3. Zoom the map directly to that specific image!
+            if (oLocation.state.restoreBBox) {
+                setMapZoomView([...parseWKTBbox(oLocation.state.restoreBBox)]); // <-- Added [...]
+            }
+
+            // 4. Wipe the history so if the user hits "Refresh(F5)", it doesn't run this again
+            const cleanedState = { ...oLocation.state };
+            delete cleanedState.restoreStyles;
+            delete cleanedState.restoreImageId;
+            delete cleanedState.restoreBBox;
+            window.history.replaceState(cleanedState, document.title);
+        }
+    }, [oLocation.state]);
+
     useEffect(() => {
         if (oLabelTemplate) {
             if (oLabelTemplate.isSingleColorStyle && oLabelTemplate.featureColor) {
@@ -207,7 +244,11 @@ const EditProject = () => {
                     if (oData.bbox) {
                         const parsedBox = parseWKTBbox(oData.bbox);
                         setProjectBBox(parsedBox);
-                        setMapZoomView(parsedBox);
+
+                        // --- FIX: THE RACE CONDITION SHIELD ---
+                        // Only set the map zoom to the Project BBox if
+                        // the Image Restorer hasn't already set a zoom view!
+                        setMapZoomView(prev => prev || parsedBox);
                     }
 
                     await loadImages();
@@ -518,8 +559,31 @@ const EditProject = () => {
                         <AppButton fnOnClick={() => oNavigate('/add-eo', { state: { projectId: sProjectId } })} sVariant="primary"
                                    oStyle={{width: '100%', fontSize: '12px', marginBottom: '10px'}}>+ Add
                             Image</AppButton>
-                        <AppButton fnOnClick={() => oNavigate('/image-styling')} sVariant="secondary"
-                                   oStyle={{width: '100%', fontSize: '12px'}}>Image Style</AppButton>
+                        <AppButton
+                            disabled={!iSelectedImageId}
+                            title={!iSelectedImageId ? "Select an image first to style it" : "Style this image"}
+                            fnOnClick={() => {
+                                if (!iSelectedImageId) {
+                                    showNotif("Please select an image from the list first!", "warning");
+                                    return;
+                                }
+                                oNavigate('/image-styling', {
+                                    state: {
+                                        projectId: sProjectId,
+                                        projectTitle: sProjectTitle,
+                                        imageId: iSelectedImageId,
+                                        imageName: oSelectedImage?.name,
+                                        // --- NEW: Pass these so we don't lose them! ---
+                                        imageBBox: oSelectedImage?.bbox,
+                                        currentStyles: oImageStyles
+                                    }
+                                });
+                            }}
+                            sVariant={iSelectedImageId ? "secondary" : "outline"}
+                            oStyle={{width: '100%', fontSize: '12px'}}
+                        >
+                            ✨ Image Style
+                        </AppButton>
                     </div>
                     <div style={{flex: 1, overflowY: 'auto', padding: '10px'}}>
                         {aoImages.map(img => {
@@ -528,9 +592,13 @@ const EditProject = () => {
                                 <div
                                     key={img.id}
                                     onClick={() => {
-                                        setISelectedImageId(img.id);
-                                        if (img.bbox) {
-                                            setMapZoomView(parseWKTBbox(img.bbox));
+                                        if (iSelectedImageId === img.id) {
+                                            setISelectedImageId(null); // Unselect
+                                        } else {
+                                            setISelectedImageId(img.id); // Select
+                                            if (img.bbox) {
+                                                setMapZoomView(parseWKTBbox(img.bbox));
+                                            }
                                         }
                                     }}
                                     style={{
@@ -787,6 +855,7 @@ const EditProject = () => {
                             aoMarkers={[]}
                             oInitialView={{latitude: 48.8566, longitude: 2.3522, zoom: 12}}
                             sActiveGeoTIFF={oSelectedImage ? oSelectedImage.relative_path : null}
+                            oActiveStyle={oSelectedImage ? oImageStyles[oSelectedImage.id] : null}
                             bEnableGeocoder={true}
                             bEnableDraw={true}
                             onDrawUpdate={handleDrawUpdate}

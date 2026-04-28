@@ -111,24 +111,19 @@ const doLinesIntersect = (p1, p2, p3, p4) => {
 };
 
 const hasSelfIntersection = (ring) => {
-    // We need at least A, B, C, Cursor, A (length 5) to have a crossing
     if (ring.length < 5) return false;
 
     const n = ring.length;
-    const cursor = ring[n - 2];     // The live mouse position
-    const lastFixed = ring[n - 3];  // The last clicked vertex
-    const firstFixed = ring[0];     // The very first vertex
+    const cursor = ring[n - 2];
+    const lastFixed = ring[n - 3];
+    const firstFixed = ring[0];
 
-    // 1. Check trailing line (lastFixed -> cursor)
-    // We check this against all edges EXCEPT the last one (since they share a vertex)
     for (let i = 0; i < n - 4; i++) {
         if (doLinesIntersect(lastFixed, cursor, ring[i], ring[i+1])) {
             return true;
         }
     }
 
-    // 2. Check the closing line (cursor -> firstFixed)
-    // We check this against all edges EXCEPT the first and last ones (since they share vertices)
     for (let i = 1; i < n - 3; i++) {
         if (doLinesIntersect(cursor, firstFixed, ring[i], ring[i+1])) {
             return true;
@@ -144,6 +139,8 @@ const MapboxMap = ({
                        onDrawUpdate,
                        onDrawError,
                        sActiveGeoTIFF,
+                       // --- NEW: THE STYLE PAYLOAD PROP ---
+                       oActiveStyle            = null,
                        bEnableGeocoder         = false,
                        bEnableDraw             = true,
                        sInitialMapStyle        = "mapbox://styles/mapbox/satellite-v9",
@@ -157,7 +154,7 @@ const MapboxMap = ({
                        bHasLines               = true,
                        bPreventSelfIntersection = false,
                        bPreventPolygonIntersection = false,
-                       sHoveredFootprint       = null, // <-- ADDED BACK!
+                       sHoveredFootprint       = null,
                    }) => {
 
     const [oSelectedMarker, setSelectedMarker] = useState(null);
@@ -171,8 +168,8 @@ const MapboxMap = ({
 
     const bIsIntersectingRef = useRef(false);
     const sInvalidReasonRef  = useRef("");
+    const [bMapLoaded, setMapLoaded]           = useState(false);
 
-    // --- LIVE REF FOR PREVIOUSLY SAVED FEATURES ---
     const aoFeaturesRef = useRef(aoFeatures);
     useEffect(() => {
         aoFeaturesRef.current = aoFeatures;
@@ -187,6 +184,7 @@ const MapboxMap = ({
     const handleMapLoad = (e) => {
         const oMap = e.target;
         oMapRef.current = oMap;
+        setMapLoaded(true);
 
         if (bEnableGeocoder) {
             const oGeocoder = new MapboxGeocoder({ accessToken: MAPBOX_TOKEN, mapboxgl: require('mapbox-gl'), marker: false, collapsed: true });
@@ -212,7 +210,6 @@ const MapboxMap = ({
                 else                         { if (onFeatureSelect) onFeatureSelect(null); }
             });
 
-            // Hover tooltip handler
             oMap.on('mousemove', (ev) => {
                 const oMode = oDraw.getMode();
                 if (oMode.startsWith('draw_')) { setHoverInfo(null); return; }
@@ -230,15 +227,10 @@ const MapboxMap = ({
                 oMap.getCanvas().style.cursor = '';
             });
 
-            // ═══════════════════════════════════════════════════════════════════
-            // INTERSECTION PREVENTION (Self & Cross-Polygon)
-            // ═══════════════════════════════════════════════════════════════════
+            // INTERSECTION PREVENTION CODE (Unchanged)
             if ((bPreventSelfIntersection || bPreventPolygonIntersection) && bHasPolygons) {
-
                 setupIntersectionLayer(oMap);
-
                 let aoDrawnVertices = [];
-
                 const resetState = () => {
                     bIsIntersectingRef.current = false;
                     sInvalidReasonRef.current  = "";
@@ -247,14 +239,11 @@ const MapboxMap = ({
                     oMap.getCanvas().style.cursor = '';
                 };
 
-                // Drawing finished (polygon created) or tool changed → full reset
                 oMap.on('draw.create',     resetState);
                 oMap.on('draw.modechange', resetState);
 
-                // Per-frame intersection check while the user is actively drawing
                 oMap.on('mousemove', (ev) => {
                     if (!oDrawRef.current) return;
-
                     if (oDrawRef.current.getMode() !== 'draw_polygon') {
                         if (bIsIntersectingRef.current) resetState();
                         return;
@@ -264,40 +253,29 @@ const MapboxMap = ({
                     let bIsInvalid = false;
                     let sErrorMessage = "";
 
-                    // --- 1. CHECK CROSS-POLYGON INTERSECTION ---
                     if (bPreventPolygonIntersection) {
                         const aoExistingPolygons = aoFeaturesRef.current.filter(f => f.geometry.type === 'Polygon');
-
                         if (aoExistingPolygons.length > 0) {
                             for (const oPoly of aoExistingPolygons) {
                                 try {
                                     if (aoDrawnVertices.length === 0) {
-                                        // 0 points: Are we hovering inside another polygon?
                                         if (turf.booleanPointInPolygon(turf.point(afMouseCoord), oPoly)) {
-                                            bIsInvalid = true;
-                                            sErrorMessage = "Cannot start drawing inside an existing polygon!";
-                                            break;
+                                            bIsInvalid = true; sErrorMessage = "Cannot start drawing inside an existing polygon!"; break;
                                         }
                                     } else if (aoDrawnVertices.length === 1) {
-                                        // 1 point: Does the trailing line cross another polygon?
                                         const afLastPlaced = aoDrawnVertices[0];
                                         if (afLastPlaced[0] !== afMouseCoord[0] || afLastPlaced[1] !== afMouseCoord[1]) {
                                             const oTestLine = turf.lineString([afLastPlaced, afMouseCoord]);
                                             if (turf.booleanIntersects(oTestLine, oPoly)) {
-                                                bIsInvalid = true;
-                                                sErrorMessage = "Line crosses an existing polygon!";
-                                                break;
+                                                bIsInvalid = true; sErrorMessage = "Line crosses an existing polygon!"; break;
                                             }
                                         }
                                     } else if (aoDrawnVertices.length >= 2) {
-                                        // 2+ points: Does the proposed polygon overlap another polygon?
                                         const oTestRing = [...aoDrawnVertices, afMouseCoord, aoDrawnVertices[0]];
                                         if (oTestRing.length >= 4) {
                                             const oTestPoly = turf.polygon([oTestRing]);
                                             if (turf.booleanIntersects(oTestPoly, oPoly)) {
-                                                bIsInvalid = true;
-                                                sErrorMessage = "Polygons cannot overlap!";
-                                                break;
+                                                bIsInvalid = true; sErrorMessage = "Polygons cannot overlap!"; break;
                                             }
                                         }
                                     }
@@ -306,23 +284,19 @@ const MapboxMap = ({
                         }
                     }
 
-                    // --- 2. CHECK SELF-INTERSECTION (Only if not already invalid!) ---
                     if (!bIsInvalid && bPreventSelfIntersection && aoDrawnVertices.length >= 2) {
                         const oTestRing = [...aoDrawnVertices, afMouseCoord, aoDrawnVertices[0]];
                         if (oTestRing.length >= 4) {
                             if (hasSelfIntersection(oTestRing)) {
-                                bIsInvalid = true;
-                                sErrorMessage = "Polygon cannot intersect itself!";
+                                bIsInvalid = true; sErrorMessage = "Polygon cannot intersect itself!";
                             }
                         }
                     }
 
-                    // --- 3. APPLY UNIFIED VISUAL FEEDBACK ---
                     bIsIntersectingRef.current = bIsInvalid;
-                    sInvalidReasonRef.current  = sErrorMessage; // Save the error message for the click shield!
+                    sInvalidReasonRef.current  = sErrorMessage;
 
                     if (bIsInvalid) {
-                        // Only draw the red line if we actually have a placed vertex to connect it to
                         if (aoDrawnVertices.length > 0) {
                             const afLastPlaced = aoDrawnVertices[aoDrawnVertices.length - 1];
                             oMap.getSource(INTERSECTION_SOURCE_ID).setData({
@@ -334,7 +308,7 @@ const MapboxMap = ({
                                 }]
                             });
                         } else {
-                            clearIntersectionPreview(oMap); // Clear line if just hovering (0 vertices)
+                            clearIntersectionPreview(oMap);
                         }
                         oMap.getCanvas().style.cursor = 'not-allowed';
                     } else {
@@ -343,44 +317,39 @@ const MapboxMap = ({
                     }
                 });
 
-                // --- YOUR CAPTURE PHASE CLICK SHIELD ---
                 const blockClick = (ev) => {
                     if (!oDrawRef.current) return;
                     if (oDrawRef.current.getMode() !== 'draw_polygon') return;
-
                     if (bIsIntersectingRef.current) {
-                        ev.stopPropagation();   // ← Blocks Mapbox Draw
-                        ev.preventDefault();    // ← Blocks browser defaults
-
-                        // Trigger the error notification with the dynamic reason!
+                        ev.stopPropagation();
+                        ev.preventDefault();
                         if (onDrawError && ev.type === 'mousedown') {
                             onDrawError(sInvalidReasonRef.current);
                         }
                         return;
                     }
-
-                    // Safe click — record where this vertex lands
                     if (ev.type === 'mousedown') {
                         const oRect   = oMap.getCanvas().getBoundingClientRect();
                         const afLngLat = oMap.unproject([ev.clientX - oRect.left, ev.clientY - oRect.top]);
                         aoDrawnVertices.push([afLngLat.lng, afLngLat.lat]);
                     }
                 };
-
                 const oCanvas = oMap.getCanvas();
                 oCanvas.addEventListener('mousedown', blockClick, true);
                 oCanvas.addEventListener('pointerdown', blockClick, true);
                 oCanvas.addEventListener('touchstart', blockClick, true);
                 oCanvas.addEventListener('click', blockClick, true);
             }
-            // ═══════════════════════════════════════════════════════════════════
         }
     };
 
     useEffect(() => {
         const map = oMapRef.current;
-        if (map && oZoomToBBox?.length === 4) map.fitBounds(oZoomToBBox, { padding: 50, duration: 1500 });
-    }, [oZoomToBBox]);
+        // Now it won't fire into the void; it waits for bMapLoaded to be true!
+        if (map && bMapLoaded && oZoomToBBox?.length === 4) {
+            map.fitBounds(oZoomToBBox, { padding: 50, duration: 1500 });
+        }
+    }, [oZoomToBBox, bMapLoaded]);
 
     useEffect(() => {
         const map     = oMapRef.current;
@@ -417,6 +386,9 @@ const MapboxMap = ({
         }
     }, [aoFeatures]);
 
+    // ═══════════════════════════════════════════════════════════════════
+    // DYNAMIC TITILER URL PARSER
+    // ═══════════════════════════════════════════════════════════════════
     useEffect(() => {
         const map = oMapRef.current;
         if (!map) return;
@@ -427,12 +399,68 @@ const MapboxMap = ({
                 if (map.getSource(oActiveLayerIdRef.current)) map.removeSource(oActiveLayerIdRef.current);
                 oActiveLayerIdRef.current = null;
             }
+
             if (sActiveGeoTIFF) {
-                const sAssets  = "bidx=3&bidx=2&bidx=1";
-                // const sParams  = `dataset_id=${sActiveGeoTIFF}&${sAssets}&rescale=0,3000`;
-                const sParams  = `encoded_path=${encodeURIComponent(sActiveGeoTIFF)}&${sAssets}&rescale=0,3000`;
+                let sParams = `encoded_path=${encodeURIComponent(sActiveGeoTIFF)}`;
+
+                if (oActiveStyle) {
+                    // --- 1. PARSE BANDS ---
+                    // Example: extracts '4' from "B04 - Red"
+                    const getBandIdx = (sBandStr) => {
+                        const match = sBandStr.match(/B(\d+)/);
+                        return match ? parseInt(match[1], 10) : 1;
+                    };
+
+                    if (oActiveStyle.renderType === 'multi') {
+                        sParams += `&bidx=${getBandIdx(oActiveStyle.bands.red)}&bidx=${getBandIdx(oActiveStyle.bands.green)}&bidx=${getBandIdx(oActiveStyle.bands.blue)}`;
+                    } else {
+                        // Single band grayscale
+                        sParams += `&bidx=${getBandIdx(oActiveStyle.bands.gray)}`;
+                    }
+
+                    // --- 2. PARSE HISTOGRAM ---
+                    if (oActiveStyle.histogram === 'linear') {
+                        sParams += `&rescale=0,3000`; // Standard optical stretch
+                    } else if (oActiveStyle.histogram === 'saturated') {
+                        // Simulate a 2% cut by pulling the bounds tighter
+                        sParams += `&rescale=100,2500`;
+                    }
+
+                    // --- 3. PARSE EFFECTS (rio-color) ---
+                    const aoFormulas = [];
+
+                    if (oActiveStyle.effects.saturation !== 0) {
+                        const fSat = 1 + (oActiveStyle.effects.saturation / 100);
+                        aoFormulas.push(`saturation ${fSat.toFixed(2)}`);
+                    }
+
+                    if (oActiveStyle.effects.contrast !== 0) {
+                        // Contrast > 0 creates an S-curve
+                        const fContrast = 1 + (Math.abs(oActiveStyle.effects.contrast) / 10);
+                        if (oActiveStyle.effects.contrast > 0) {
+                            aoFormulas.push(`sigmoidal RGB ${fContrast.toFixed(2)} 0.5`);
+                        }
+                    }
+
+                    if (oActiveStyle.effects.brightness !== 0) {
+                        // Gamma < 1 is brighter
+                        const fGamma = 1 - (oActiveStyle.effects.brightness / 200);
+                        aoFormulas.push(`gamma RGB ${fGamma.toFixed(2)}`);
+                    }
+
+                    // Combine all rio-color operations into one string
+                    if (aoFormulas.length > 0) {
+                        sParams += `&color_formula=${encodeURIComponent(aoFormulas.join(', '))}`;
+                    }
+
+                } else {
+                    // DEFAULT FALLBACK (Before the user applies any styles)
+                    sParams += `&bidx=3&bidx=2&bidx=1&rescale=0,3000`;
+                }
+
                 const uniqueId = `geotiff-${Date.now()}`;
                 const sTileUrl = `${process.env.REACT_APP_API_URL}sentinel/tiles/WebMercatorQuad/{z}/{x}/{y}.png?${sParams}`;
+
                 try {
                     map.addSource(uniqueId, { type: 'raster', tiles: [sTileUrl], tileSize: 256 });
                     const layers = map.getStyle().layers;
@@ -455,7 +483,7 @@ const MapboxMap = ({
         };
         map.on('styledata', onStyleData);
         return () => { map.off('styledata', onStyleData); };
-    }, [sActiveGeoTIFF, sMapStyle]);
+    }, [sActiveGeoTIFF, sMapStyle, oActiveStyle]); // <-- Added oActiveStyle to dependencies!
 
     // ═══════════════════════════════════════════════════════════════════
     // HOVER FOOTPRINT RENDERER
@@ -468,7 +496,6 @@ const MapboxMap = ({
         const FILL_ID   = 'hover-footprint-fill';
         const LINE_ID   = 'hover-footprint-line';
 
-        // Helper to clean up the layers when you mouse-leave
         const clearHover = () => {
             if (map.getLayer(FILL_ID)) map.removeLayer(FILL_ID);
             if (map.getLayer(LINE_ID)) map.removeLayer(LINE_ID);
@@ -478,8 +505,6 @@ const MapboxMap = ({
         if (sHoveredFootprint) {
             try {
                 let geojsonGeom;
-
-                // 1. If backend sends WKT string (e.g. "POLYGON((...))")
                 if (typeof sHoveredFootprint === 'string' && sHoveredFootprint.toUpperCase().includes('POLYGON')) {
                     const coordsText = sHoveredFootprint.replace(/POLYGON\s*\(\(/i, "").replace(/\)\)/, "");
                     const coords = coordsText.split(",").map(p => {
@@ -487,36 +512,15 @@ const MapboxMap = ({
                         return [x, y];
                     });
                     geojsonGeom = { type: 'Polygon', coordinates: [coords] };
-                }
-                // 2. If backend sends standard GeoJSON object
-                else if (typeof sHoveredFootprint === 'object') {
+                } else if (typeof sHoveredFootprint === 'object') {
                     geojsonGeom = sHoveredFootprint;
                 }
 
                 if (geojsonGeom) {
-                    clearHover(); // Clean up just in case
-
-                    // Add the data source
-                    map.addSource(SOURCE_ID, {
-                        type: 'geojson',
-                        data: { type: 'Feature', geometry: geojsonGeom, properties: {} }
-                    });
-
-                    // Add the semi-transparent fill
-                    map.addLayer({
-                        id: FILL_ID,
-                        type: 'fill',
-                        source: SOURCE_ID,
-                        paint: { 'fill-color': '#e1aa07', 'fill-opacity': 0.15 }
-                    });
-
-                    // Add the dashed outline border
-                    map.addLayer({
-                        id: LINE_ID,
-                        type: 'line',
-                        source: SOURCE_ID,
-                        paint: { 'line-color': '#e1aa07', 'line-width': 2, 'line-dasharray': [2, 2] }
-                    });
+                    clearHover();
+                    map.addSource(SOURCE_ID, { type: 'geojson', data: { type: 'Feature', geometry: geojsonGeom, properties: {} } });
+                    map.addLayer({ id: FILL_ID, type: 'fill', source: SOURCE_ID, paint: { 'fill-color': '#e1aa07', 'fill-opacity': 0.15 } });
+                    map.addLayer({ id: LINE_ID, type: 'line', source: SOURCE_ID, paint: { 'line-color': '#e1aa07', 'line-width': 2, 'line-dasharray': [2, 2] } });
                 }
             } catch (err) {
                 console.error("Failed to render hovered footprint", err);
@@ -525,7 +529,6 @@ const MapboxMap = ({
             clearHover();
         }
 
-        // Cleanup on unmount
         return () => clearHover();
     }, [sHoveredFootprint]);
 

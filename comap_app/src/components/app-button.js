@@ -3,9 +3,10 @@ import React, { useState } from 'react';
 const AppButton = ({
                        children,
                        fnOnClick,
-                       sVariant = "primary", // primary, outline, success, danger
+                       sVariant = "primary", // primary, secondary, outline, success, danger
                        oStyle = {},
-                       type = "button"
+                       type = "button",
+                       disabled = false // <-- 1. ADD THE DISABLED PROP HERE
                    }) => {
     const [bHover, setBHover] = useState(false);
 
@@ -38,20 +39,31 @@ const AppButton = ({
     const oBaseStyle = {
         padding: '10px 20px',
         borderRadius: '4px',
-        cursor: 'pointer',
         fontWeight: 'bold',
         fontSize: '14px',
         transition: 'all 0.2s ease',
-        background: bHover ? oCurrentVariant.hoverBg : oCurrentVariant.bg,
-        color: bHover ? oCurrentVariant.hoverColor : oCurrentVariant.color,
         border: oCurrentVariant.border,
+
+        // --- 2. UPDATE STYLES BASED ON DISABLED STATE ---
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.6 : 1,
+        // Only apply hover colors if the button is NOT disabled
+        background: (bHover && !disabled) ? oCurrentVariant.hoverBg : oCurrentVariant.bg,
+        color: (bHover && !disabled) ? oCurrentVariant.hoverColor : oCurrentVariant.color,
+
         ...oStyle
     };
 
     return (
         <button
             type={type}
-            onClick={fnOnClick}
+            disabled={disabled} // <-- 3. PASS IT TO THE NATIVE HTML BUTTON
+            onClick={(e) => {
+                // <-- 4. LOGIC SHIELD: Don't fire if disabled!
+                if (!disabled && fnOnClick) {
+                    fnOnClick(e);
+                }
+            }}
             onMouseEnter={() => setBHover(true)}
             onMouseLeave={() => setBHover(false)}
             style={oBaseStyle}
