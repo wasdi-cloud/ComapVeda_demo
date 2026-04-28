@@ -761,8 +761,21 @@ const EditProject = () => {
                                 oStyle={{fontSize: '13px', padding: '6px 12px'}}>
                                 👥 Collaborators
                             </AppButton>
-                            <AppButton fnOnClick={() => oNavigate('/export-project')} sVariant="primary"
-                                       oStyle={{fontSize: '13px', padding: '6px 12px'}}>📥 Export Project</AppButton>
+                            <AppButton
+                                fnOnClick={() => oNavigate('/export-project', {
+                                    state: {
+                                        projectId: sProjectId,
+                                        projectTitle: sProjectTitle,
+                                        // Pass real DB flags if you have them, otherwise fallback to true for testing
+                                        bRawDataHosted: true,
+                                        bReviewMode: true
+                                    }
+                                })}
+                                sVariant="primary"
+                                oStyle={{fontSize: '13px', padding: '6px 12px'}}
+                            >
+                                📥 Export Project
+                            </AppButton>
                         </div>
                     </div>
 

@@ -56,8 +56,14 @@ const oRequest = async (sEndPointUrl, oOptions = {}) => {
         // 5. Return JSON
         // Check if response has content before parsing
         const sContentType = oResponse.headers.get("content-type");
+
         if (sContentType && sContentType.indexOf("application/json") !== -1) {
             return await oResponse.json();
+        }
+
+        // --- NEW: CATCH ZIP FILES ---
+        if (sContentType && sContentType.indexOf("application/zip") !== -1) {
+            return await oResponse.blob(); // Convert and return the raw file!
         }
 
         return null; // For 204 No Content

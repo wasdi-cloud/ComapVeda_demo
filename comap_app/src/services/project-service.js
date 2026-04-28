@@ -1,19 +1,18 @@
 import oRequest from './api';
 
 
-
 // 1. GET PUBLIC PROJECTS
 export const getPublicProjects = async () => {
-    return await oRequest('projects/getPublic', { method: 'GET' });
+    return await oRequest('projects/getPublic', {method: 'GET'});
 };
 // 1. GET PROJECT BY ID
-export const getProject = async ( sProjectId) => {
-    return await oRequest(`projects/getProject?project_id=${sProjectId}`, { method: 'GET' });
+export const getProject = async (sProjectId) => {
+    return await oRequest(`projects/getProject?project_id=${sProjectId}`, {method: 'GET'});
 };
 
 // 2. GET PROJECTS BY USER
 export const getProjectsByUser = async (userId) => {
-    return await oRequest(`projects/getByUser?user_id=${userId}`, { method: 'GET' });
+    return await oRequest(`projects/getByUser?user_id=${userId}`, {method: 'GET'});
 };
 
 // 3. CREATE PROJECT
@@ -76,7 +75,7 @@ export const removeCollab = async (projectId, userEmail) => {
 export const exportProject = async (projectId, note) => {
     return await oRequest(`/projects/${projectId}/reject`, {
         method: 'POST',
-        body: JSON.stringify({ note })
+        body: JSON.stringify({note})
     });
 };
 
@@ -91,7 +90,7 @@ export const updateProject = async (projectId, projectData) => {
 
 // Add this to project-service.js
 export const getProjectRequests = async () => {
-    return await oRequest('projects/getRequests', { method: 'GET' });
+    return await oRequest('projects/getRequests', {method: 'GET'});
 };
 
 
@@ -108,4 +107,13 @@ export const leaveProject = async (projectId, userId) => {
     return await oRequest(`projects/leave?project_id=${projectId}&user_id=${userId}`, {
         method: 'POST'
     });
+};
+export const triggerExport = async (oExportPayload) => {
+    try {
+        // oExportPayload = { projectId: '...', includeRawData: true, labelFilter: 'validated' }
+        const response = await oRequest('/projects/export', {method: 'POST', body: JSON.stringify(oExportPayload)});
+        return response;
+    } catch (error) {
+        throw error;
+    }
 };
