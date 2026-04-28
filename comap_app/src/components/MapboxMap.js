@@ -467,7 +467,7 @@ const MapboxMap = ({
                     let beforeId;
                     for (const l of layers) { if (l.id.startsWith('gl-draw'))  { beforeId = l.id; break; } }
                     if (!beforeId) { for (const l of layers) { if (l.type === 'symbol') { beforeId = l.id; break; } } }
-                    map.addLayer({ id: uniqueId, type: 'raster', source: uniqueId, paint: { 'raster-opacity': iImageOpacity } }, beforeId);
+                    map.addLayer({ id: uniqueId, type: 'raster', source: uniqueId, paint: { 'raster-opacity': iImageOpacity ,'raster-hue-rotate': oActiveStyle ? Number(oActiveStyle.effects.hue) : 0} }, beforeId);
                     oActiveLayerIdRef.current = uniqueId;
                 } catch (err) { console.error(err); }
             }
