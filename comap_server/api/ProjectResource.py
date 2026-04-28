@@ -1,17 +1,27 @@
+import io
+import json
 import logging
 import time
+import zipfile
+from datetime import datetime
+from fastapi.responses import StreamingResponse
+import geopandas as gpd
 from fastapi import APIRouter, HTTPException, Query, Depends
-from sqlalchemy import desc
+from shapely.geometry import shape
+from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from database import get_db
+from entities.DatasetImage import DatasetImageEntity
 from entities.DatasetProject import DatasetProjectEntity
 from entities.ImageStyle import ImageStyleEntity
+from entities.Label import LabelEntity
 from entities.User import User
 from utils import MailUtils
 from utils.CollaboratorRole import CollaboratorRole
 from utils.auth_utils import get_current_user
 from viewmodels.projects.CollaboratorListItem import CollaboratorListItem
+from viewmodels.projects.ExportRequestViewModel import ExportRequestViewModel
 from viewmodels.projects.InviteCollaborator import InviteCollaborator
 from viewmodels.projects.ProjectListItem import ProjectPublic, AOI
 from viewmodels.projects.ProjectPropertiesViewModel import ProjectPropertiesViewModel
@@ -610,3 +620,135 @@ async def deleteCollab(
     except Exception as oE:
         oDB.rollback()
         raise HTTPException(status_code=500, detail=f'Error removing collaborator: {str(oE)}')
+
+# --- EXPORT PROJECT (TRIGGER GENERATION) ---
+@oRouter.post("/export")
+async def export_project(
+        oExportData: ExportRequestViewModel,
+        oDB: Session = Depends(get_db),
+        oCurrentUser: User = Depends(get_current_user)
+):
+    try:
+        # 1. Security Check
+        if not canReadProject(oCurrentUser, oExportData.projectId, oDB):
+            raise HTTPException(status_code=403, detail="User does not have access to this project")
+
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == oExportData.projectId).first()
+        if not oProject:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        # 2. Query Labels Joined with Images
+        # We need the image metadata (name, date) to satisfy the Use Case!
+        aoResults = oDB.query(
+            LabelEntity,
+            func.ST_AsGeoJSON(LabelEntity.geometry).label("geojson"),
+            DatasetImageEntity.fileName.label("image_name"),
+            DatasetImageEntity.date.label("image_date")
+        ).join(
+            DatasetImageEntity, LabelEntity.datasetImageId == DatasetImageEntity.id
+        ).filter(
+            DatasetImageEntity.projectId == oExportData.projectId
+        ).all()
+
+        if not aoResults:
+            raise HTTPException(status_code=404, detail="No labels found for this project.")
+
+        # ==========================================
+        # TODO: Implement Label Validation Filtering
+        # if oExportData.labelFilter == "validated":
+        #     aoResults = [r for r in aoResults if r.LabelEntity.isValidated == True]
+        # ==========================================
+
+        # 3. Parse Data for GeoPandas
+        aoFeatures = []
+        for oRow in aoResults:
+            oLabel = oRow.LabelEntity
+            sGeojson = oRow.geojson
+
+            # Parse Geometry
+            oGeom = shape(json.loads(sGeojson))
+
+            # Parse Dates
+            oImgDate = datetime.fromtimestamp(oRow.image_date / 1000.0) if oRow.image_date else datetime.now()
+            sCreationTime = datetime.fromtimestamp(
+                oLabel.creationDate / 1000.0).isoformat() if oLabel.creationDate else ""
+
+            # Base properties required by Use Case
+            # NOTE: Shapefile column names are strictly limited to 10 characters!
+            oProps = {
+                "geometry": oGeom,
+                "annotator": oLabel.creatorId or "System",
+                "timestamp": sCreationTime,
+                "img_name": oRow.image_name,
+                "img_year": oImgDate.year,
+                "img_month": oImgDate.month,
+                "img_day": oImgDate.day,
+                "geom_type": oGeom.geom_type
+            }
+
+            # Unpack dynamic attributes (Template properties)
+            if oLabel.attributes and isinstance(oLabel.attributes, dict):
+                for key, val in oLabel.attributes.items():
+                    # Truncate custom keys to 10 chars to prevent Shapefile corruption
+                    safe_key = str(key)[:10]
+                    oProps[safe_key] = val
+
+            aoFeatures.append(oProps)
+
+        # 4. Create GeoDataFrame and Split by Geometry Type
+        gdf = gpd.GeoDataFrame(aoFeatures, geometry="geometry", crs="EPSG:4326")
+
+        dictGDFs = {
+            "Points": gdf[gdf['geom_type'] == 'Point'],
+            "Lines": gdf[gdf['geom_type'] == 'LineString'],
+            "Polygons": gdf[gdf['geom_type'] == 'Polygon']
+        }
+
+        # 5. Package into an In-Memory ZIP File
+        oZipBuffer = io.BytesIO()
+        with zipfile.ZipFile(oZipBuffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+
+            for sGeomType, sub_gdf in dictGDFs.items():
+                if sub_gdf.empty:
+                    continue
+
+                # Drop the geom_type column as it's redundant now
+                sub_gdf = sub_gdf.drop(columns=['geom_type'])
+
+                # Write shapefile components (.shp, .shx, .dbf, .cpg, .prj) to temp memory
+                # Geopandas requires a folder path, so we use a trick with io.BytesIO
+                import tempfile
+                import os
+
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    sShpPath = os.path.join(tmpdir, f"{oProject.name.replace(' ', '_')}_{sGeomType}.shp")
+                    sub_gdf.to_file(sShpPath, driver="ESRI Shapefile")
+
+                    # Read them back and write to our Zip archive
+                    for filename in os.listdir(tmpdir):
+                        sFilePath = os.path.join(tmpdir, filename)
+                        zip_file.write(sFilePath, arcname=f"labels/{sGeomType}/{filename}")
+
+            # ==========================================
+            # TODO: Include Raw Data (GeoTIFFs)
+            # if oExportData.includeRawData and oProject.selfHosted:
+            #     # Fetch files from S3 and write them to zip_file
+            #     pass
+            # ==========================================
+
+        # Reset buffer pointer to the beginning
+        oZipBuffer.seek(0)
+
+        # 6. Return as a Downloadable File
+        sSafeProjectName = oProject.name.replace(' ', '_')
+        return StreamingResponse(
+            oZipBuffer,
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename=ComapVeda_Export_{sSafeProjectName}.zip"}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as oE:
+        logging.error(f"Error triggering export: {str(oE)}")
+        raise HTTPException(status_code=500, detail=f'Error triggering export: {str(oE)}')
