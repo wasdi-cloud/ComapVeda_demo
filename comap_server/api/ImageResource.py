@@ -29,20 +29,66 @@ from utils.WebsocketManager import oWsManager
 
 oRouter = APIRouter(prefix="/images")
 
-logger = logging.getLogger(__name__)
+oLogger = logging.getLogger(__name__)
 
 
-def init_worker_logging():
-    """
-    This runs once when each worker process in the pool starts.
-    """
+def initWorkerLogging():
+    # runs once when each worker process in the pool starts.
     logging.basicConfig(
         level=logging.DEBUG,
         format="%(asctime)s [%(levelname)s] (Worker %(process)d): %(message)s"
     )
 
 # Global process pool
-s_oConversionPool = ProcessPoolExecutor(max_workers=4, initializer=init_worker_logging)
+s_oConversionPool = ProcessPoolExecutor(max_workers=4, initializer=initWorkerLogging)
+
+# Global download queue and workers
+s_oDownloadQueue = None
+s_aDownloadWorkers = []
+s_iMaxConcurrentDownloads = 4   # TODO: Make this configurable via environment variable or config file
+
+
+async def _downloadWorker():
+    """
+    Worker coroutine that processes image imports from the queue.
+    Ensures only s_iMaxConcurrentDownloads happen concurrently.
+    """
+    while True:
+        try:
+            oImageImport = await s_oDownloadQueue.get()
+            try:
+                await downloadAndConvert(oImageImport)
+            except Exception as oE:
+                logging.error(f"_downloadWorker: Error processing download: {oE}")
+            finally:
+                s_oDownloadQueue.task_done()
+        except asyncio.CancelledError:
+            logging.info("_downloadWorker: Shutting down")
+            break
+        except Exception as oE:
+            logging.error(f"_downloadWorker: Unexpected error: {oE}")
+            await asyncio.sleep(1)  # Prevent tight loop on errors
+
+
+async def _ensureWorkersInitialized():
+    """
+    Initialize the download worker pool on first use.
+    """
+    global s_oDownloadQueue, s_aDownloadWorkers
+    
+    if s_oDownloadQueue is not None:
+        return  # already initialized
+    
+    s_oDownloadQueue = asyncio.Queue()
+    
+    for i in range(s_iMaxConcurrentDownloads):
+        try:
+            oDownloadWorker = asyncio.create_task(_downloadWorker())
+            s_aDownloadWorkers.append(oDownloadWorker)
+            logging.info(f"_ensureWorkersInitialized: Started download worker {i+1}/{s_iMaxConcurrentDownloads}")
+        except RuntimeError as oE:
+            logging.error(f"_ensureWorkersInitialized: Failed to create worker {i+1}: {oE}")
+
 
 @oRouter.get("/search", response_model=list[SearchResultItem])
 async def search(bbox: str = Query(..., description="Bounding box coordinates in WKT format"),
@@ -267,9 +313,9 @@ async def downloadAndConvert(oImageImport):
 
         try:
             oZipPath.unlink(missing_ok=True)
-            logger.info(f"downloadAndConvert: Deleted temporary ZIP file {sZipPath}")
+            oLogger.info(f"downloadAndConvert: Deleted temporary ZIP file {sZipPath}")
         except Exception as oE:
-            logger.error(f"downloadAndConvert: Failed to delete temporary ZIP file {sZipPath}: {oE}")
+            oLogger.error(f"downloadAndConvert: Failed to delete temporary ZIP file {sZipPath}: {oE}")
 
     except Exception as oE:
         logging.error(f"downloadAndConvert: Background processing failed: {oE}")
@@ -299,6 +345,15 @@ def getDirSize(sPath: str) -> int | None:
         return None
 
     return sTotalSize
+
+def _getUserProjects(sUserId: str, oDB: Session) -> list[str]:
+    """
+    Retrieves a list of project IDs that the user has access to.
+    """
+    return oDB.query(DatasetImageEntity.id)\
+        .filter(DatasetImageEntity.approved == True, DatasetImageEntity.owner == sUserId)\
+        .scalar() \
+        .all()
 
 
 @oRouter.post("/import")
@@ -346,10 +401,16 @@ async def import_image(oImageImport: ImageImport,
         
         # if the path does not exist, it will be created later when the image is saved, so we can proceed with the import
 
-        # Schedule async task to run in background without blocking response
-        asyncio.create_task(downloadAndConvert(oImageImport))
+        # Ensure worker pool is initialized
+        logging.debug("import_image: Ensuring download workers are initialized")
+        await _ensureWorkersInitialized()
+        
+        
+        # Add import request to queue (will be processed by next available worker)
+        await s_oDownloadQueue.put(oImageImport)
+        iQueueSize = s_oDownloadQueue.qsize()
 
-        logging.debug(f"import_image: Scheduled background task to download image {oImageImport.imageName} for project {oImageImport.projectId}")
+        logging.debug(f"import_image: Queued download for image {oImageImport.imageName} (queue size: {iQueueSize})")
         return oImageImport 
         
 
