@@ -8,20 +8,23 @@ import { getMyProfile, updateMyProfile } from '../services/user-service';
 import { getUser, setSession, getToken } from '../services/session';
 
 const Profile = () => {
+    // --- Get initial data straight from local storage to avoid empty flashes ---
+    const oSessionUser = getUser();
+
     const [bIsLoading, setIsLoading] = useState(true);
     const [bIsSaving, setIsSaving] = useState(false);
 
-    // State for the form
-    const [sName, setSName] = useState("");
-    const [sSurname, setSSurname] = useState("");
-    const [sEmail, setSEmail] = useState("");
-    const [sRole, setSRole] = useState("");
+    // State for the form (pre-fill with session data if available)
+    const [sName, setSName] = useState(oSessionUser?.name || "");
+    const [sSurname, setSSurname] = useState(oSessionUser?.surname || "");
+    const [sEmail, setSEmail] = useState(oSessionUser?.email || "");
+    const [sRole, setSRole] = useState(oSessionUser?.role || "user");
 
     // Notification State
     const [oNotification, setNotification] = useState({ show: false, message: '', type: 'info' });
     const showNotif = (message, type = 'info') => setNotification({ show: true, message, type });
 
-    // Fetch Profile on Mount
+    // Fetch Profile on Mount (To make sure we have the latest DB data)
     useEffect(() => {
         const loadProfile = async () => {
             try {
@@ -29,7 +32,7 @@ const Profile = () => {
                 setSName(data.name || "");
                 setSSurname(data.surname || "");
                 setSEmail(data.email || "");
-                setSRole(data.role || "");
+                setSRole(data.role || "user");
             } catch (error) {
                 showNotif("Failed to load profile data.", "error");
             } finally {
@@ -49,7 +52,6 @@ const Profile = () => {
                 surname: sSurname
             });
 
-            // Update the local storage session so the Navbar immediately reflects the new name!
             const currentToken = getToken();
             setSession(currentToken, updatedUser);
 
@@ -59,6 +61,12 @@ const Profile = () => {
         } finally {
             setIsSaving(false);
         }
+    };
+
+    // --- NEW: Helper to format "ADMIN" -> "Admin", "USER" -> "User" ---
+    const formatRole = (roleStr) => {
+        if (!roleStr) return "User";
+        return roleStr.charAt(0).toUpperCase() + roleStr.slice(1).toLowerCase();
     };
 
     return (
@@ -92,9 +100,9 @@ const Profile = () => {
                             <div>
                                 <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#555', marginBottom: '5px', display: 'block' }}>Account Role</label>
                                 <AppTextInput
-                                    sValue={sRole}
+                                    sValue={formatRole(sRole)} // <-- Display formatted role here!
                                     disabled={true}
-                                    oStyle={{ background: '#f5f5f5' }}
+                                    oStyle={{ background: '#f5f5f5', fontWeight: 'bold', color: sRole === 'ADMIN' ? '#d9534f' : '#5bc0de' }}
                                 />
                             </div>
                         </div>

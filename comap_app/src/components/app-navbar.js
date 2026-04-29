@@ -4,7 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import logo from '../assets/logo.png';
 
 // Import our auth helpers
-import { isAuthenticated } from '../services/session';
+import { isAuthenticated, getUser } from '../services/session'; // <-- Added getUser
 import { logout } from '../services/auth-service';
 
 const AppNavbar = () => {
@@ -12,6 +12,10 @@ const AppNavbar = () => {
 
     // 1. Check if the user is currently logged in
     const bIsLoggedIn = isAuthenticated();
+
+    // --- NEW: Grab the user data to check their role ---
+    const oUser = getUser();
+    const bIsAdmin = oUser?.role === 'ADMIN';
 
     // 2. State for the profile dropdown
     const [bShowDropdown, setBShowDropdown] = useState(false);
@@ -63,12 +67,15 @@ const AppNavbar = () => {
                 </Link>
 
                 {/* --- CONDITIONALLY RENDERED LINKS --- */}
-                {/* These only show up if bIsLoggedIn is TRUE */}
                 {bIsLoggedIn && (
                     <>
-                        <Link to="/project-requests" style={{ textDecoration: 'none' }}>
-                            <span style={{ color: 'white', fontSize: '14px', fontWeight: '500' }}>Requests</span>
-                        </Link>
+                        {/* --- SECURITY SHIELD: Only Admins see Requests! --- */}
+                        {bIsAdmin && (
+                            <Link to="/project-requests" style={{ textDecoration: 'none' }}>
+                                <span style={{ color: 'white', fontSize: '14px', fontWeight: '500' }}>Requests</span>
+                            </Link>
+                        )}
+
                         <Link to="/label-templates" style={{ textDecoration: 'none' }}>
                             <span style={{ color: 'white', fontSize: '14px', fontWeight: '500' }}>Templates</span>
                         </Link>
