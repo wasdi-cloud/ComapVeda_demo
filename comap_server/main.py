@@ -96,11 +96,8 @@ async def limit_sentinel_concurrency(request: Request, call_next):
 
 # Tiler factory instance
 oCog = TilerFactory(path_dependency=getDatasetUrl)
-#oSentinelRouter = MultiBaseTilerFactory(reader=Sentinel2ZipReader, path_dependency=DatasetPathParams)
 
 # TiTiler endpoints
-#oApp.include_router(oCog.router, tags=["Cloud Optimized GeoTIFF"])
-#oApp.include_router(oSentinelRouter.router, prefix="/sentinel", tags=["Sentinel-2 ZIP Tiler"])
 oApp.include_router(oCog.router, prefix="/sentinel", tags=["Cloud Optimized GeoTIFF"])
 
 # Endpoints for business logic
