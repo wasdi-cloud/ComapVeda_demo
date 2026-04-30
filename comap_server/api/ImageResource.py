@@ -26,6 +26,7 @@ from utils.auth_utils import get_current_user
 from utils.auth_utils import canReadProject
 from utils.auth_utils import canWriteProject
 from utils.WebsocketManager import oWsManager
+from utils import FileSystemUtils
 
 oRouter = APIRouter(prefix="/images")
 
@@ -254,6 +255,7 @@ def convertS2ZipToCog(sZipPath: str, sOutputPath: str):
     return sOutputPath
 
 
+
 async def downloadAndConvert(oImageImport):
     try:
         oQueryExecutor = QueryExecutorCopernicusDataspace()
@@ -296,10 +298,10 @@ async def downloadAndConvert(oImageImport):
                 date=int(oNow.timestamp() * 1000)
             )
         
-        oDB = SessionLocal()
-        oDB.add(oDatasetImage)
-        oDB.commit()
-        oDB.refresh(oDatasetImage)
+        with SessionLocal() as oDB:
+            oDB.add(oDatasetImage)
+            oDB.commit()
+            oDB.refresh(oDatasetImage)
 
         await oWsManager.broadcastToProject(oImageImport.projectId, {
             "type": "import_completed",
@@ -326,25 +328,7 @@ async def downloadAndConvert(oImageImport):
         })
 
 
-def getDirSize(sPath: str) -> int | None:
-    """
-    Recursively calculates the total size of all files in the given directory.
-    Returns the value in bytes, or None if an error occurs.
-    """
-    sTotalSize = 0
-    try:
-        with os.scandir(sPath) as oIt:
-            for oEntry in oIt:
-                if oEntry.is_file():
-                    sTotalSize += oEntry.stat().st_size
-                elif oEntry.is_dir():
-                    sTotalSize += getDirSize(oEntry.path)
 
-    except Exception as oE:
-        logging.error(f"getDirSize: Error occurred while calculating directory size for {sPath}: {oE}")
-        return None
-
-    return sTotalSize
 
 def _getUserProjects(sUserId: str, oDB: Session) -> list[str]:
     """
@@ -382,29 +366,21 @@ async def import_image(oImageImport: ImageImport,
 
         logging.debug(f"import_image: Checking storage limits for project {oProjectFolderPath}")
 
-        if oProjectFolderPath.exists() and oProjectFolderPath.is_dir():
-            iProjectSize = getDirSize(oProjectFolderPath)
+        bProjectHasStorageCapacity = FileSystemUtils.projectHasStorageCapacity(sProjectId)
 
-            if iProjectSize is None:
-                logging.error(f"import_image: Could not determine project size for {oProjectFolderPath}")
-                raise HTTPException(status_code=500, detail="Could not determine project storage usage. Import aborted.")
+        if not bProjectHasStorageCapacity:
+            logging.warning(f"import_image: Project {sProjectId} has exceeded its storage capacity. Import denied.")
+            # raise HTTPException(status_code=400, detail=f"Project {sProjectId} has exceeded its storage capacity. Import denied.")
+            await oWsManager.broadcastToProject(oImageImport.projectId, {
+                "type": "import_failed",
+                "message": f"Image {oImageImport.imageName} failed to import due to storage capacity limits.",
+                "messageType": "error"
+            })
+            raise HTTPException(status_code=400, detail="Project has exceeded its storage capacity")
             
-            iMaxStorageBytes = int(os.environ.get("MAX_STORAGE_GB", "1")) * 1024 * 1024 * 1024 
-
-            if iProjectSize >= iMaxStorageBytes:
-                logging.warning(f"import_image: Storage limit exceeded for project {sProjectId}. Current size: {iProjectSize / (1024 * 1024 * 1024):.2f} GB")
-                raise HTTPException(status_code=400, detail=f"Storage limit exceeded for this project. Current usage: {iProjectSize / (1024 * 1024 * 1024):.2f} GB / {iMaxStorageBytes / (1024 * 1024 * 1024)} GB")
-        
-        elif oProjectFolderPath.exists() and not oProjectFolderPath.is_dir():
-            logging.error(f"import_image: Project path {oProjectFolderPath} exists but is not a directory")
-            raise HTTPException(status_code=500, detail="Project storage path is invalid. Import aborted.")
-        
-        # if the path does not exist, it will be created later when the image is saved, so we can proceed with the import
-
         # Ensure worker pool is initialized
         logging.debug("import_image: Ensuring download workers are initialized")
         await _ensureWorkersInitialized()
-        
         
         # Add import request to queue (will be processed by next available worker)
         await s_oDownloadQueue.put(oImageImport)
@@ -415,7 +391,7 @@ async def import_image(oImageImport: ImageImport,
         
 
     except Exception as oE:
-        # oDB.rollback()  # Important: rollback on error
+        oDB.rollback()
         raise HTTPException(status_code=500, detail=f'Error importing image: {str(oE)}')
 
 
