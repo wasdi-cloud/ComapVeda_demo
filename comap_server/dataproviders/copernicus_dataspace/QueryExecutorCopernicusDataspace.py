@@ -229,9 +229,9 @@ class QueryExecutorCopernicusDataspace:
             oLogger.error("downloadProduct.Error: Product name is missing. Cannot download product.")
             return None
         
-        if FileSystemUtils.projectHasStorageCapacity(sProjectId):
+        if not FileSystemUtils.projectHasStorageCapacity(sProjectId):
             oLogger.error(f"downloadProduct.Error: Project {sProjectId} has exceeded its storage capacity. Cannot download product.")
-            return None
+            raise HTTPException(status_code=400, detail="Project has exceeded its storage capacity")
         
         # extract the Copernicus Dataspace product id from the download url
         oMatch = re.search(r"Products\((.*?)\)", sDownloadLink)

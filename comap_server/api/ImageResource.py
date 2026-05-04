@@ -270,7 +270,7 @@ async def downloadAndConvert(oImageImport):
 
         if not sZipPath:
             logging.error(f"downloadAndConvert: Failed to download image {oImageImport.imageName} from {oImageImport.imageUrl}")
-            return
+            raise HTTPException(status_code=400, detail=f"Failed to download image {oImageImport.imageName}")
 
         logging.debug(f"downloadAndConvert: Downloaded image to {sZipPath}")
 
@@ -287,7 +287,8 @@ async def downloadAndConvert(oImageImport):
 
         if not sPathToCOG:
             logging.error(f"downloadAndConvert: Failed to convert {sZipPath} to COG")
-            return
+            # TODO: remove the zip file if conversion fails, to avoid filling up the disk with failed downloads
+            raise HTTPException(status_code=400, detail=f"Failed to convert {sZipPath} to COG")
 
         oNow = datetime.now()
         oDatasetImage = DatasetImageEntity(
@@ -371,11 +372,6 @@ async def import_image(oImageImport: ImageImport,
         if not bProjectHasStorageCapacity:
             logging.warning(f"import_image: Project {sProjectId} has exceeded its storage capacity. Import denied.")
             # raise HTTPException(status_code=400, detail=f"Project {sProjectId} has exceeded its storage capacity. Import denied.")
-            await oWsManager.broadcastToProject(oImageImport.projectId, {
-                "type": "import_failed",
-                "message": f"Image {oImageImport.imageName} failed to import due to storage capacity limits.",
-                "messageType": "error"
-            })
             raise HTTPException(status_code=400, detail="Project has exceeded its storage capacity")
             
         # Ensure worker pool is initialized
