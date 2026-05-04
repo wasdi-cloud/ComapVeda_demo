@@ -26,23 +26,70 @@ from utils.auth_utils import get_current_user
 from utils.auth_utils import canReadProject
 from utils.auth_utils import canWriteProject
 from utils.WebsocketManager import oWsManager
+from utils import FileSystemUtils
 
 oRouter = APIRouter(prefix="/images")
 
-logger = logging.getLogger(__name__)
+oLogger = logging.getLogger(__name__)
 
 
-def init_worker_logging():
-    """
-    This runs once when each worker process in the pool starts.
-    """
+def initWorkerLogging():
+    # runs once when each worker process in the pool starts.
     logging.basicConfig(
         level=logging.DEBUG,
         format="%(asctime)s [%(levelname)s] (Worker %(process)d): %(message)s"
     )
 
 # Global process pool
-s_oConversionPool = ProcessPoolExecutor(max_workers=4, initializer=init_worker_logging)
+s_oConversionPool = ProcessPoolExecutor(max_workers=4, initializer=initWorkerLogging)
+
+# Global download queue and workers
+s_oDownloadQueue = None
+s_aDownloadWorkers = []
+s_iMaxConcurrentDownloads = 4   # TODO: Make this configurable via environment variable or config file
+
+
+async def _downloadWorker():
+    """
+    Worker coroutine that processes image imports from the queue.
+    Ensures only s_iMaxConcurrentDownloads happen concurrently.
+    """
+    while True:
+        try:
+            oImageImport = await s_oDownloadQueue.get()
+            try:
+                await downloadAndConvert(oImageImport)
+            except Exception as oE:
+                logging.error(f"_downloadWorker: Error processing download: {oE}")
+            finally:
+                s_oDownloadQueue.task_done()
+        except asyncio.CancelledError:
+            logging.info("_downloadWorker: Shutting down")
+            break
+        except Exception as oE:
+            logging.error(f"_downloadWorker: Unexpected error: {oE}")
+            await asyncio.sleep(1)  # Prevent tight loop on errors
+
+
+async def _ensureWorkersInitialized():
+    """
+    Initialize the download worker pool on first use.
+    """
+    global s_oDownloadQueue, s_aDownloadWorkers
+    
+    if s_oDownloadQueue is not None:
+        return  # already initialized
+    
+    s_oDownloadQueue = asyncio.Queue()
+    
+    for i in range(s_iMaxConcurrentDownloads):
+        try:
+            oDownloadWorker = asyncio.create_task(_downloadWorker())
+            s_aDownloadWorkers.append(oDownloadWorker)
+            logging.info(f"_ensureWorkersInitialized: Started download worker {i+1}/{s_iMaxConcurrentDownloads}")
+        except RuntimeError as oE:
+            logging.error(f"_ensureWorkersInitialized: Failed to create worker {i+1}: {oE}")
+
 
 @oRouter.get("/search", response_model=list[SearchResultItem])
 async def search(bbox: str = Query(..., description="Bounding box coordinates in WKT format"),
@@ -208,6 +255,7 @@ def convertS2ZipToCog(sZipPath: str, sOutputPath: str):
     return sOutputPath
 
 
+
 async def downloadAndConvert(oImageImport):
     try:
         oQueryExecutor = QueryExecutorCopernicusDataspace()
@@ -222,7 +270,7 @@ async def downloadAndConvert(oImageImport):
 
         if not sZipPath:
             logging.error(f"downloadAndConvert: Failed to download image {oImageImport.imageName} from {oImageImport.imageUrl}")
-            return
+            raise HTTPException(status_code=400, detail=f"Failed to download image {oImageImport.imageName}")
 
         logging.debug(f"downloadAndConvert: Downloaded image to {sZipPath}")
 
@@ -239,7 +287,8 @@ async def downloadAndConvert(oImageImport):
 
         if not sPathToCOG:
             logging.error(f"downloadAndConvert: Failed to convert {sZipPath} to COG")
-            return
+            # TODO: remove the zip file if conversion fails, to avoid filling up the disk with failed downloads
+            raise HTTPException(status_code=400, detail=f"Failed to convert {sZipPath} to COG")
 
         oNow = datetime.now()
         oDatasetImage = DatasetImageEntity(
@@ -250,10 +299,10 @@ async def downloadAndConvert(oImageImport):
                 date=int(oNow.timestamp() * 1000)
             )
         
-        oDB = SessionLocal()
-        oDB.add(oDatasetImage)
-        oDB.commit()
-        oDB.refresh(oDatasetImage)
+        with SessionLocal() as oDB:
+            oDB.add(oDatasetImage)
+            oDB.commit()
+            oDB.refresh(oDatasetImage)
 
         await oWsManager.broadcastToProject(oImageImport.projectId, {
             "type": "import_completed",
@@ -267,9 +316,9 @@ async def downloadAndConvert(oImageImport):
 
         try:
             oZipPath.unlink(missing_ok=True)
-            logger.info(f"downloadAndConvert: Deleted temporary ZIP file {sZipPath}")
+            oLogger.info(f"downloadAndConvert: Deleted temporary ZIP file {sZipPath}")
         except Exception as oE:
-            logger.error(f"downloadAndConvert: Failed to delete temporary ZIP file {sZipPath}: {oE}")
+            oLogger.error(f"downloadAndConvert: Failed to delete temporary ZIP file {sZipPath}: {oE}")
 
     except Exception as oE:
         logging.error(f"downloadAndConvert: Background processing failed: {oE}")
@@ -280,25 +329,16 @@ async def downloadAndConvert(oImageImport):
         })
 
 
-def getDirSize(sPath: str) -> int | None:
-    """
-    Recursively calculates the total size of all files in the given directory.
-    Returns the value in bytes, or None if an error occurs.
-    """
-    sTotalSize = 0
-    try:
-        with os.scandir(sPath) as oIt:
-            for oEntry in oIt:
-                if oEntry.is_file():
-                    sTotalSize += oEntry.stat().st_size
-                elif oEntry.is_dir():
-                    sTotalSize += getDirSize(oEntry.path)
 
-    except Exception as oE:
-        logging.error(f"getDirSize: Error occurred while calculating directory size for {sPath}: {oE}")
-        return None
 
-    return sTotalSize
+def _getUserProjects(sUserId: str, oDB: Session) -> list[str]:
+    """
+    Retrieves a list of project IDs that the user has access to.
+    """
+    return oDB.query(DatasetImageEntity.id)\
+        .filter(DatasetImageEntity.approved == True, DatasetImageEntity.owner == sUserId)\
+        .scalar() \
+        .all()
 
 
 @oRouter.post("/import")
@@ -327,34 +367,27 @@ async def import_image(oImageImport: ImageImport,
 
         logging.debug(f"import_image: Checking storage limits for project {oProjectFolderPath}")
 
-        if oProjectFolderPath.exists() and oProjectFolderPath.is_dir():
-            iProjectSize = getDirSize(oProjectFolderPath)
+        bProjectHasStorageCapacity = FileSystemUtils.projectHasStorageCapacity(sProjectId)
 
-            if iProjectSize is None:
-                logging.error(f"import_image: Could not determine project size for {oProjectFolderPath}")
-                raise HTTPException(status_code=500, detail="Could not determine project storage usage. Import aborted.")
+        if not bProjectHasStorageCapacity:
+            logging.warning(f"import_image: Project {sProjectId} has exceeded its storage capacity. Import denied.")
+            # raise HTTPException(status_code=400, detail=f"Project {sProjectId} has exceeded its storage capacity. Import denied.")
+            raise HTTPException(status_code=400, detail="Project has exceeded its storage capacity")
             
-            iMaxStorageBytes = int(os.environ.get("MAX_STORAGE_GB", "1")) * 1024 * 1024 * 1024 
-
-            if iProjectSize >= iMaxStorageBytes:
-                logging.warning(f"import_image: Storage limit exceeded for project {sProjectId}. Current size: {iProjectSize / (1024 * 1024 * 1024):.2f} GB")
-                raise HTTPException(status_code=400, detail=f"Storage limit exceeded for this project. Current usage: {iProjectSize / (1024 * 1024 * 1024):.2f} GB / {iMaxStorageBytes / (1024 * 1024 * 1024)} GB")
+        # Ensure worker pool is initialized
+        logging.debug("import_image: Ensuring download workers are initialized")
+        await _ensureWorkersInitialized()
         
-        elif oProjectFolderPath.exists() and not oProjectFolderPath.is_dir():
-            logging.error(f"import_image: Project path {oProjectFolderPath} exists but is not a directory")
-            raise HTTPException(status_code=500, detail="Project storage path is invalid. Import aborted.")
-        
-        # if the path does not exist, it will be created later when the image is saved, so we can proceed with the import
+        # Add import request to queue (will be processed by next available worker)
+        await s_oDownloadQueue.put(oImageImport)
+        iQueueSize = s_oDownloadQueue.qsize()
 
-        # Schedule async task to run in background without blocking response
-        asyncio.create_task(downloadAndConvert(oImageImport))
-
-        logging.debug(f"import_image: Scheduled background task to download image {oImageImport.imageName} for project {oImageImport.projectId}")
+        logging.debug(f"import_image: Queued download for image {oImageImport.imageName} (queue size: {iQueueSize})")
         return oImageImport 
         
 
     except Exception as oE:
-        # oDB.rollback()  # Important: rollback on error
+        oDB.rollback()
         raise HTTPException(status_code=500, detail=f'Error importing image: {str(oE)}')
 
 
