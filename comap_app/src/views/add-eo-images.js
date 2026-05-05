@@ -149,7 +149,7 @@ const AddEoImages = () => {
 
         } catch (error) {
             console.error("Import Error:", error);
-            addNotification("Failed to start import. Check console.", "error");
+            addNotification(error.message || "Failed to start import. Check console.", "error");
 
             // Only unlock if the API call itself crashed
             setIsImporting(false);

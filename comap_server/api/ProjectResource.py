@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+import os
 import time
 import zipfile
 from datetime import datetime
@@ -70,7 +71,7 @@ async def create(
             "s3User": oData.get("hostingUsername"),
             "s3Password": oData.get("hostingPassword"),
             "template_id": oData.get("labellingTemplate"),
-
+            "maxStorage": os.environ.get("MAX_STORAGE_GB", "2"),
             # SECURITY INJECTION: The logged-in user is automatically the owner
             "owners": [oCurrentUser.email]
         }
