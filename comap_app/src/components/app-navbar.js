@@ -15,6 +15,7 @@ const AppNavbar = () => {
 
     // --- NEW: Grab the user data to check their role ---
     const oUser = getUser();
+    console.log("User Data:", oUser);
     const bIsAdmin = oUser?.role === 'ADMIN';
 
     // 2. State for the profile dropdown

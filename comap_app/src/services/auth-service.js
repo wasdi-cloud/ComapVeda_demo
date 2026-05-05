@@ -61,3 +61,24 @@ export const logout = async () => {
     clearSession();
     window.location.href = '/login';
 };
+
+export const requestPasswordReset = async (email) => {
+    return await oRequest('/auth/forgotPassword', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+    });
+};
+
+export const verifyResetOTP = async (email, otp_code) => {
+    return await oRequest('/auth/verifyForgotPasswordOtp', {
+        method: 'POST',
+        body: JSON.stringify({ email, otp_code })
+    });
+};
+
+export const resetPassword = async (email, otp_code, new_password) => {
+    return await oRequest('/auth/updateForgotPassword', {
+        method: 'POST',
+        body: JSON.stringify({ email, otp_code, new_password })
+    });
+};

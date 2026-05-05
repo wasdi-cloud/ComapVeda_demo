@@ -8,11 +8,12 @@ from entities.User import User
 from entities.Session import Session
 from utils import MailUtils
 from utils.auth_utils import hash_password, verify_password, generate_otp, generate_session_token
+from viewmodels.auth.ForgotPasswordRequest import ForgotPasswordRequest
 from viewmodels.auth.ResendOtpRequest import ResendOtpRequest
 from viewmodels.auth.LoginModel import LoginModel
 from viewmodels.auth.OtpModel import OtpModel
 from viewmodels.auth.Registration import Registration
-
+from viewmodels.auth.UpdateForgotPasswordRequest import UpdateForgotPasswordRequest
 
 oRouter = APIRouter(prefix="/auth")
 
@@ -310,3 +311,82 @@ async def delete_user(username: str):
         }
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error deleting user: {str(oE)}')
+
+
+# ==========================================
+# FORGOT PASSWORD WIZARD ENDPOINTS
+# ==========================================
+
+# --- 1. SEND OTP ---
+@oRouter.post("/forgotPassword")
+async def forgotPassword(oRequest: ForgotPasswordRequest, oDatabase: DBSession = Depends(get_db)):
+    try:
+        oUser = oDatabase.query(User).filter(User.email == oRequest.email).first()
+
+        if not oUser:
+            # Security best practice: Don't reveal if the email exists
+            return {"message": "If the email is registered, an OTP has been sent."}
+
+        # Generate a 6-digit OTP
+        sOtp = generate_otp(6)
+
+        # Save it to the database
+        oUser.registration_otp = sOtp
+        oDatabase.commit()
+
+        # Send the email
+        sTitle = "Password Reset Request"
+        sMessage = f"Hello {oUser.name},\n\nYou requested a password reset. Your One-Time Password (OTP) is: {sOtp}\n\nIf you did not request this, please ignore this email."
+
+        MailUtils.sendEmailMailJet("sysadmin@wasdi.cloud", oUser.email, sTitle, sMessage, False)
+
+        return {"message": "If the email is registered, an OTP has been sent."}
+
+    except Exception as oE:
+        oDatabase.rollback()
+        raise HTTPException(status_code=500, detail=f'Error in forgot password: {str(oE)}')
+
+
+# --- 2. VERIFY OTP ---
+@oRouter.post("/verifyForgotPasswordOtp")
+async def verifyForgotPasswordOtp(oOtpModel: OtpModel, oDatabase: DBSession = Depends(get_db)):
+    try:
+        oUser = oDatabase.query(User).filter(User.email == oOtpModel.email).first()
+
+        if not oUser or oUser.registration_otp != oOtpModel.otp_code:
+            raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
+
+        return {"message": "OTP verified successfully."}
+
+    except HTTPException:
+        raise
+    except Exception as oE:
+        raise HTTPException(status_code=500, detail=f'Error verifying OTP: {str(oE)}')
+
+
+# --- 3. SAVE NEW PASSWORD ---
+@oRouter.post("/updateForgotPassword")
+async def updateForgotPassword(oRequest: UpdateForgotPasswordRequest, oDatabase: DBSession = Depends(get_db)):
+    try:
+        oUser = oDatabase.query(User).filter(User.email == oRequest.email).first()
+
+        # Double check the OTP one last time before saving!
+        if not oUser or oUser.registration_otp != oRequest.otp_code:
+            raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
+
+        # Hash the new password
+        sNewPasswordHash = hash_password(oRequest.new_password)
+
+        # Update user record and clear the OTP so it can't be reused
+        oUser.password_hash = sNewPasswordHash
+        oUser.registration_otp = None
+
+        oDatabase.commit()
+
+        return {"message": "Password updated successfully."}
+
+    except HTTPException:
+        raise
+    except Exception as oE:
+        oDatabase.rollback()
+        raise HTTPException(status_code=500, detail=f'Error updating password: {str(oE)}')
