@@ -298,26 +298,3 @@ async def syncLabels(
         raise HTTPException(status_code=500, detail=str(oE))
 
 
-# --- 8. RESOLVE NOTES / ISSUES ---
-@oRouter.get("/resolveNotes")
-async def resolveLabelNotes(
-        sLabelId: str = Query(...),
-        oDB: Session = Depends(get_db),
-        oCurrentUser: User = Depends(get_current_user)
-):
-    try:
-        oLabel = oDB.query(LabelEntity).filter(LabelEntity.id == sLabelId).first()
-        if not oLabel:
-            raise HTTPException(status_code=404, detail="Label not found")
-
-        # Clear the issues array completely
-        oLabel.reviewNotes = []
-
-        # Yell at SQLAlchemy to save the JSON
-        from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(oLabel, "reviewNotes")
-        oDB.commit()
-
-        return {"labelId": sLabelId, "status": "resolved"}
-    except Exception as oE:
-        raise HTTPException(status_code=500, detail=str(oE))

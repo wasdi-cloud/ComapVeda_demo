@@ -655,10 +655,16 @@ async def export_project(
             raise HTTPException(status_code=404, detail="No labels found for this project.")
 
         # ==========================================
-        # TODO: Implement Label Validation Filtering
-        # if oExportData.labelFilter == "validated":
-        #     aoResults = [r for r in aoResults if r.LabelEntity.isValidated == True]
+        # IMPLEMENTED: Label Validation Filtering
         # ==========================================
+        if oExportData.labelFilter == "validated":
+            # A label is considered "validated" if it has at least 1 approval (reviewCount > 0)
+            # We use `(r.LabelEntity.reviewCount or 0)` to safely handle any None/NULL values
+            aoResults = [r for r in aoResults if (r.LabelEntity.reviewCount or 0) > 0]
+
+            # If filtering removed everything, throw an error so we don't output an empty ZIP
+            if not aoResults:
+                raise HTTPException(status_code=404, detail="No validated labels found for this project.")
 
         # 3. Parse Data for GeoPandas
         aoFeatures = []
