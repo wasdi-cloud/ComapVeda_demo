@@ -353,7 +353,7 @@ const HomePage = () => {
                         <div style={{ display: 'flex', gap: '8px' }}>
                             <AppButton
                                 sVariant="outline"
-                                fnOnClick={() => navigate('/edit-project', { state: { projectTitle: project.name, projectId: project.id } })}
+                                fnOnClick={() => navigate('/edit-project', { state: { projectTitle: project.name, projectId: project.id,userRole: project.userRole } })}
                                 oStyle={{ padding: '6px 15px', fontSize: '12px' }}
                             >
                                 Open

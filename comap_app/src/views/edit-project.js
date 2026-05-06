@@ -1,11 +1,18 @@
-import React, {useEffect, useState, useContext, useCallback} from 'react';
+import React, {useEffect, useState, useContext, useCallback, useRef} from 'react';
 import * as turf from '@turf/turf';
 import {useLocation, useNavigate} from 'react-router-dom';
 import AppButton from "../components/app-button";
 import MapboxMap from "../components/MapboxMap";
 import {getProject, getCollaborators} from "../services/project-service";
 import {getLabelTemplateById} from "../services/labelling-template-service";
-import {getLabelsByImage, syncLabels} from "../services/labels-service";
+import {
+    getLabelsByImage,
+    syncLabels,
+    approveLabelApi,
+    sendLabelNoteApi,
+    resolveLabelNotesApi,
+    resolveLabelNoteApi
+} from "../services/labels-service";
 import {getProjectImages} from "../services/images-service";
 import AppNotification from "../dialogues/app-notifications";
 import {useNotifications} from "../contexts/NotificationContext";
@@ -18,21 +25,15 @@ const EditProject = () => {
     const oLocation = useLocation();
     const sProjectTitle = oLocation.state?.projectTitle || "High-Res Flood Analysis";
     const sProjectId = oLocation.state?.projectId || null;
-
     const oUser = getUser();
     const sCurrentUser = oUser?.email || "Unknown User";
-
     const { isImporting } = useProject();
-
     const [oNotification, setNotification] = useState({show: false, message: '', type: 'info'});
     const { notifications } = useNotifications();
-
     const [aoImages, setAoImages] = useState([]);
     const [aoCollaborators, setAoCollaborators] = useState([{id: 'all', name: 'All Annotators'}]);
-
     const [aoFeatures, setAoFeatures] = useState([]);
     const [iSelectedImageId, setISelectedImageId] = useState(null);
-
     const [oProject, setProject] = useState(null);
     const [oProjectBBox, setProjectBBox] = useState(null);
     const [oLabelTemplate, setLabelTemplate] = useState(null);
@@ -41,167 +42,48 @@ const EditProject = () => {
     const [sFilterCollab, setFilterCollab] = useState('all');
     const [bShowValidatedOnly, setShowValidatedOnly] = useState(false);
     const [sSelectedFeatureId, setSelectedFeatureId] = useState(null);
-
     const [oImagePropertiesModal, setImagePropertiesModal] = useState(null);
-
     const [sDrawingColor, setDrawingColor] = useState("#3b82f6");
-
     const [aoMapZoomView, setMapZoomView] = useState(null);
-
     const [oEditingCell, setEditingCell] = useState({featureId: null, attrName: null});
     const [sEditValue, setEditValue] = useState("");
-
     const oSelectedImage = aoImages.find(img => img.id === iSelectedImageId);
-
     const [bIsSavingLabels, setIsSavingLabels] = useState(false);
+    const oIncomingStyle = oLocation.state?.appliedStyle || null;
+    const sUserRole = oLocation.state?.userRole?.toUpperCase() || 'GUEST';
 
+    // Role check
+    const bIsReviewer = sUserRole === 'REVIEWER';
 
-    // Catch the style coming back from the styling page
-    const incomingStyle = oLocation.state?.appliedStyle || null;
-
-    // Create a state to hold styles for our images (in case they style multiple images)
-    // It will look like: { "image-id-123": { renderType: 'multi', bands: {...} } }
     const [oImageStyles, setImageStyles] = useState({});
 
-    // If we just came back from the styling page with a new style, save it!
+    // --- CHAT / ISSUE MODAL STATE ---
+    const [oActiveChatFeature, setActiveChatFeature] = useState(null);
+    const [sChatInputValue, setChatInputValue] = useState("");
+    const chatScrollRef = useRef(null);
+
+    // Auto-scroll chat to bottom when new messages arrive
     useEffect(() => {
-        // Did we just come back from the Image Styling page?
-        if (oLocation.state?.restoreImageId || oLocation.state?.restoreStyles) {
-
-            // 1. Restore the memory of all styled images
-            if (oLocation.state.restoreStyles) {
-                setImageStyles(oLocation.state.restoreStyles);
-            }
-
-            // 2. Re-select the exact image we were just working on
-            if (oLocation.state.restoreImageId) {
-                setISelectedImageId(oLocation.state.restoreImageId);
-            }
-
-            // 3. Zoom the map directly to that specific image!
-            if (oLocation.state.restoreBBox) {
-                setMapZoomView([...parseWKTBbox(oLocation.state.restoreBBox)]); // <-- Added [...]
-            }
-
-            // 4. Wipe the history so if the user hits "Refresh(F5)", it doesn't run this again
-            const cleanedState = { ...oLocation.state };
-            delete cleanedState.restoreStyles;
-            delete cleanedState.restoreImageId;
-            delete cleanedState.restoreBBox;
-            window.history.replaceState(cleanedState, document.title);
+        if (chatScrollRef.current) {
+            chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
         }
-    }, [oLocation.state]);
+    }, [oActiveChatFeature?.properties?.reviewNotes]);
 
-    useEffect(() => {
-        if (oLabelTemplate) {
-            if (oLabelTemplate.isSingleColorStyle && oLabelTemplate.featureColor) {
-                setDrawingColor(oLabelTemplate.featureColor);
-            } else if (!oLabelTemplate.isSingleColorStyle && oLabelTemplate.colourAttributeName) {
-                const colorAttr = oLabelTemplate.attributes?.find(a => a.name === oLabelTemplate.colourAttributeName);
-                if (colorAttr && colorAttr.categoryValues && colorAttr.categoryValues.length > 0) {
-                    setDrawingColor(colorAttr.categoryValues[0].color);
-                }
-            }
-        }
-    }, [oLabelTemplate]);
-
-    useEffect(() => {
-        const loadLabels = async () => {
-            if (!iSelectedImageId) return;
-
-            try {
-                const data = await getLabelsByImage(sProjectId, String(iSelectedImageId));
-
-                const mapboxFeatures = (data || []).map(lbl => ({
-                    id: lbl.labelId,
-                    type: "Feature",
-                    geometry: {
-                        type: lbl.geometryType,
-                        coordinates: lbl.coordinates
-                    },
-                    properties: lbl.attributes
-                }));
-
-                setAoFeatures(mapboxFeatures);
-            } catch (error) {
-                console.error("Failed to load labels:", error);
-            }
-        };
-
-        loadLabels();
-    }, [iSelectedImageId, sProjectId]);
-
-    const handleSaveLabels = async () => {
-        if (!iSelectedImageId) return;
-
-        if (oLabelTemplate && oLabelTemplate.attributes) {
-            const requiredAttrs = oLabelTemplate.attributes.filter(a => !a.isOptional);
-
-            for (const feature of aoFeatures) {
-                for (const attr of requiredAttrs) {
-                    const val = feature.properties[attr.name];
-
-                    if (val === "" || val === null || val === undefined) {
-                        let sNotifMessage = `🛑 Cannot save! The field '${attr.name}' is required. Please check your attribute table and fill in the missing values.`;
-                        showNotif(sNotifMessage, "error")
-                        return;
-                    }
-                }
-            }
-        }
-
-        setIsSavingLabels(true);
-
-        try {
-            const payload = aoFeatures.map(f => ({
-                labelId: f.id,
-                imageName: String(iSelectedImageId),
-                geometryType: f.geometry.type,
-                coordinates: f.geometry.coordinates,
-                attributes: f.properties
-            }));
-
-            await syncLabels(String(iSelectedImageId), payload);
-            showNotif("Labels saved to database successfully! 💾", "success");
-        } catch (error) {
-            showNotif("Failed to save labels", "error");
-            console.error(error);
-        } finally {
-            setIsSavingLabels(false);
-        }
-    };
-
-    const showNotif = (message, type = 'info') => {
-        setNotification({show: true, message, type});
-    };
-
-    useEffect(() => {
-        setAoFeatures([]);
-    }, [iSelectedImageId]);
-
+    // ==========================================
+    // 1. UTILITY FUNCTIONS
+    // ==========================================
     const parseWKTBbox = (wkt) => {
         if (!wkt) return null;
         try {
             const coordsText = wkt.replace(/POLYGON\s*\(\(/i, "").replace(/\)\)/, "");
             const pairs = coordsText.split(",").map(p => p.trim());
-
             let xValues = [];
             let yValues = [];
-
             pairs.forEach(pair => {
                 const [x, y] = pair.split(/\s+/).map(Number);
-                if (!isNaN(x) && !isNaN(y)) {
-                    xValues.push(x);
-                    yValues.push(y);
-                }
+                if (!isNaN(x) && !isNaN(y)) { xValues.push(x); yValues.push(y); }
             });
-
-            return [
-                Math.min(...xValues),
-                Math.min(...yValues),
-                Math.max(...xValues),
-                Math.max(...yValues)
-            ];
+            return [Math.min(...xValues), Math.min(...yValues), Math.max(...xValues), Math.max(...yValues)];
         } catch (e) {
             console.error("Failed to parse BBOX:", e);
             return null;
@@ -223,97 +105,243 @@ const EditProject = () => {
         }
     }, [sProjectId]);
 
+    // ==========================================
+    // 2. USE EFFECTS
+    // ==========================================
+    useEffect(() => {
+        if (oLocation.state?.restoreImageId || oLocation.state?.restoreStyles) {
+            if (oLocation.state.restoreStyles) setImageStyles(oLocation.state.restoreStyles);
+            if (oLocation.state.restoreImageId) setISelectedImageId(oLocation.state.restoreImageId);
+            if (oLocation.state.restoreBBox) setMapZoomView([...parseWKTBbox(oLocation.state.restoreBBox)]);
+
+            const cleanedState = { ...oLocation.state };
+            delete cleanedState.restoreStyles; delete cleanedState.restoreImageId; delete cleanedState.restoreBBox;
+            window.history.replaceState(cleanedState, document.title);
+        }
+    }, [oLocation.state]);
+
+    useEffect(() => {
+        if (oLabelTemplate) {
+            if (oLabelTemplate.isSingleColorStyle && oLabelTemplate.featureColor) {
+                setDrawingColor(oLabelTemplate.featureColor);
+            } else if (!oLabelTemplate.isSingleColorStyle && oLabelTemplate.colourAttributeName) {
+                const colorAttr = oLabelTemplate.attributes?.find(a => a.name === oLabelTemplate.colourAttributeName);
+                if (colorAttr && colorAttr.categoryValues && colorAttr.categoryValues.length > 0) {
+                    setDrawingColor(colorAttr.categoryValues[0].color);
+                }
+            }
+        }
+    }, [oLabelTemplate]);
+
+    useEffect(() => {
+        const loadLabels = async () => {
+            if (!iSelectedImageId) return;
+            try {
+                const data = await getLabelsByImage(sProjectId, String(iSelectedImageId));
+                const mapboxFeatures = (data || []).map(lbl => ({
+                    id: lbl.labelId,
+                    type: "Feature",
+                    geometry: { type: lbl.geometryType, coordinates: lbl.coordinates },
+                    properties: {
+                        ...lbl.attributes,
+                        reviewCount: lbl.reviewCount || 0,
+                        reviewers: lbl.reviewers || [],
+                        reviewNotes: lbl.reviewNotes || []
+                    }
+                }));
+                setAoFeatures(mapboxFeatures);
+            } catch (error) {
+                console.error("Failed to load labels:", error);
+            }
+        };
+        loadLabels();
+    }, [iSelectedImageId, sProjectId]);
+
+    useEffect(() => { setAoFeatures([]); }, [iSelectedImageId]);
+
     useEffect(() => {
         const loadProjectAndCollabs = async () => {
-            if (!sProjectId) {
-                console.error("No project ID found! Redirecting to home...");
-                oNavigate('/');
-                return;
-            }
-
+            if (!sProjectId) { oNavigate('/'); return; }
             try {
                 const oData = await getProject(sProjectId);
                 if (oData) {
                     setProject(oData);
-
                     const oTemplateData = await getLabelTemplateById(oData.labellingTemplate);
-                    if (oTemplateData) {
-                        setLabelTemplate(oTemplateData);
-                    }
-
+                    if (oTemplateData) setLabelTemplate(oTemplateData);
                     if (oData.bbox) {
                         const parsedBox = parseWKTBbox(oData.bbox);
                         setProjectBBox(parsedBox);
-
-                        // --- FIX: THE RACE CONDITION SHIELD ---
-                        // Only set the map zoom to the Project BBox if
-                        // the Image Restorer hasn't already set a zoom view!
                         setMapZoomView(prev => prev || parsedBox);
                     }
-
                     await loadImages();
                 }
 
                 const collabData = await getCollaborators(sProjectId);
                 if (collabData && collabData.length > 0) {
-                    const formattedCollabs = collabData.map(c => ({
-                        id: c.userEmail,
-                        name: c.userEmail
-                    }));
+                    const formattedCollabs = collabData.map(c => ({ id: c.userEmail, name: c.userEmail }));
                     setAoCollaborators([{id: 'all', name: 'All Annotators'}, ...formattedCollabs]);
                 }
-
             } catch (error) {
                 console.log("Error loading project data or collabs:", error);
             }
         }
-
         loadProjectAndCollabs();
     }, [sProjectId, oNavigate, loadImages]);
 
     useEffect(() => {
         if (notifications.length > 0) {
             const latestNotification = notifications[notifications.length - 1];
-            if (latestNotification.type === 'success' &&
-                latestNotification.message &&
-                latestNotification.message.includes('successfully imported')) {
-                console.log('Import success notification received, refreshing images...');
+            if (latestNotification.type === 'success' && latestNotification.message?.includes('successfully imported')) {
                 loadImages();
             }
         }
     }, [notifications, sProjectId, loadImages]);
 
+    // ==========================================
+    // ACTIONS
+    // ==========================================
+    const handleSaveLabels = async () => {
+        if (!iSelectedImageId) return;
+
+        if (oLabelTemplate && oLabelTemplate.attributes) {
+            const aoRequiredAttrs = oLabelTemplate.attributes.filter(a => !a.isOptional);
+            for (const feature of aoFeatures) {
+                for (const attr of aoRequiredAttrs) {
+                    const val = feature.properties[attr.name];
+                    if (val === "" || val === null || val === undefined) {
+                        showNotif(`🛑 Cannot save! The field '${attr.name}' is required.`, "error");
+                        return;
+                    }
+                }
+            }
+        }
+
+        setIsSavingLabels(true);
+
+        try {
+            const payload = aoFeatures.map(f => ({
+                labelId: f.id, imageName: String(iSelectedImageId), geometryType: f.geometry.type,
+                coordinates: f.geometry.coordinates, attributes: f.properties,
+                reviewCount: f.properties.reviewCount || 0, reviewers: f.properties.reviewers || [], reviewNotes: f.properties.reviewNotes || []
+            }));
+
+            await syncLabels(String(iSelectedImageId), payload);
+            showNotif("Labels saved to database successfully! 💾", "success");
+        } catch (error) {
+            showNotif("Failed to save labels", "error");
+        } finally {
+            setIsSavingLabels(false);
+        }
+    };
+
+    const handleApproveLabel = async (feature) => {
+        if (String(feature.id).length < 20) {
+            showNotif("Wait! You must click 'Save Labels' first before this can be approved.", "warning");
+            return;
+        }
+
+        if (!window.confirm("Are you sure you want to approve this label?")) return;
+
+        try {
+            await approveLabelApi(feature.id);
+            setAoFeatures(prev => prev.map(f => {
+                if (f.id === feature.id) {
+                    const currentReviewers = f.properties.reviewers || [];
+                    return { ...f, properties: { ...f.properties, reviewCount: (f.properties.reviewCount || 0) + 1, reviewers: [...currentReviewers, sCurrentUser] } };
+                }
+                return f;
+            }));
+            showNotif("Label approved successfully!", "success");
+        } catch (error) {
+            showNotif("Failed to approve label.", "error");
+        }
+    };
+
+    // --- NEW: ISSUE HANDLERS ---
+    const handleSendIssue = async (e) => {
+        e.preventDefault();
+        if (!sChatInputValue.trim() || !oActiveChatFeature) return;
+
+        const featureId = oActiveChatFeature.id;
+        const noteText = sChatInputValue.trim();
+
+        try {
+            // Wait for the backend so we get the real UUID generated by Python!
+            const response = await sendLabelNoteApi(featureId, noteText);
+            const newNoteObj = response.note || { id: Date.now().toString(), sender: sCurrentUser, note: noteText, resolved: false };
+
+            setAoFeatures(prev => prev.map(f => {
+                if (f.id === featureId) {
+                    return { ...f, properties: { ...f.properties, reviewNotes: [...(f.properties.reviewNotes || []), newNoteObj] } };
+                }
+                return f;
+            }));
+
+            setActiveChatFeature(prev => ({
+                ...prev,
+                properties: { ...prev.properties, reviewNotes: [...(prev.properties.reviewNotes || []), newNoteObj] }
+            }));
+
+            setChatInputValue("");
+        } catch (error) {
+            showNotif("Failed to log issue.", "error");
+        }
+    };
+
+    const handleResolveIssue = async (noteId) => {
+        if (!oActiveChatFeature || !noteId) return;
+        const featureId = oActiveChatFeature.id;
+
+        try {
+            await resolveLabelNoteApi(featureId, noteId);
+
+            // Instead of deleting, we just flip 'resolved' to true!
+            const updateNotes = (notes) => notes.map(n => n.id === noteId ? { ...n, resolved: true } : n);
+
+            setAoFeatures(prev => prev.map(f => {
+                if (f.id === featureId) {
+                    return { ...f, properties: { ...f.properties, reviewNotes: updateNotes(f.properties.reviewNotes || []) } };
+                }
+                return f;
+            }));
+
+            setActiveChatFeature(prev => ({
+                ...prev,
+                properties: { ...prev.properties, reviewNotes: updateNotes(prev.properties.reviewNotes || []) }
+            }));
+
+        } catch (error) {
+            showNotif("Failed to resolve issue.", "error");
+        }
+    };
+
+    const openChatModal = (feature) => {
+        if (String(feature.id).length < 20) {
+            showNotif("Wait! You must click 'Save Labels' first before accessing issues.", "warning");
+            return;
+        }
+        setActiveChatFeature(feature);
+    };
+
     const handleDrawUpdate = (featureCollection) => {
         if (!featureCollection) return;
-
         setAoFeatures(prevFeatures => {
-            const enrichedFeatures = featureCollection.features.map(feature => {
+            return featureCollection.features.map(feature => {
                 let sMeasurement = "0";
                 if (feature.geometry.type === 'Polygon') sMeasurement = (turf.area(feature) / 1000000).toFixed(3) + " km²";
                 else if (feature.geometry.type === 'LineString') sMeasurement = turf.length(feature, {units: 'kilometers'}).toFixed(3) + " km";
 
                 const existingFeature = prevFeatures.find(f => f.id === feature.id);
-
                 if (existingFeature) {
-                    return {
-                        ...feature,
-                        properties: {
-                            ...existingFeature.properties,
-                            measurement: sMeasurement
-                        }
-                    };
+                    return { ...feature, properties: { ...existingFeature.properties, measurement: sMeasurement } };
                 } else {
                     const dynamicProps = {};
                     let assignedColor = sDrawingColor;
 
                     if (oLabelTemplate && oLabelTemplate.attributes) {
-                        if (oLabelTemplate.isSingleColorStyle && oLabelTemplate.featureColor) {
-                            assignedColor = oLabelTemplate.featureColor;
-                        }
-
+                        if (oLabelTemplate.isSingleColorStyle && oLabelTemplate.featureColor) assignedColor = oLabelTemplate.featureColor;
                         oLabelTemplate.attributes.forEach(attr => {
                             dynamicProps[attr.name] = "";
-
                             if (!oLabelTemplate.isSingleColorStyle && oLabelTemplate.colourAttributeName === attr.name) {
                                 if (attr.categoryValues && attr.categoryValues.length > 0) {
                                     dynamicProps[attr.name] = attr.categoryValues[0].value;
@@ -326,28 +354,34 @@ const EditProject = () => {
                     return {
                         ...feature,
                         properties: {
-                            ...feature.properties,
-                            id: feature.id,
-                            annotator: sCurrentUser,
-                            status: "Pending",
-                            timestamp: new Date().toISOString(),
-                            measurement: sMeasurement,
-                            portColor: assignedColor,
-                            ...dynamicProps
+                            ...feature.properties, id: feature.id, annotator: sCurrentUser, status: "Pending",
+                            timestamp: new Date().toISOString(), measurement: sMeasurement, portColor: assignedColor, ...dynamicProps
                         }
                     };
                 }
             });
-
-            return enrichedFeatures;
         });
     };
 
     const handleDeleteFeature = (id) => {
-        if (window.confirm("Delete this label?")) {
-            setAoFeatures(prev => prev.filter(f => f.id !== id));
-        }
+        if (window.confirm("Delete this label?")) setAoFeatures(prev => prev.filter(f => f.id !== id));
     };
+
+    const handleDropdownChange = (e, featureId, attrName) => {
+        const newValue = e.target.value;
+        setEditValue(newValue);
+        updateFeatureProperties(featureId, attrName, newValue);
+        setEditingCell({featureId: null, attrName: null});
+        setSelectedFeatureId(null);
+        setTimeout(() => setSelectedFeatureId(featureId), 10);
+    };
+
+    const handleEditKeyDown = (e) => {
+        if (e.key === 'Enter') saveEdit();
+        if (e.key === 'Escape') setEditingCell({featureId: null, attrName: null});
+    };
+
+    const showNotif = (message, type = 'info') => setNotification({show: true, message, type});
 
     const startEditing = (featureId, attrName, currentValue, e) => {
         e.stopPropagation();
@@ -359,14 +393,11 @@ const EditProject = () => {
         setAoFeatures(prev => prev.map(f => {
             if (f.id === featureId) {
                 const updatedProperties = {...f.properties, [attrName]: newValue};
-
                 if (oLabelTemplate && !oLabelTemplate.isSingleColorStyle && oLabelTemplate.colourAttributeName === attrName) {
                     const colorAttr = oLabelTemplate.attributes.find(attr => attr.name === attrName);
                     if (colorAttr && colorAttr.categoryValues) {
                         const selectedCategory = colorAttr.categoryValues.find(cat => cat.value === newValue);
-                        if (selectedCategory && selectedCategory.color) {
-                            updatedProperties.portColor = selectedCategory.color;
-                        }
+                        if (selectedCategory && selectedCategory.color) updatedProperties.portColor = selectedCategory.color;
                     }
                 }
                 return {...f, properties: updatedProperties};
@@ -376,135 +407,77 @@ const EditProject = () => {
     };
 
     const saveEdit = () => {
-        if (oEditingCell.featureId && oEditingCell.attrName) {
-            updateFeatureProperties(oEditingCell.featureId, oEditingCell.attrName, sEditValue);
-        }
+        if (oEditingCell.featureId && oEditingCell.attrName) updateFeatureProperties(oEditingCell.featureId, oEditingCell.attrName, sEditValue);
         setEditingCell({featureId: null, attrName: null});
-    };
-
-    const handleDropdownChange = (e, featureId, attrName) => {
-        const newValue = e.target.value;
-        setEditValue(newValue);
-        updateFeatureProperties(featureId, attrName, newValue);
-        setEditingCell({featureId: null, attrName: null});
-
-        setSelectedFeatureId(null);
-        setTimeout(() => setSelectedFeatureId(featureId), 10);
-    };
-
-    const handleEditKeyDown = (e) => {
-        if (e.key === 'Enter') saveEdit();
-        if (e.key === 'Escape') setEditingCell({featureId: null, attrName: null});
     };
 
     const filteredLabels = aoFeatures.filter(feature => {
         const props = feature.properties || {};
-        if (sFilterCollab !== 'all' && props.annotator.toLowerCase() !== sFilterCollab.toLowerCase()) return false;
-        if (bShowValidatedOnly && props.status !== 'Validated') return false;
+
+        // 1. Filter by Collaborator (Added a '?' safety check in case annotator is blank!)
+        if (sFilterCollab !== 'all' && props.annotator?.toLowerCase() !== sFilterCollab.toLowerCase()) {
+            return false;
+        }
+
+        // 2. Filter by Validated Only
+        if (bShowValidatedOnly) {
+            // Force undefined/null to become 0, then check it
+            const iCount = props.reviewCount || 0;
+            if (iCount === 0) {
+                return false;
+            }
+        }
+
         return true;
     });
 
+    const iTotalValidated = filteredLabels.filter(f => (f.properties.reviewCount || 0) > 0).length;
+
     const renderThumbnail = (sName) => (
-        <div style={{
-            width: '60px',
-            height: '60px',
-            borderRadius: '6px',
-            background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'white',
-            border: '1px solid #ccc',
-            flexShrink: 0
-        }}>
+        <div style={{ width: '60px', height: '60px', borderRadius: '6px', background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', border: '1px solid #ccc', flexShrink: 0 }}>
             <span style={{fontSize: '8px', textTransform: 'uppercase', fontWeight: 'bold'}}>TIFF</span>
         </div>
     );
 
-    // --- BULLETPROOF COPY HANDLER ---
     const copyToClipboard = (e, text) => {
         if (e) e.stopPropagation();
-
-        // 1. Try modern clipboard API (only works on https or localhost)
         if (navigator.clipboard && window.isSecureContext) {
             navigator.clipboard.writeText(text);
             showNotif("Copied to clipboard! 📋", "success");
         } else {
-            // 2. Fallback for custom IPs and HTTP
             const textArea = document.createElement("textarea");
             textArea.value = text;
-            // Prevent scrolling to the bottom of the page
-            textArea.style.position = "fixed";
-            textArea.style.left = "-999999px";
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-
-            try {
-                document.execCommand('copy');
-                showNotif("Copied to clipboard! 📋", "success");
-            } catch (err) {
-                console.error('Fallback: Oops, unable to copy', err);
-                showNotif("Failed to copy", "error");
-            }
-
+            textArea.style.position = "fixed"; textArea.style.left = "-999999px";
+            document.body.appendChild(textArea); textArea.focus(); textArea.select();
+            try { document.execCommand('copy'); showNotif("Copied to clipboard! 📋", "success"); }
+            catch (err) { showNotif("Failed to copy", "error"); }
             document.body.removeChild(textArea);
         }
     };
 
     return (
         <>
-            <AppNotification
-                show={oNotification.show}
-                message={oNotification.message}
-                type={oNotification.type}
-                onClose={() => setNotification(prev => ({...prev, show: false}))}
-            />
+            <AppNotification show={oNotification.show} message={oNotification.message} type={oNotification.type} onClose={() => setNotification(prev => ({...prev, show: false}))} />
 
             {/* --- PROPERTIES MODAL --- */}
             {oImagePropertiesModal && (
-                <div style={{
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex',
-                    alignItems: 'center', justifyContent: 'center'
-                }}>
-                    <div style={{
-                        background: 'white', padding: '20px', borderRadius: '8px',
-                        width: '500px', maxWidth: '90%', boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
-                    }}>
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ background: 'white', padding: '20px', borderRadius: '8px', width: '500px', maxWidth: '90%', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee', paddingBottom: '10px', marginBottom: '15px' }}>
                             <h3 style={{ margin: 0 }}>Image Properties</h3>
                             <button onClick={() => setImagePropertiesModal(null)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#999' }}>✖</button>
                         </div>
-
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '14px', color: '#444' }}>
-
-                            {/* --- THE NEW COPY BUTTON IS HERE --- */}
                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                                <strong>Name:</strong>
-                                <span style={{ wordBreak: 'break-all' }}>{oImagePropertiesModal.name}</span>
-                                <button
-                                    title="Copy image name"
-                                    onClick={(e) => copyToClipboard(e, oImagePropertiesModal.name)}
-                                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '0', marginTop: '-2px' }}
-                                >
-                                    📋
-                                </button>
+                                <strong>Name:</strong> <span style={{ wordBreak: 'break-all' }}>{oImagePropertiesModal.name}</span>
+                                <button title="Copy image name" onClick={(e) => copyToClipboard(e, oImagePropertiesModal.name)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '0', marginTop: '-2px' }}>📋</button>
                             </div>
-
                             <div><strong>Date Added:</strong> {oImagePropertiesModal.date}</div>
                             <div><strong>ID:</strong> <span style={{ fontFamily: 'monospace', color: '#666' }}>{oImagePropertiesModal.id}</span></div>
                             <div><strong>Relative Path:</strong> <span style={{ fontFamily: 'monospace', wordBreak: 'break-all', color: '#666' }}>{oImagePropertiesModal.relative_path}</span></div>
                             <div><strong>Annotator System:</strong> {oImagePropertiesModal.annotator || "System"}</div>
-                            <div>
-                                <strong>Bounding Box (WKT):</strong>
-                                <div style={{ background: '#f5f5f5', padding: '8px', borderRadius: '4px', marginTop: '4px', fontSize: '12px', fontFamily: 'monospace', maxHeight: '80px', overflowY: 'auto' }}>
-                                    {oImagePropertiesModal.bbox || "None"}
-                                </div>
-                            </div>
+                            <div><strong>Bounding Box (WKT):</strong><div style={{ background: '#f5f5f5', padding: '8px', borderRadius: '4px', marginTop: '4px', fontSize: '12px', fontFamily: 'monospace', maxHeight: '80px', overflowY: 'auto' }}>{oImagePropertiesModal.bbox || "None"}</div></div>
                         </div>
-
                         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
                             <AppButton sVariant="primary" fnOnClick={() => setImagePropertiesModal(null)}>Close</AppButton>
                         </div>
@@ -512,71 +485,121 @@ const EditProject = () => {
                 </div>
             )}
 
-            <div style={{
-                position: 'fixed',
-                top: '64px',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                display: 'flex',
-                overflow: 'hidden',
-                fontFamily: 'sans-serif',
-                background: '#fff'
-            }}>
+            {/* --- RE-DESIGNED ISSUE / RESOLUTION MODAL --- */}
+            {oActiveChatFeature && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ background: '#f4f7f6', borderRadius: '12px', width: '450px', height: '600px', maxWidth: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+
+                        <div style={{ background: '#fff', padding: '15px 20px', borderBottom: '1px solid #e0e0e0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <h3 style={{ margin: '0 0 4px 0', fontSize: '16px', color: '#d9534f' }}>🚩 Label Issues</h3>
+                                <div style={{ fontSize: '12px', color: '#888' }}>Creator: {oActiveChatFeature.properties.annotator || 'Unknown'}</div>
+                            </div>
+                            <button onClick={() => setActiveChatFeature(null)} style={{ background: '#eee', border: 'none', borderRadius: '50%', width: '30px', height: '30px', fontSize: '14px', cursor: 'pointer', color: '#555', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✖</button>
+                        </div>
+
+                        <div ref={chatScrollRef} style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                            {(!oActiveChatFeature.properties.reviewNotes || oActiveChatFeature.properties.reviewNotes.length === 0) ? (
+                                <div style={{ textAlign: 'center', color: '#aaa', marginTop: '40px', fontStyle: 'italic' }}>
+                                    <div style={{ fontSize: '30px', marginBottom: '10px' }}>✅</div>
+                                    There are no notes or issues for this label.
+                                </div>
+                            ) : (
+                                oActiveChatFeature.properties.reviewNotes.map((noteObj, idx) => (
+                                    <div key={noteObj.id || idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                        <div style={{ fontSize: '11px', color: '#888', marginBottom: '4px', marginLeft: '4px' }}>
+                                            Logged by: {noteObj.sender}
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '100%' }}>
+                                            <div style={{
+                                                background: noteObj.resolved ? '#f8f9fa' : '#ffeeba',
+                                                color: noteObj.resolved ? '#6c757d' : '#856404',
+                                                padding: '10px 14px',
+                                                borderRadius: '16px 16px 16px 0px',
+                                                border: noteObj.resolved ? '1px solid #dee2e6' : '1px solid #ffe8a1',
+                                                fontSize: '14px',
+                                                lineHeight: '1.4',
+                                                wordBreak: 'break-word',
+                                                textDecoration: noteObj.resolved ? 'line-through' : 'none'
+                                            }}>
+                                                {noteObj.note}
+                                            </div>
+
+                                            {/* Resolve Button next to unresolved notes */}
+                                            {!noteObj.resolved ? (
+                                                <button
+                                                    onClick={() => handleResolveIssue(noteObj.id)}
+                                                    style={{ background: '#28a745', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>
+                                                    Resolve
+                                                </button>
+                                            ) : (
+                                                <span title="Resolved" style={{ fontSize: '16px' }}>✅</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        {/* 1. RESOLVE BUTTON: Visible to EVERYONE if there are active issues */}
+                        {(oActiveChatFeature.properties.reviewNotes?.length > 0) && (
+                            <div style={{ background: '#fff', padding: '15px', borderTop: '1px solid #e0e0e0', display: 'flex', justifyContent: 'center' }}>
+                                <button
+                                    onClick={handleResolveIssue}
+                                    style={{ background: '#28a745', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', width: '100%', fontSize: '14px' }}>
+                                    ✅ Mark as Resolved
+                                </button>
+                            </div>
+                        )}
+
+                        {/* 2. LOG ISSUE FORM: Only visible to Reviewers / Owners */}
+                        {bIsReviewer && (
+                            <form onSubmit={handleSendIssue} style={{ background: '#fff', padding: '15px', borderTop: '1px solid #e0e0e0', display: 'flex', gap: '10px' }}>
+                                <input
+                                    type="text"
+                                    placeholder="Describe the issue..."
+                                    value={sChatInputValue}
+                                    onChange={(e) => setChatInputValue(e.target.value)}
+                                    style={{ flex: 1, padding: '10px 15px', borderRadius: '20px', border: '1px solid #ddd', outline: 'none', fontSize: '14px' }}
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={!sChatInputValue.trim()}
+                                    style={{
+                                        background: sChatInputValue.trim() ? '#d9534f' : '#ccc',
+                                        color: '#fff', border: 'none', borderRadius: '20px', padding: '0 20px',
+                                        fontWeight: 'bold', cursor: sChatInputValue.trim() ? 'pointer' : 'not-allowed', transition: 'background 0.2s'
+                                    }}
+                                >
+                                    Log Issue
+                                </button>
+                            </form>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            <div style={{ position: 'fixed', top: '64px', bottom: 0, left: 0, right: 0, display: 'flex', overflow: 'hidden', fontFamily: 'sans-serif', background: '#fff' }}>
 
                 {/* SIDEBAR */}
-                <div style={{
-                    width: '350px',
-                    height: '100%',
-                    borderRight: '1px solid #ccc',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    background: '#f9f9f9',
-                    flexShrink: 0
-                }}>
+                <div style={{ width: '350px', height: '100%', borderRight: '1px solid #ccc', display: 'flex', flexDirection: 'column', background: '#f9f9f9', flexShrink: 0 }}>
                     <div style={{padding: '15px', borderBottom: '1px solid #ddd', background: 'white'}}>
                         <h3 style={{margin: '0 0 10px 0', fontSize: '16px'}}>Images ({aoImages.length})</h3>
 
                         {isImporting && (
-                            <div style={{
-                                background: '#e6f7ff',
-                                border: '1px solid #91d5ff',
-                                borderRadius: '4px',
-                                padding: '8px',
-                                marginBottom: '10px',
-                                fontSize: '12px',
-                                color: '#0050b3',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                fontWeight: 'bold'
-                            }}>
-                                <span>⏳</span>
-                                <span>Downloading & Converting...</span>
+                            <div style={{ background: '#e6f7ff', border: '1px solid #91d5ff', borderRadius: '4px', padding: '8px', marginBottom: '10px', fontSize: '12px', color: '#0050b3', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
+                                <span>⏳</span> <span>Downloading & Converting...</span>
                             </div>
                         )}
 
-                        <AppButton fnOnClick={() => oNavigate('/add-eo', { state: { projectId: sProjectId } })} sVariant="primary"
-                                   oStyle={{width: '100%', fontSize: '12px', marginBottom: '10px'}}>+ Add
-                            Image</AppButton>
+                        <AppButton fnOnClick={() => oNavigate('/add-eo', { state: { projectId: sProjectId } })} sVariant="primary" oStyle={{width: '100%', fontSize: '12px', marginBottom: '10px'}}>+ Add Image</AppButton>
                         <AppButton
                             disabled={!iSelectedImageId}
                             title={!iSelectedImageId ? "Select an image first to style it" : "Style this image"}
                             fnOnClick={() => {
-                                if (!iSelectedImageId) {
-                                    showNotif("Please select an image from the list first!", "warning");
-                                    return;
-                                }
+                                if (!iSelectedImageId) { showNotif("Please select an image from the list first!", "warning"); return; }
                                 oNavigate('/image-styling', {
-                                    state: {
-                                        projectId: sProjectId,
-                                        projectTitle: sProjectTitle,
-                                        imageId: iSelectedImageId,
-                                        imageName: oSelectedImage?.name,
-                                        // --- NEW: Pass these so we don't lose them! ---
-                                        imageBBox: oSelectedImage?.bbox,
-                                        currentStyles: oImageStyles
-                                    }
+                                    state: { projectId: sProjectId, projectTitle: sProjectTitle, imageId: iSelectedImageId, imageName: oSelectedImage?.name, imageBBox: oSelectedImage?.bbox, currentStyles: oImageStyles }
                                 });
                             }}
                             sVariant={iSelectedImageId ? "secondary" : "outline"}
@@ -589,122 +612,24 @@ const EditProject = () => {
                         {aoImages.map(img => {
                             const bIsSelected = iSelectedImageId === img.id;
                             return (
-                                <div
-                                    key={img.id}
-                                    onClick={() => {
-                                        if (iSelectedImageId === img.id) {
-                                            setISelectedImageId(null); // Unselect
-                                        } else {
-                                            setISelectedImageId(img.id); // Select
-                                            if (img.bbox) {
-                                                setMapZoomView(parseWKTBbox(img.bbox));
-                                            }
-                                        }
-                                    }}
-                                    style={{
-                                        padding: '10px',
-                                        marginBottom: '8px',
-                                        background: bIsSelected ? '#e6f7ff' : '#fff',
-                                        border: bIsSelected ? '1px solid #1890ff' : '1px solid #ddd',
-                                        borderRadius: '6px',
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        flexDirection: 'column'
-                                    }}
-                                >
+                                <div key={img.id} onClick={() => { if (iSelectedImageId === img.id) { setISelectedImageId(null); } else { setISelectedImageId(img.id); if (img.bbox) { setMapZoomView(parseWKTBbox(img.bbox)); } } }} style={{ padding: '10px', marginBottom: '8px', background: bIsSelected ? '#e6f7ff' : '#fff', border: bIsSelected ? '1px solid #1890ff' : '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}>
                                     <div style={{display: 'flex', alignItems: 'center'}}>
                                         {renderThumbnail(img.name)}
                                         <div style={{marginLeft: '12px', overflow: 'hidden', flex: 1}}>
-
-                                            {/* Removed the copy button from here, left the clean text */}
-                                            <div style={{
-                                                fontWeight: 'bold',
-                                                fontSize: '13px',
-                                                color: '#333',
-                                                whiteSpace: 'nowrap',
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis'
-                                            }}>
-                                                {img.name}
-                                            </div>
-
-                                            <div
-                                                style={{
-                                                    fontSize: '11px',
-                                                    color: '#666',
-                                                    marginTop: '3px'
-                                                }}>{img.date}</div>
+                                            <div style={{ fontWeight: 'bold', fontSize: '13px', color: '#333', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{img.name}</div>
+                                            <div style={{ fontSize: '11px', color: '#666', marginTop: '3px' }}>{img.date}</div>
                                         </div>
-
                                         <div style={{ display: 'flex', gap: '2px' }}>
-                                            <button
-                                                title="View Image Properties"
-                                                style={{
-                                                    background: 'none',
-                                                    border: 'none',
-                                                    cursor: 'pointer',
-                                                    fontSize: '16px',
-                                                    opacity: 0.7,
-                                                    transition: 'opacity 0.2s',
-                                                }}
-                                                onMouseOver={e => e.currentTarget.style.opacity = 1}
-                                                onMouseOut={e => e.currentTarget.style.opacity = 0.7}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setImagePropertiesModal(img);
-                                                }}
-                                            >
-                                                📑
-                                            </button>
-
-                                            <button
-                                                disabled={!bIsSelected}
-                                                title="Zoom to image"
-                                                style={{
-                                                    background: 'none',
-                                                    border: 'none',
-                                                    cursor: bIsSelected ? 'pointer' : 'not-allowed',
-                                                    opacity: bIsSelected ? 1 : 0.3,
-                                                    transition: 'opacity 0.2s ease-in-out',
-                                                    fontSize: '16px',
-                                                }}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    if (img.bbox) {
-                                                        setMapZoomView([...parseWKTBbox(img.bbox)]);
-                                                    } else {
-                                                        showNotif("No bounding box available for this image.", "warning");
-                                                    }
-                                                }}
-                                            >
-                                                🎯
-                                            </button>
+                                            <button title="View Image Properties" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', opacity: 0.7, transition: 'opacity 0.2s', }} onMouseOver={e => e.currentTarget.style.opacity = 1} onMouseOut={e => e.currentTarget.style.opacity = 0.7} onClick={(e) => { e.stopPropagation(); setImagePropertiesModal(img); }}>📑</button>
+                                            <button disabled={!bIsSelected} title="Zoom to image" style={{ background: 'none', border: 'none', cursor: bIsSelected ? 'pointer' : 'not-allowed', opacity: bIsSelected ? 1 : 0.3, transition: 'opacity 0.2s ease-in-out', fontSize: '16px', }} onClick={(e) => { e.stopPropagation(); if (img.bbox) { setMapZoomView([...parseWKTBbox(img.bbox)]); } else { showNotif("No bounding box available for this image.", "warning"); } }}>🎯</button>
                                         </div>
                                     </div>
-
                                     {bIsSelected && (
-                                        <div style={{
-                                            marginTop: '10px',
-                                            paddingTop: '10px',
-                                            borderTop: '1px dashed #ccc'
-                                        }}
-                                             onClick={e => e.stopPropagation()}>
-                                            <div style={{
-                                                fontSize: '11px',
-                                                fontWeight: 'bold',
-                                                marginBottom: '5px',
-                                                color: '#555'
-                                            }}>Layer Opacity
-                                            </div>
+                                        <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #ccc' }} onClick={e => e.stopPropagation()}>
+                                            <div style={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '5px', color: '#555' }}>Layer Opacity</div>
                                             <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
-                                                <input type="range" min="0" max="100" value={iImageOpacity}
-                                                       onChange={(e) => setImageOpacity(e.target.value)}
-                                                       style={{width: '100%', cursor: 'pointer'}}/>
-                                                <span style={{
-                                                    fontSize: '11px',
-                                                    color: '#666',
-                                                    width: '25px'
-                                                }}>{iImageOpacity}%</span>
+                                                <input type="range" min="0" max="100" value={iImageOpacity} onChange={(e) => setImageOpacity(e.target.value)} style={{width: '100%', cursor: 'pointer'}}/>
+                                                <span style={{ fontSize: '11px', color: '#666', width: '25px' }}>{iImageOpacity}%</span>
                                             </div>
                                         </div>
                                     )}
@@ -716,174 +641,60 @@ const EditProject = () => {
 
                 {/* MAIN CONTENT */}
                 <div style={{flex: 1, height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden'}}>
-                    <div style={{
-                        padding: '12px 20px',
-                        borderBottom: '1px solid #ddd',
-                        background: '#fff',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                    }}>
+                    <div style={{ padding: '12px 20px', borderBottom: '1px solid #ddd', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div>
                             <h2 style={{margin: 0, fontSize: '18px', color: '#2c3e50'}}>{sProjectTitle}</h2>
-                            <span style={{
-                                fontSize: '12px',
-                                color: '#999'
-                            }}>
-                                Current User: {sCurrentUser} | Template: {oLabelTemplate?.name}
-                            </span>
+                            <span style={{ fontSize: '12px', color: '#999' }}>Current User: {sCurrentUser} | Template: {oLabelTemplate?.name}</span>
                         </div>
                         <div style={{display: 'flex', gap: '10px'}}>
-                            <AppButton
-                                sVariant="outline"
-                                oStyle={{fontSize: '13px', padding: '6px 12px'}}
-                                fnOnClick={() => oNavigate('/project-properties', {
-                                    state: {
-                                        projectData: {
-                                            id: oProject.id,
-                                            name: sProjectTitle,
-                                            description: oProject?.description || "",
-                                            mission: oProject?.mission || "Sentinel-2",
-                                            creationDate: oProject?.creationDate || "",
-                                            labelTemplate: oProject?.labellingTemplate || "",
-                                            isPublic: oProject?.isPublic || false,
-                                            annotatorVisibility: oProject?.hasAnnotatorGlobalView ? 'all' : 'own'
-                                        },
-                                        hasLabelTemplate: !!oProject?.labellingTemplate
-                                    }
-                                })}
-                            >
-                                ⚙️ Properties
-                            </AppButton>
-                            <AppButton
-                                fnOnClick={() => oNavigate('/project-collabs', { state: { projectId: sProjectId } })}
-                                sVariant="outline"
-                                oStyle={{fontSize: '13px', padding: '6px 12px'}}>
-                                👥 Collaborators
-                            </AppButton>
-                            <AppButton
-                                fnOnClick={() => oNavigate('/export-project', {
-                                    state: {
-                                        projectId: sProjectId,
-                                        projectTitle: sProjectTitle,
-                                        // Pass real DB flags if you have them, otherwise fallback to true for testing
-                                        bRawDataHosted: true,
-                                        bReviewMode: true
-                                    }
-                                })}
-                                sVariant="primary"
-                                oStyle={{fontSize: '13px', padding: '6px 12px'}}
-                            >
-                                📥 Export Project
-                            </AppButton>
+                            <AppButton sVariant="outline" oStyle={{fontSize: '13px', padding: '6px 12px'}} fnOnClick={() => oNavigate('/project-properties', { state: { projectData: { id: oProject.id, name: sProjectTitle, description: oProject?.description || "", mission: oProject?.mission || "Sentinel-2", creationDate: oProject?.creationDate || "", labelTemplate: oProject?.labellingTemplate || "", isPublic: oProject?.isPublic || false, annotatorVisibility: oProject?.hasAnnotatorGlobalView ? 'all' : 'own' }, hasLabelTemplate: !!oProject?.labellingTemplate } })}>⚙️ Properties</AppButton>
+                            <AppButton fnOnClick={() => oNavigate('/project-collabs', { state: { projectId: sProjectId } })} sVariant="outline" oStyle={{fontSize: '13px', padding: '6px 12px'}}>👥 Collaborators</AppButton>
+                            <AppButton fnOnClick={() => oNavigate('/export-project', { state: { projectId: sProjectId, projectTitle: sProjectTitle, bRawDataHosted: true, bReviewMode: true } })} sVariant="primary" oStyle={{fontSize: '13px', padding: '6px 12px'}}>📥 Export Project</AppButton>
                         </div>
                     </div>
 
                     {/* TOOLBAR */}
                     {oSelectedImage ? (
-                        <div style={{
-                            padding: '8px 20px',
-                            background: '#f4f6f8',
-                            borderBottom: '1px solid #ccc',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            flexWrap: 'wrap',
-                            gap: '15px'
-                        }}>
+                        <div style={{ padding: '8px 20px', background: '#f4f6f8', borderBottom: '1px solid #ccc', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '15px' }}>
                             <div style={{display: 'flex', alignItems: 'center', gap: '20px'}}>
-                                <div style={{
-                                    fontSize: '13px',
-                                    fontWeight: 'bold',
-                                    color: '#555',
-                                    background: '#e1e4e8',
-                                    padding: '4px 8px',
-                                    borderRadius: '4px'
-                                }}>
-                                    🏷️ Labels: {filteredLabels.length}
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#555', background: '#e1e4e8', padding: '4px 8px', borderRadius: '4px' }}>🏷️ Labels: {filteredLabels.length}</div>
+                                    <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#155724', background: '#d4edda', padding: '4px 8px', borderRadius: '4px', border: '1px solid #c3e6cb' }}>✅ Validated: {iTotalValidated}</div>
                                 </div>
-                                <AppButton
-                                    sVariant="success"
-                                    oStyle={{padding: '4px 12px', fontSize: '12px'}}
-                                    fnOnClick={handleSaveLabels}
-                                    disabled={bIsSavingLabels}
-                                >
-                                    {bIsSavingLabels ? "Saving..." : "💾 Save Labels"}
-                                </AppButton>
+                                <AppButton sVariant="success" oStyle={{padding: '4px 12px', fontSize: '12px'}} fnOnClick={handleSaveLabels} disabled={bIsSavingLabels}>{bIsSavingLabels ? "Saving..." : "💾 Save Labels"}</AppButton>
                             </div>
 
                             <div style={{display: 'flex', alignItems: 'center', gap: '20px'}}>
                                 <div style={{display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px'}}>
                                     <span style={{color: '#666', fontWeight: 'bold'}}>Style By:</span>
-                                    <label style={{cursor: 'pointer', display: 'flex', alignItems: 'center'}}>
-                                        <input type="radio" name="styleBy" checked={sStyleBy === 'label'}
-                                               onChange={() => setStyleBy('label')} style={{marginRight: '4px'}}/> Label
-                                    </label>
-                                    <label style={{cursor: 'pointer', display: 'flex', alignItems: 'center'}}>
-                                        <input type="radio" name="styleBy" checked={sStyleBy === 'annotator'}
-                                               onChange={() => setStyleBy('annotator')}
-                                               style={{marginRight: '4px'}}/> Annotator
-                                    </label>
+                                    <label style={{cursor: 'pointer', display: 'flex', alignItems: 'center'}}><input type="radio" name="styleBy" checked={sStyleBy === 'label'} onChange={() => setStyleBy('label')} style={{marginRight: '4px'}}/> Label</label>
+                                    <label style={{cursor: 'pointer', display: 'flex', alignItems: 'center'}}><input type="radio" name="styleBy" checked={sStyleBy === 'annotator'} onChange={() => setStyleBy('annotator')} style={{marginRight: '4px'}}/> Annotator</label>
                                 </div>
                                 <div style={{height: '20px', borderLeft: '1px solid #ccc'}}></div>
-
-                                <select value={sFilterCollab}
-                                        onChange={(e) => setFilterCollab(e.target.value)} style={{
-                                    padding: '4px 8px',
-                                    borderRadius: '4px',
-                                    border: '1px solid #ccc',
-                                    fontSize: '13px'
-                                }}>
+                                <select value={sFilterCollab} onChange={(e) => setFilterCollab(e.target.value)} style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '13px' }}>
                                     {aoCollaborators.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                 </select>
-
-                                <label style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                    fontSize: '13px',
-                                    cursor: 'pointer',
-                                    userSelect: 'none'
-                                }}>
-                                    <input type="checkbox" checked={bShowValidatedOnly}
-                                           onChange={(e) => setShowValidatedOnly(e.target.checked)}/>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer', userSelect: 'none' }}>
+                                    <input type="checkbox" checked={bShowValidatedOnly} onChange={(e) => setShowValidatedOnly(e.target.checked)}/>
                                     <span>Show Validated Only</span>
                                 </label>
                             </div>
                         </div>
                     ) : (
-                        <div style={{
-                            padding: '8px 20px',
-                            background: '#f4f6f8',
-                            borderBottom: '1px solid #ccc',
-                            fontSize: '13px',
-                            color: '#888',
-                            fontStyle: 'italic'
-                        }}>Select an image.</div>
+                        <div style={{ padding: '8px 20px', background: '#f4f6f8', borderBottom: '1px solid #ccc', fontSize: '13px', color: '#888', fontStyle: 'italic' }}>Select an image.</div>
                     )}
 
                     {/* MAP */}
                     <div style={{flex: 1, position: 'relative', width: '100%', minHeight: 0}}>
                         <MapboxMap
-                            aoMarkers={[]}
-                            oInitialView={{latitude: 48.8566, longitude: 2.3522, zoom: 12}}
-                            sActiveGeoTIFF={oSelectedImage ? oSelectedImage.relative_path : null}
-                            oActiveStyle={oSelectedImage ? oImageStyles[oSelectedImage.id] : null}
-                            bEnableGeocoder={true}
-                            bEnableDraw={true}
-                            onDrawUpdate={handleDrawUpdate}
-                            sSelectedFeatureId={sSelectedFeatureId}
-                            onFeatureSelect={(id) => setSelectedFeatureId(id)}
-                            aoFeatures={filteredLabels}
-                            iImageOpacity={iImageOpacity / 100}
-                            bHasPolygons={
-                                oLabelTemplate?.geometryTypes?.some(t => t.toLowerCase().includes('polygon')) ?? true
-                            }
-                            bHasLines={
-                                oLabelTemplate?.geometryTypes?.some(t => t.toLowerCase().includes('line')) ?? true
-                            }
-                            oZoomToBBox={aoMapZoomView}
-                            sCurrentDrawColor={sDrawingColor}
+                            aoMarkers={[]} oInitialView={{latitude: 48.8566, longitude: 2.3522, zoom: 12}}
+                            sActiveGeoTIFF={oSelectedImage ? oSelectedImage.relative_path : null} oActiveStyle={oSelectedImage ? oImageStyles[oSelectedImage.id] : null}
+                            bEnableGeocoder={true} bEnableDraw={true} onDrawUpdate={handleDrawUpdate}
+                            sSelectedFeatureId={sSelectedFeatureId} onFeatureSelect={(id) => setSelectedFeatureId(id)}
+                            aoFeatures={filteredLabels} iImageOpacity={iImageOpacity / 100}
+                            bHasPolygons={ oLabelTemplate?.geometryTypes?.some(t => t.toLowerCase().includes('polygon')) ?? true }
+                            bHasLines={ oLabelTemplate?.geometryTypes?.some(t => t.toLowerCase().includes('line')) ?? true }
+                            oZoomToBBox={aoMapZoomView} sCurrentDrawColor={sDrawingColor}
                             sInitialMapStyle="mapbox://styles/mapbox/satellite-v9"
                             bPreventSelfIntersection={oLabelTemplate ? !oLabelTemplate.isSelfIntersectAllowed : false}
                             bPreventPolygonIntersection={oLabelTemplate ? !oLabelTemplate.isPolygonsIntersectAllowed : false}
@@ -891,165 +702,103 @@ const EditProject = () => {
                     </div>
 
                     {/* TABLE */}
-                    <div style={{
-                        height: '200px',
-                        borderTop: '1px solid #ddd',
-                        background: '#fff',
-                        display: 'flex',
-                        flexDirection: 'column'
-                    }}>
-                        <div style={{
-                            padding: '8px 15px',
-                            background: '#fafafa',
-                            borderBottom: '1px solid #eee',
-                            fontWeight: 'bold',
-                            fontSize: '13px'
-                        }}>
+                    <div style={{ height: '200px', borderTop: '1px solid #ddd', background: '#fff', display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ padding: '8px 15px', background: '#fafafa', borderBottom: '1px solid #eee', fontWeight: 'bold', fontSize: '13px' }}>
                             Feature Attributes ({oLabelTemplate?.name || "Loading..."})
                         </div>
-
                         <div style={{overflow: 'auto', flex: 1}}>
                             <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '13px'}}>
                                 <thead style={{position: 'sticky', top: 0, background: 'white', zIndex: 10}}>
                                 <tr style={{textAlign: 'left', color: '#666'}}>
                                     <th style={thStyle}>Color</th>
-
-                                    {oLabelTemplate?.attributes?.map(attr => (
-                                        <th key={attr.name} style={thStyle}>{attr.name}</th>
-                                    ))}
-
+                                    {oLabelTemplate?.attributes?.map(attr => ( <th key={attr.name} style={thStyle}>{attr.name}</th> ))}
                                     <th style={thStyle}>Measurement</th>
                                     <th style={thStyle}>Annotator</th>
+                                    <th style={thStyle}>Reviews</th>
                                     <th style={thStyle}>Actions</th>
                                 </tr>
                                 </thead>
                                 <tbody>
-                                {filteredLabels.map((feature, index) => (
-                                    <tr
-                                        key={feature.id || index}
-                                        onClick={() => setSelectedFeatureId(feature.id)}
-                                        style={{
-                                            borderBottom: '1px solid #eee',
-                                            background: feature.id === sSelectedFeatureId ? '#fff8e1' : 'white'
-                                        }}
-                                    >
-                                        <td style={tdStyle}>
-                                            <div style={{
-                                                width: '15px',
-                                                height: '15px',
-                                                borderRadius: '50%',
-                                                background: feature.properties.portColor
-                                            }}></div>
-                                        </td>
+                                {filteredLabels.map((feature, index) => {
+                                    const aoReviewers = feature.properties.reviewers;
+                                    const bHasApproved = Array.isArray(aoReviewers) ? aoReviewers.includes(sCurrentUser) : false;
+                                    const iNoteCount = feature.properties.reviewNotes?.length || 0;
 
-                                        {oLabelTemplate?.attributes?.map(attr => {
-                                            const bIsEditing = oEditingCell.featureId === feature.id && oEditingCell.attrName === attr.name;
+                                    return (
+                                        <tr key={feature.id || index} onClick={() => setSelectedFeatureId(feature.id)} style={{ borderBottom: '1px solid #eee', background: feature.id === sSelectedFeatureId ? '#fff8e1' : 'white' }}>
+                                            <td style={tdStyle}><div style={{ width: '15px', height: '15px', borderRadius: '50%', background: feature.properties.portColor }}></div></td>
 
-                                            return (
-                                                <td
-                                                    key={attr.name}
-                                                    style={{...tdStyle, cursor: bIsEditing ? 'default' : 'text'}}
-                                                    title={bIsEditing ? "" : "Click to edit"}
-                                                    onClick={(e) => {
-                                                        if (!bIsEditing) startEditing(feature.id, attr.name, feature.properties[attr.name], e);
-                                                    }}
-                                                >
-                                                    {bIsEditing ? (
-                                                        attr.type === "category" && attr.categoryValues ? (
-                                                            <select
-                                                                autoFocus
-                                                                value={sEditValue}
-                                                                onChange={(e) => handleDropdownChange(e, feature.id, attr.name)}
-                                                                onClick={(e) => e.stopPropagation()}
-                                                                style={editInputStyle}
-                                                            >
-                                                                <option value="" disabled={!attr.isOptional}>-- Select
-                                                                    --
-                                                                </option>
-                                                                {attr.categoryValues.map(cat => (
-                                                                    <option key={cat.value} value={cat.value}>
-                                                                        {cat.value}
-                                                                    </option>
-                                                                ))}
-                                                            </select>
+                                            {oLabelTemplate?.attributes?.map(attr => {
+                                                const bIsEditing = oEditingCell.featureId === feature.id && oEditingCell.attrName === attr.name;
+                                                return (
+                                                    <td key={attr.name} style={{...tdStyle, cursor: bIsEditing ? 'default' : 'text'}} title={bIsEditing ? "" : "Click to edit"} onClick={(e) => { if (!bIsEditing) startEditing(feature.id, attr.name, feature.properties[attr.name], e); }}>
+                                                        {bIsEditing ? (
+                                                            attr.type === "category" && attr.categoryValues ? (
+                                                                <select autoFocus value={sEditValue} onChange={(e) => handleDropdownChange(e, feature.id, attr.name)} onClick={(e) => e.stopPropagation()} style={editInputStyle}>
+                                                                    <option value="" disabled={!attr.isOptional}>-- Select --</option>
+                                                                    {attr.categoryValues.map(cat => ( <option key={cat.value} value={cat.value}>{cat.value}</option> ))}
+                                                                </select>
+                                                            ) : (
+                                                                <input type={attr.type === 'float' || attr.type === 'integer' ? 'number' : 'text'} step={attr.type === 'float' ? 'any' : '1'} autoFocus value={sEditValue} onChange={(e) => setEditValue(e.target.value)} onBlur={saveEdit} onKeyDown={handleEditKeyDown} onClick={(e) => e.stopPropagation()} placeholder={attr.isOptional ? "Optional" : "Required"} style={{ ...editInputStyle, border: (!attr.isOptional && !sEditValue) ? '2px solid red' : '2px solid #1890ff' }} />
+                                                            )
                                                         ) : (
-                                                            <input
-                                                                type={attr.type === 'float' || attr.type === 'integer' ? 'number' : 'text'}
-                                                                step={attr.type === 'float' ? 'any' : '1'}
-                                                                autoFocus
-                                                                value={sEditValue}
-                                                                onChange={(e) => setEditValue(e.target.value)}
-                                                                onBlur={saveEdit}
-                                                                onKeyDown={handleEditKeyDown}
-                                                                onClick={(e) => e.stopPropagation()}
-                                                                placeholder={attr.isOptional ? "Optional" : "Required"}
-                                                                style={{
-                                                                    ...editInputStyle,
-                                                                    border: (!attr.isOptional && !sEditValue) ? '2px solid red' : '2px solid #1890ff'
-                                                                }}
-                                                            />
-                                                        )
-                                                    ) : (
-                                                        <div style={{
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'space-between'
-                                                        }}>
-                                                        <span style={{
-                                                            color: (!feature.properties[attr.name] && !attr.isOptional) ? 'red' : 'inherit',
-                                                            fontStyle: !feature.properties[attr.name] ? 'italic' : 'normal'
-                                                        }}>
-                                                            {feature.properties[attr.name] || (attr.isOptional ? "N/A" : "Missing!")}
-                                                        </span>
-                                                            <span style={{color: '#ccc', fontSize: '12px'}}>✎</span>
-                                                        </div>
-                                                    )}
-                                                </td>
-                                            );
-                                        })}
+                                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                                <span style={{ color: (!feature.properties[attr.name] && !attr.isOptional) ? 'red' : 'inherit', fontStyle: !feature.properties[attr.name] ? 'italic' : 'normal' }}>
+                                                                    {feature.properties[attr.name] || (attr.isOptional ? "N/A" : "Missing!")}
+                                                                </span>
+                                                                <span style={{color: '#ccc', fontSize: '12px'}}>✎</span>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                );
+                                            })}
 
-                                        <td style={tdStyle}>{feature.properties.measurement}</td>
-                                        <td style={tdStyle}>{feature.properties.annotator}</td>
-                                        <td style={tdStyle}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                <button
-                                                    title="Save Label"
-                                                    style={{
-                                                        background: 'none',
-                                                        border: 'none',
-                                                        cursor: bIsSavingLabels ? 'not-allowed' : 'pointer',
-                                                        fontSize: '14px',
-                                                        opacity: bIsSavingLabels ? 0.5 : 1
-                                                    }}
-                                                    disabled={bIsSavingLabels}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleSaveLabels();
-                                                    }}
-                                                >
-                                                    💾
-                                                </button>
-                                                <button
-                                                    title="Delete Label"
-                                                    style={{
-                                                        color: '#f30909',
-                                                        background: 'none',
-                                                        border: 'none',
-                                                        cursor: 'pointer',
-                                                        fontWeight: 'bold',
-                                                        fontSize: '14px'
-                                                    }}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleDeleteFeature(feature.id);
-                                                    }}
-                                                >
-                                                    ❌
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
+                                            <td style={tdStyle}>{feature.properties.measurement}</td>
+                                            <td style={tdStyle}>{feature.properties.annotator}</td>
+                                            <td style={tdStyle}>
+                                                <span style={{ background: '#e2e3e5', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                                    👍 {feature.properties.reviewCount || 0}
+                                                </span>
+                                            </td>
+
+                                            <td style={tdStyle}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                    {bIsReviewer && (
+                                                        <button title={bHasApproved ? "You already approved this" : "Approve Label"} style={{ background: 'none', border: 'none', fontSize: '14px', cursor: bHasApproved ? 'not-allowed' : 'pointer', opacity: bHasApproved ? 0.3 : 1 }} disabled={bHasApproved} onClick={(e) => { e.stopPropagation(); handleApproveLabel(feature); }}>
+                                                            ✅
+                                                        </button>
+                                                    )}
+
+                                                    {/* --- SMART FLAG BUTTON --- */}
+                                                    {(() => {
+                                                        const aoNotes = feature.properties.reviewNotes || [];
+                                                        const iUnresolvedCount = aoNotes.filter(n => !n.resolved).length;
+                                                        const iTotalNotes = aoNotes.length;
+
+                                                        return (
+                                                            <button
+                                                                title="Notes & Issues"
+                                                                style={{
+                                                                    background: iUnresolvedCount > 0 ? '#fdf2f2' : (iTotalNotes > 0 ? '#e6f7ff' : 'none'),
+                                                                    border: iUnresolvedCount > 0 ? '1px solid #f5c6cb' : (iTotalNotes > 0 ? '1px solid #91d5ff' : 'none'),
+                                                                    padding: '2px 8px', borderRadius: '12px', cursor: 'pointer', fontSize: '14px',
+                                                                    display: 'flex', alignItems: 'center', gap: '4px'
+                                                                }}
+                                                                onClick={(e) => { e.stopPropagation(); openChatModal(feature); }}
+                                                            >
+                                                                {iUnresolvedCount > 0 ? '🚩' : (iTotalNotes > 0 ? '💬' : '📭')}
+                                                                {iUnresolvedCount > 0 && <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#d9534f' }}>{iUnresolvedCount}</span>}
+                                                            </button>
+                                                        );
+                                                    })()}
+
+                                                    <button title="Save Label" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px' }} onClick={(e) => { e.stopPropagation(); handleSaveLabels(); }}>💾</button>
+                                                    <button title="Delete Label" style={{ color: '#f30909', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' }} onClick={(e) => { e.stopPropagation(); handleDeleteFeature(feature.id); }}>❌</button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                                 </tbody>
                             </table>
                         </div>
@@ -1062,8 +811,5 @@ const EditProject = () => {
 
 const thStyle = {padding: '10px 15px', borderBottom: '1px solid #eee'};
 const tdStyle = {padding: '10px 15px'};
-const editInputStyle = {
-    width: '100%', padding: '4px', boxSizing: 'border-box',
-    border: '2px solid #1890ff', borderRadius: '4px', outline: 'none'
-};
+const editInputStyle = { width: '100%', padding: '4px', boxSizing: 'border-box', border: '2px solid #1890ff', borderRadius: '4px', outline: 'none' };
 export default EditProject;

@@ -1,7 +1,8 @@
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # Load variables from .env file (default)
@@ -20,11 +21,11 @@ engine = create_engine(
     # Each gunicorn worker process has its own pool.
     # Total max DB connections = workers × (pool_size + max_overflow)
     # With 8 workers: 8 × (3 + 5) = 64 connections max, well below pg max_connections.
-    pool_size=3,          # persistent connections kept alive per worker
-    max_overflow=5,       # extra connections allowed during bursts, then discarded
-    pool_timeout=30,      # seconds to wait for a free connection before raising an error
-    pool_recycle=1800,    # recycle connections after 30 min to avoid stale/dead connections
-    pool_pre_ping=True,   # test connection health before use; discards dead connections silently
+    pool_size=3,  # persistent connections kept alive per worker
+    max_overflow=5,  # extra connections allowed during bursts, then discarded
+    pool_timeout=30,  # seconds to wait for a free connection before raising an error
+    pool_recycle=1800,  # recycle connections after 30 min to avoid stale/dead connections
+    pool_pre_ping=True,  # test connection health before use; discards dead connections silently
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -35,8 +36,9 @@ from sqlalchemy import inspect, text
 def ensure_legacy_schema_compatibility():
     inspector = inspect(engine)
     statements = []
-
+    # ═══════════════════════════════════════════════════════════════════
     # 1. USERS TABLE
+    # ═══════════════════════════════════════════════════════════════════
     if "users" in inspector.get_table_names():
         user_columns = {column["name"] for column in inspector.get_columns("users")}
         if "role" not in user_columns:
@@ -51,13 +53,13 @@ def ensure_legacy_schema_compatibility():
         if "updated_at" not in user_columns:
             statements.append(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP")
-
+    # ═══════════════════════════════════════════════════════════════════
     # 2. DATASET IMAGES TABLE
+    # ═══════════════════════════════════════════════════════════════════
     if "dataset_images" in inspector.get_table_names():
         dataset_image_columns = {column["name"] for column in inspector.get_columns("dataset_images")}
         if "bandpaths" not in dataset_image_columns:
             statements.append("ALTER TABLE dataset_images ADD COLUMN IF NOT EXISTS bandpaths VARCHAR")
-
     # ═══════════════════════════════════════════════════════════════════
     # 3. LABELLING TEMPLATES TABLE (Your New Feature!)
     # ═══════════════════════════════════════════════════════════════════
@@ -74,6 +76,25 @@ def ensure_legacy_schema_compatibility():
         if "hasMultiPolygons" not in template_columns:
             statements.append(
                 "ALTER TABLE labelling_templates ADD COLUMN IF NOT EXISTS \"hasMultiPolygons\" BOOLEAN DEFAULT FALSE")
+            # ═══════════════════════════════════════════════════════════════════
+            # 4. LABELS TABLE (Reviews Feature)
+            # ═══════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════
+    # 4. LABELS TABLE (Reviews Feature)
+    # ═══════════════════════════════════════════════════════════════════
+    if "labels" in inspector.get_table_names():
+        labels_columns = {column["name"] for column in inspector.get_columns("labels")}
+
+        # Check for both cases (reviewCount vs reviewcount) just in case SQLAlchemy lowercased it
+        if "reviewCount" not in labels_columns and "reviewcount" not in labels_columns:
+            statements.append("ALTER TABLE labels ADD COLUMN IF NOT EXISTS \"reviewCount\" INTEGER DEFAULT 0")
+
+        if "reviewers" not in labels_columns:
+            statements.append("ALTER TABLE labels ADD COLUMN IF NOT EXISTS reviewers JSON DEFAULT '[]'::json")
+
+        if "reviewNotes" not in labels_columns and "reviewnotes" not in labels_columns:
+            statements.append(
+                "ALTER TABLE labels ADD COLUMN IF NOT EXISTS \"reviewNotes\" JSON DEFAULT '[]'::json")
     # ═══════════════════════════════════════════════════════════════════
 
     if not statements:
@@ -83,7 +104,6 @@ def ensure_legacy_schema_compatibility():
     with engine.begin() as connection:
         for statement in statements:
             connection.execute(text(statement))
-
 
 
 # Dependency for API

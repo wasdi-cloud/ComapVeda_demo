@@ -25,20 +25,7 @@ class AttributeValue(BaseModel):
 
 
 class LabelItem(BaseModel):
-    # labelId: Optional[str] = Field(None, description="Unique identifier for the label")
-    #
-    # projectId: Optional[str] = Field(None, description="Unique identifier for the projectl")
-    #
-    # imageName: str = Field(..., description="Unique identifier for the image associated with the label")
-    #
-    # geometryType: str = Field(..., description="Type of geometry (e.g., Point, LineString, Polygon)")
-    #
-    # coordinates: str = Field(..., description="Coordinates of the geometry in GeoJSON format")
-    #
-    # # attributes: Optional[List[AttributeValue]] = Field(None, description="List of attributes associated with the label")
-    # attributes: Dict[str, Any] = {}
 
-    # todo this needs to change when we implement the images from db :
 
     labelId: Optional[str] = None
     imageName: str
@@ -46,3 +33,6 @@ class LabelItem(BaseModel):
     coordinates: List[Any]
     # FIX: Tell Pydantic to accept a standard JSON dictionary/object for attributes
     attributes: Dict[str, Any] = {}
+    reviewCount: Optional[int] = 0
+    reviewers: Optional[List[str]] = []
+    reviewNotes: Optional[List[Dict[str, Any]]] = []

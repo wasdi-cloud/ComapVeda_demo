@@ -51,12 +51,23 @@ export const remove = async (sLabelId) => {
  * Mark a label as Validated/Approved.
  * @param {String} sLabelId
  */
-export const approve = async (sLabelId) => {
-    return await oRequest(`/labels/${sLabelId}/approve`, {
-        method: 'POST'
+export const approveLabelApi = async (sLabelId) => {
+    return await oRequest(`/labels/approve?sLabelId=${sLabelId}`, { method: 'GET' });
+};
+
+export const sendLabelNoteApi = async (labelId, note) => {
+    return await oRequest('/labels/addNote', {
+        method: 'POST',
+        body: JSON.stringify({ labelId: labelId, note: note })
     });
 };
 
+export const resolveLabelNoteApi = async (labelId, noteId) => {
+    return await oRequest('/labels/resolveNote', {
+        method: 'POST',
+        body: JSON.stringify({ labelId: labelId, noteId: noteId })
+    });
+};
 /**
  * Mark a label as Rejected (usually deletes it or flags it for correction).
  * @param {String} sLabelId
