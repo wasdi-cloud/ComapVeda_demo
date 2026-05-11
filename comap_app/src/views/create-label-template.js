@@ -52,13 +52,13 @@ const ColorInputGroup = ({value, onChange, disabled}) => {
     );
 };
 
-const NewLabelTemplate = () => {
+const NewLabelTemplate = ({ propMode = null, propTemplateId = null, onCloseModal = null })=> {
     const navigate = useNavigate();
     const location = useLocation();
 
     // --- ROUTER STATE ---
-    const sTemplateId = location.state?.templateId || null;
-    const sMode = location.state?.mode || 'create'; // 'create', 'edit', or 'view'
+    const sTemplateId = propTemplateId || location.state?.templateId || null;
+    const sMode = propMode || location.state?.mode || 'create';
     const bIsViewMode = sMode === 'view';
 
     // --- NOTIFICATION & MODAL STATE ---
@@ -605,8 +605,19 @@ const NewLabelTemplate = () => {
 
                 {/* FOOTER */}
                 <div style={{display: 'flex', justifyContent: 'flex-end', gap: '15px'}}>
-                    <AppButton sVariant="outline" fnOnClick={() => navigate(-1)}>
-                        {bIsViewMode ? 'Go Back' : 'Cancel'}
+                    <AppButton
+                        sVariant="outline"
+                        type="button"
+                        fnOnClick={() => {
+                            // If it's a modal, use the close function. Otherwise, go back in history.
+                            if (onCloseModal) {
+                                onCloseModal();
+                            } else {
+                                navigate(-1);
+                            }
+                        }}
+                    >
+                        {bIsViewMode ? 'Close' : 'Cancel'}
                     </AppButton>
                     {!bIsViewMode && (
                         <AppButton sVariant="success" fnOnClick={handleSaveTemplate}>

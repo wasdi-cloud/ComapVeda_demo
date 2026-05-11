@@ -2,12 +2,12 @@ import io
 import json
 import logging
 import os
-import time
 import zipfile
 from datetime import datetime
-from fastapi.responses import StreamingResponse
+
 import geopandas as gpd
 from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi.responses import StreamingResponse
 from shapely.geometry import shape
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -20,6 +20,8 @@ from entities.Label import LabelEntity
 from entities.User import User
 from utils import MailUtils
 from utils.CollaboratorRole import CollaboratorRole
+from utils.auth_utils import canReadProject
+from utils.auth_utils import canWriteProject
 from utils.auth_utils import get_current_user
 from viewmodels.projects.CollaboratorListItem import CollaboratorListItem
 from viewmodels.projects.ExportRequestViewModel import ExportRequestViewModel
@@ -28,10 +30,6 @@ from viewmodels.projects.ProjectListItem import ProjectPublic, AOI
 from viewmodels.projects.ProjectPropertiesViewModel import ProjectPropertiesViewModel
 from viewmodels.projects.ProjectRequest import ProjectRequestViewModel
 from viewmodels.projects.ProjectViewModel import ProjectViewModel
-from utils.auth_utils import canReadProject
-from utils.auth_utils import canWriteProject
-from utils.auth_utils import isProjectOwner
-
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +87,9 @@ async def create(
 
         oDB.commit()
         oDB.refresh(oNewProject)
-
+        sTitle = f"Project Request Received: {oNewProject.name}"
+        sMessage = f"Hello,\n\nYour request to create the project '{oNewProject.name}' has been successfully submitted and is pending administrator approval.\n\nThank you!"
+        MailUtils.sendEmailMailJet("sysadmin@wasdi.cloud", oCurrentUser.email, sTitle, sMessage, False)
         return {"projectId": oNewProject.id}
 
     except Exception as oE:
@@ -199,6 +199,8 @@ async def getByUser(
         return oResult
     except Exception as oE:
         raise HTTPException(status_code=500, detail=f'Error fetching user projects: {str(oE)}')
+
+
 # --- DELETE PROJECT ---
 @oRouter.delete("/delete")
 async def delete_project(
@@ -212,8 +214,6 @@ async def delete_project(
             raise HTTPException(status_code=404, detail="Project not found")
         if not oProject.owners or oCurrentUser.email not in oProject.owners:
             raise HTTPException(status_code=403, detail="Only project owners can delete the project")
-
-
 
         # 1. Collect all unique collaborator emails BEFORE we delete the project
         setAllCollabs = set()
@@ -282,6 +282,7 @@ async def leave_project(
     except Exception as oE:
         oDB.rollback()
         raise HTTPException(status_code=500, detail=f'Error leaving project: {str(oE)}')
+
 
 # --- 4. GET SINGLE PROJECT ---
 @oRouter.get("/getProject", response_model=ProjectViewModel)
@@ -378,7 +379,7 @@ async def approve(
 
         if oCurrentUser.role != "ADMIN":
             raise HTTPException(status_code=403, detail="Only admins can approve the project")
-        
+
         oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
         if not oProject:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -437,10 +438,10 @@ async def getRequests(
         oCurrentUser: User = Depends(get_current_user)
 ):
     try:
-        
+
         if oCurrentUser.role != "ADMIN":
             raise HTTPException(status_code=403, detail="Only admins can view project requests")
-        
+
         aoProjects = oDB.query(DatasetProjectEntity).order_by(desc(DatasetProjectEntity.creationDate)).all()
 
         oResult = []
@@ -477,7 +478,6 @@ def _is_user_owner(project: DatasetProjectEntity, user_email: str) -> bool:
     return any(_parse_email(item) == user_email for item in project.owners)
 
 
-
 @oRouter.get("/listCollaborators", response_model=list[CollaboratorListItem])
 async def listCollabs(
         project_id: str = Query(...),
@@ -511,7 +511,6 @@ async def listCollabs(
     except Exception as oE:
 
         raise HTTPException(status_code=500, detail=f'Error fetching collaborators: {str(oE)}')
-
 
 
 @oRouter.post("/inviteCollaborator")
@@ -557,7 +556,6 @@ async def inviteCollabs(
 
         oDB.commit()
 
-
         sTitle = f"Invitation to collaborate on project: {oProject.name}"
 
         sMessage = f"Hello,\n\nYou have been invited to collaborate on the project '{oProject.name}' with the role of: {payload.role.value}.\n"
@@ -575,7 +573,6 @@ async def inviteCollabs(
     except Exception as oE:
         oDB.rollback()
         raise HTTPException(status_code=500, detail=f'Error inviting collaborator: {str(oE)}')
-
 
 
 @oRouter.delete("/removeCollaborator")
@@ -613,7 +610,6 @@ async def deleteCollab(
         sMessage = f"Hello,\n\nThis is an automated notification to inform you that your access to the project '{oProject.name}' has been revoked by the project administrator.\n\nIf you believe this is a mistake or need your access restored, please reach out to the project owner.\n\nBest regards,\nSystem Admin"
         MailUtils.sendEmailMailJet("sysadmin@wasdi.cloud", userEmail, sTitle, sMessage, False)
 
-
         return {"message": f"Collaborator {userEmail} removed successfully."}
 
     except HTTPException:
@@ -621,6 +617,7 @@ async def deleteCollab(
     except Exception as oE:
         oDB.rollback()
         raise HTTPException(status_code=500, detail=f'Error removing collaborator: {str(oE)}')
+
 
 # --- EXPORT PROJECT (TRIGGER GENERATION) ---
 @oRouter.post("/export")

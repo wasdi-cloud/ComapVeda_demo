@@ -13,6 +13,7 @@ import {createProject} from "../services/project-service";
 import AppRadioButton from "../components/app-radiobutton";
 import AppDropdown from "../components/app-dropdown-input";
 import {getLabelTemplates} from "../services/labelling-template-service";
+import NewLabelTemplate from "./create-label-template";
 
 const NewProjectRequest = () => {
     const navigate = useNavigate();
@@ -23,6 +24,8 @@ const NewProjectRequest = () => {
     const [bShowSuccessModal, setShowSuccessModal] = useState(false); // Controls the popup
     const [aoTemplates, setAoTemplates] = useState([]);
     const [bLoadingTemplates, setBLoadingTemplates] = useState(true);
+    const [bShowTemplateModal, setBShowTemplateModal] = useState(false);
+    const [sTemplateModalMode, setSTemplateModalMode] = useState('view');
 
     // --- FORM STATE ---
     const [formData, setFormData] = useState({
@@ -434,33 +437,47 @@ const NewProjectRequest = () => {
                         <div style={{ marginBottom: '15px' }}>
                             <label style={subLabelStyle}>Labelling Template</label>
 
-                            {bLoadingTemplates ? (
-                                <div style={{ marginTop: '5px', fontSize: '13px', color: '#666' }}>
-                                    ⏳ Loading templates...
-                                </div>
-                            ) : (
-                                <select
-                                    value={formData.labelTemplate}
-                                    onChange={(e) => setFormData({ ...formData, labelTemplate: e.target.value })}
-                                    style={{
-                                        width: '100%',
-                                        marginTop: '5px',
-                                        padding: '10px',
-                                        borderRadius: '4px',
-                                        border: '1px solid #ccc',
-                                        fontSize: '14px',
-                                        backgroundColor: '#fff'
-                                    }}
-                                    required
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '5px' }}>
+                                {bLoadingTemplates ? (
+                                    <div style={{ fontSize: '13px', color: '#666' }}>⏳ Loading templates...</div>
+                                ) : (
+                                    <select
+                                        value={formData.labelTemplate || ""}
+                                        onChange={(e) => setFormData({ ...formData, labelTemplate: e.target.value })}
+                                        style={{ flex: 1, padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
+                                        required
+                                    >
+                                        <option value="" disabled>-- Select a Template --</option>
+                                        {aoTemplates.map(template => (
+                                            <option key={template.templateId} value={template.templateId}>
+                                                {template.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                )}
+
+                                {/* VIEW BUTTON - Opens Modal */}
+                                {formData.labelTemplate && (
+                                    <AppButton
+                                        sVariant="outline"
+                                        type="button" // Prevent form submission
+                                        oStyle={{ padding: '8px 12px' }}
+                                        fnOnClick={() => setBShowTemplateModal(true)}
+                                    >
+                                        View
+                                    </AppButton>
+                                )}
+
+                                {/* CREATE BUTTON - Navigates Away */}
+                                <AppButton
+                                    sVariant="primary"
+                                    type="button" // Prevent form submission
+                                    oStyle={{ padding: '8px 12px' }}
+                                    fnOnClick={() => navigate('/create-label-template')} // Ensure this matches your route
                                 >
-                                    <option value="" disabled>-- Select a Template --</option>
-                                    {aoTemplates.map(template => (
-                                        <option key={template.templateId} value={template.templateId}>
-                                            {template.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            )}
+                                    ➕ New
+                                </AppButton>
+                            </div>
                         </div>
                     </AppCard>
 
@@ -518,7 +535,33 @@ const NewProjectRequest = () => {
 
                 </form>
             </div>
+            {bShowTemplateModal && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 2000,
+                    display: 'flex', justifyContent: 'center', alignItems: 'center',
+                    padding: '20px'
+                }}>
+                    <div style={{
+                        background: 'white',
+                        borderRadius: '8px',
+                        width: '100%',
+                        maxWidth: '1000px',
+                        maxHeight: '90vh',
+                        overflowY: 'auto',
+                        boxShadow: '0 10px 30px rgba(0,0,0,0.3)'
+                    }}>
+                        {/* Feed it props to force View Mode */}
+                        <NewLabelTemplate
+                            propMode="view"
+                            propTemplateId={formData.labelTemplate}
+                            onCloseModal={() => setBShowTemplateModal(false)}
+                        />
+                    </div>
+                </div>
+            )}
         </div>
+
     );
 };
 

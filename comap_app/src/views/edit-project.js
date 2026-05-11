@@ -687,14 +687,21 @@ const EditProject = () => {
                     {/* MAP */}
                     <div style={{flex: 1, position: 'relative', width: '100%', minHeight: 0}}>
                         <MapboxMap
-                            aoMarkers={[]} oInitialView={{latitude: 48.8566, longitude: 2.3522, zoom: 12}}
-                            sActiveGeoTIFF={oSelectedImage ? oSelectedImage.relative_path : null} oActiveStyle={oSelectedImage ? oImageStyles[oSelectedImage.id] : null}
-                            bEnableGeocoder={true} bEnableDraw={true} onDrawUpdate={handleDrawUpdate}
-                            sSelectedFeatureId={sSelectedFeatureId} onFeatureSelect={(id) => setSelectedFeatureId(id)}
-                            aoFeatures={filteredLabels} iImageOpacity={iImageOpacity / 100}
+                            aoMarkers={[]}
+                            oInitialView={{latitude: 48.8566, longitude: 2.3522, zoom: 12}}
+                            sActiveGeoTIFF={oSelectedImage ? oSelectedImage.relative_path : null}
+                            oActiveStyle={oSelectedImage ? oImageStyles[oSelectedImage.id] : null}
+                            bEnableGeocoder={true}
+                            bEnableDraw={true}
+                            onDrawUpdate={handleDrawUpdate}
+                            sSelectedFeatureId={sSelectedFeatureId}
+                            onFeatureSelect={(id) => setSelectedFeatureId(id)}
+                            aoFeatures={filteredLabels}
+                            iImageOpacity={iImageOpacity / 100}
                             bHasPolygons={ oLabelTemplate?.geometryTypes?.some(t => t.toLowerCase().includes('polygon')) ?? true }
                             bHasLines={ oLabelTemplate?.geometryTypes?.some(t => t.toLowerCase().includes('line')) ?? true }
-                            oZoomToBBox={aoMapZoomView} sCurrentDrawColor={sDrawingColor}
+                            oZoomToBBox={aoMapZoomView}
+                            sCurrentDrawColor={sDrawingColor}
                             sInitialMapStyle="mapbox://styles/mapbox/satellite-v9"
                             bPreventSelfIntersection={oLabelTemplate ? !oLabelTemplate.isSelfIntersectAllowed : false}
                             bPreventPolygonIntersection={oLabelTemplate ? !oLabelTemplate.isPolygonsIntersectAllowed : false}
