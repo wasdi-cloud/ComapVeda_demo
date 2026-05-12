@@ -1,5 +1,5 @@
-import React, {useState} from 'react';
-import {useNavigate, useLocation} from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import * as turf from '@turf/turf';
 
 // REUSABLE COMPONENTS
@@ -15,7 +15,7 @@ import { useNotifications } from '../contexts/NotificationContext';
 import { useProject } from '../contexts/ProjectContext';
 
 // SERVICES
-import { searchImages, importImage } from '../services/images-service';
+import { searchImages, importImage, getProjectImages } from '../services/images-service'; // <-- Import getProjectImages!
 
 // IMPORT YOUR GIF:
 import spinningEarthGif from '../assets/spinning-earth.gif';
@@ -32,13 +32,23 @@ const AddEoImages = () => {
     // --- UX UPGRADE: GRAB GLOBAL IMPORTING STATE ---
     const { setCurrentProjectId, isImporting, setIsImporting } = useProject();
 
-    React.useEffect(() => {
+    // --- NEW STATE: STORE IMPORTED IMAGE NAMES ---
+    const [aoImportedImageNames, setAoImportedImageNames] = useState([]);
+
+    // Fetch existing images on load
+    useEffect(() => {
         if (sProjectId) {
             setCurrentProjectId(sProjectId);
+
+            // Fetch the images already attached to this project
+            getProjectImages(sProjectId).then(images => {
+                if (images && images.length > 0) {
+                    // Extract the filenames (e.g., "S2A_MSIL1C..._COG.tif")
+                    setAoImportedImageNames(images.map(img => img.name));
+                }
+            }).catch(err => console.error("Failed to load existing images:", err));
         }
     }, [sProjectId, setCurrentProjectId]);
-
-    const aoAlreadyImportedIds = [];
 
     // --- SEARCH FORM STATE ---
     const [sProvider, setSProvider] = useState("Copernicus");
@@ -143,15 +153,9 @@ const AddEoImages = () => {
 
             addNotification(`Import started for ${aoSelectedIds.length} image(s). Processing in background...`, "info");
 
-            // NOTE: We DO NOT call setIsImporting(false) here!
-            // The backend returns immediately, but the conversion is still happening.
-            // The WebSocket will flip this to false when it finishes!
-
         } catch (error) {
             console.error("Import Error:", error);
             addNotification(error.message || "Failed to start import. Check console.", "error");
-
-            // Only unlock if the API call itself crashed
             setIsImporting(false);
         }
     };
@@ -208,7 +212,6 @@ const AddEoImages = () => {
                             We are downloading and converting the satellite imagery into Cloud Optimized GeoTIFFs.
                         </p>
 
-                        {/* UX FIX: Guide them to the back button instead of letting them break the lock! */}
                         <div style={{ background: '#e6f2ff', padding: '12px 20px', borderRadius: '6px', marginTop: '20px', border: '1px solid #b8daff' }}>
                             <p style={{ color: '#0056b3', fontSize: '13px', fontWeight: 'bold', margin: 0 }}>
                                 💡 Tip: You can safely use the "← Back" button to return to your project.
@@ -261,7 +264,11 @@ const AddEoImages = () => {
                                 ) : (
                                     <div style={{display: 'flex', flexDirection: 'column', gap: '8px'}} onMouseLeave={() => setHoveredFootprint(null)}>
                                         {aoSearchResults.map((img, idx) => {
-                                            const bIsAlreadyImported = aoAlreadyImportedIds.includes(img.id);
+
+                                            // --- THE FIX IS HERE ---
+                                            // Check if this Copernicus title is a substring of any imported filename!
+                                            const bIsAlreadyImported = aoImportedImageNames.some(importedName => importedName.includes(img.title));
+
                                             const bIsSelected = aoSelectedIds.includes(img.id);
                                             const thumbColor = idx % 2 === 0 ? "#1e3c72" : "#2a5298";
 
