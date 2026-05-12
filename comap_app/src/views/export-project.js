@@ -39,9 +39,6 @@ const ExportProject = () => {
         setNotification({show: true, message, type});
     };
 
-    // Don't forget to import this at the top if you haven't!
-// import { triggerExport } from '../services/project-service';
-
     const handleDownload = async () => {
         setBIsGenerating(true);
 
@@ -119,14 +116,15 @@ const ExportProject = () => {
                         <div style={{paddingBottom: '20px', marginBottom: '20px', borderBottom: '1px solid #eee'}}>
                             <label style={subLabelStyle}>Raw Imagery</label>
                             <div style={{marginTop: '10px'}}>
+                                {/* --- FIX: DISABLED CHECKBOX --- */}
                                 <AppCheckbox
-                                    sLabel="Include Raw Satellite Images (GeoTIFF)"
-                                    bChecked={bIncludeRawData}
+                                    disabled={true}
+                                    sLabel="Include Raw Satellite Images (GeoTIFF) [Coming Soon]"
+                                    bChecked={false} // Force false so it doesn't accidentally trigger
                                     fnOnChange={(e) => setBIncludeRawData(e.target.checked)}
                                 />
-                                <p style={{fontSize: '11px', color: '#888', marginLeft: '24px', marginTop: '5px'}}>
-                                    Warning: This allows downloading large files. Make sure you have a stable
-                                    connection.
+                                <p style={{fontSize: '11px', color: '#d9534f', marginLeft: '24px', marginTop: '5px', fontStyle: 'italic'}}>
+                                    Note: S3 raw data export is currently under construction. Only labels will be downloaded at this time.
                                 </p>
                             </div>
                         </div>
