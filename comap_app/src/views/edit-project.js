@@ -53,8 +53,11 @@ const EditProject = () => {
     const sUserRole = oLocation.state?.userRole?.toUpperCase() || 'GUEST';
     const [oFeatureToApprove, setFeatureToApprove] = useState(null);
 
-    // Role check
+    // Role checks
     const bIsReviewer = sUserRole === 'REVIEWER';
+
+    // --- NEW: Admin/Owner Check ---
+    const bIsAdminOrOwner = oUser.role === 'ADMIN' || (oProject?.owners || []).includes(oUser.email);
 
     const [oImageStyles, setImageStyles] = useState({});
 
@@ -722,8 +725,13 @@ const EditProject = () => {
                             <span style={{ fontSize: '12px', color: '#999' }}>Current User: {sCurrentUser} | Template: {oLabelTemplate?.name}</span>
                         </div>
                         <div style={{display: 'flex', gap: '10px'}}>
-                            <AppButton sVariant="outline" oStyle={{fontSize: '13px', padding: '6px 12px'}} fnOnClick={() => oNavigate('/project-properties', { state: { projectData: { id: oProject.id, name: sProjectTitle, description: oProject?.description || "", mission: oProject?.mission || "Sentinel-2", creationDate: oProject?.creationDate || "", labelTemplate: oProject?.labellingTemplate || "", isPublic: oProject?.isPublic || false, annotatorVisibility: oProject?.annotatorsSeeAllLabels ? 'all' : 'own' }, hasLabelTemplate: !!oProject?.labellingTemplate } })}>⚙️ Properties</AppButton>
-                            <AppButton fnOnClick={() => oNavigate('/project-collabs', { state: { projectId: sProjectId } })} sVariant="outline" oStyle={{fontSize: '13px', padding: '6px 12px'}}>👥 Collaborators</AppButton>
+                            {/* --- THE FIX IS HERE: Wrap the Properties and Collaborators buttons --- */}
+                            {bIsAdminOrOwner && (
+                                <>
+                                    <AppButton sVariant="outline" oStyle={{fontSize: '13px', padding: '6px 12px'}} fnOnClick={() => oNavigate('/project-properties', { state: { projectData: { id: oProject.id, name: sProjectTitle, description: oProject?.description || "", mission: oProject?.mission || "Sentinel-2", creationDate: oProject?.creationDate || "", labelTemplate: oProject?.labellingTemplate || "", isPublic: oProject?.isPublic || false, annotatorVisibility: oProject?.annotatorsSeeAllLabels ? 'all' : 'own' }, hasLabelTemplate: !!oProject?.labellingTemplate } })}>⚙️ Properties</AppButton>
+                                    <AppButton fnOnClick={() => oNavigate('/project-collabs', { state: { projectId: sProjectId } })} sVariant="outline" oStyle={{fontSize: '13px', padding: '6px 12px'}}>👥 Collaborators</AppButton>
+                                </>
+                            )}
                             <AppButton fnOnClick={() => oNavigate('/export-project', { state: { projectId: sProjectId, projectTitle: sProjectTitle, bRawDataHosted: true, bReviewMode: true } })} sVariant="primary" oStyle={{fontSize: '13px', padding: '6px 12px'}}>📥 Export Project</AppButton>
                         </div>
                     </div>
@@ -838,7 +846,6 @@ const EditProject = () => {
                                             <td style={tdStyle}>{feature.properties.measurement}</td>
                                             <td style={tdStyle}>{feature.properties.annotator}</td>
 
-                                            {/* IMPLEMENTATION 2: Switch to Explicit Visual Badges */}
                                             <td style={tdStyle}>
                                                 {feature.properties.isValidated ? (
                                                     <span style={{ background: '#d4edda', color: '#155724', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid #c3e6cb' }}>
@@ -853,14 +860,12 @@ const EditProject = () => {
 
                                             <td style={tdStyle}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                    {/* NOTE: Editing, Deleting, and API response overrides are intentionally left alone per your instruction */}
                                                     {bIsReviewer && oProject?.doesNeedReview && (
                                                         <button title={bHasApproved ? "You already approved this" : "Approve Label"} style={{ background: 'none', border: 'none', fontSize: '14px', cursor: bHasApproved ? 'not-allowed' : 'pointer', opacity: bHasApproved ? 0.3 : 1 }} disabled={bHasApproved} onClick={(e) => { e.stopPropagation(); handleApproveLabel(feature); }}>
                                                             ✅
                                                         </button>
                                                     )}
 
-                                                    {/* --- SMART FLAG BUTTON --- */}
                                                     {(() => {
                                                         const aoNotes = feature.properties.reviewNotes || [];
                                                         const iUnresolvedCount = aoNotes.filter(n => !n.resolved).length;
