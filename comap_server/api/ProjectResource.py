@@ -8,6 +8,7 @@ from datetime import datetime
 import geopandas as gpd
 from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import StreamingResponse
+from opentelemetry.trace import format_span_id
 from shapely.geometry import shape
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -359,7 +360,16 @@ async def reject(
         oProject.approved = False
         oProject.rejectionNote = note
         oDB.commit()
+        sTitle = f"Project : {oProject.name} Rejected"
+        sMessage = f"Hello,\n\nYour request to create the project '{oProject.name}' has been rejected."
+        if note:
+            sMessage += f" \n\nRejection note: {note} "
+        sMessage += "\n\nThank you!"
 
+        for sOwnerEmail in oProject.owners:
+            # since we save email of owners, it's straight forward
+            MailUtils.sendEmailMailJet("sysadmin@wasdi.cloud", sOwnerEmail, sTitle, sMessage, False)
+            
         return {"status": "success", "message": f"Project {project_id} rejected"}
     except HTTPException:
         raise
@@ -388,6 +398,11 @@ async def approve(
         oProject.rejected = False
         oProject.maxStorage = maxStorage
         oDB.commit()
+        sTitle = f"Project : {oProject.name} Approved"
+        sMessage = f"Hello,\n\nYour request to create the project '{oProject.name}' has been successfully approved.\n\nThank you!"
+        for sOwnerEmail in oProject.owners:
+            #since we save email of owners, it's straight forward
+            MailUtils.sendEmailMailJet("sysadmin@wasdi.cloud", sOwnerEmail, sTitle, sMessage, False)
 
         return {"status": "success", "message": f"Project {project_id} approved"}
     except HTTPException:
