@@ -26,3 +26,4 @@ class LabelEntity(Base):
     reviewers = Column(JSON, default=list)
     reviewCount = Column(Integer, default=0)
     reviewNotes = Column(JSON, default=list)
+    isValidated = Column(Boolean, default=False, index=True)

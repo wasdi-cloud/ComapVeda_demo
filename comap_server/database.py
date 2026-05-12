@@ -95,6 +95,8 @@ def ensure_legacy_schema_compatibility():
         if "reviewNotes" not in labels_columns and "reviewnotes" not in labels_columns:
             statements.append(
                 "ALTER TABLE labels ADD COLUMN IF NOT EXISTS \"reviewNotes\" JSON DEFAULT '[]'::json")
+        if "isValidated" not in labels_columns and "isvalidated" not in labels_columns:
+            statements.append("ALTER TABLE labels ADD COLUMN IF NOT EXISTS \"isValidated\" BOOLEAN DEFAULT FALSE")
     # ═══════════════════════════════════════════════════════════════════
 
     if not statements:

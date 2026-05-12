@@ -71,13 +71,6 @@ export const removeCollab = async (projectId, userEmail) => {
         method: 'DELETE'
     });
 };
-// 8. Export Project
-export const exportProject = async (projectId, note) => {
-    return await oRequest(`/projects/${projectId}/reject`, {
-        method: 'POST',
-        body: JSON.stringify({note})
-    });
-};
 
 export const updateProject = async (projectId, projectData) => {
     // Notice how we pass project_id in the URL to match the Python Query parameter

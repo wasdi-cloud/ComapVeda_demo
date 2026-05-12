@@ -36,3 +36,4 @@ class LabelItem(BaseModel):
     reviewCount: Optional[int] = 0
     reviewers: Optional[List[str]] = []
     reviewNotes: Optional[List[Dict[str, Any]]] = []
+    isValidated: Optional[bool] = False

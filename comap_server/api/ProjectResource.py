@@ -2,6 +2,7 @@ import io
 import json
 import logging
 import os
+import tempfile
 import zipfile
 from datetime import datetime
 
@@ -369,7 +370,7 @@ async def reject(
         for sOwnerEmail in oProject.owners:
             # since we save email of owners, it's straight forward
             MailUtils.sendEmailMailJet("sysadmin@wasdi.cloud", sOwnerEmail, sTitle, sMessage, False)
-            
+
         return {"status": "success", "message": f"Project {project_id} rejected"}
     except HTTPException:
         raise
@@ -651,7 +652,6 @@ async def export_project(
             raise HTTPException(status_code=404, detail="Project not found")
 
         # 2. Query Labels Joined with Images
-        # We need the image metadata (name, date) to satisfy the Use Case!
         aoResults = oDB.query(
             LabelEntity,
             func.ST_AsGeoJSON(LabelEntity.geometry).label("geojson"),
@@ -667,14 +667,21 @@ async def export_project(
             raise HTTPException(status_code=404, detail="No labels found for this project.")
 
         # ==========================================
-        # IMPLEMENTED: Label Validation Filtering
+        # IMPLEMENTED: Access Control Filtering
+        # ==========================================
+        bIsOwnerOrReviewer = (oCurrentUser.email in (oProject.owners or [])) or (
+                    oCurrentUser.email in (oProject.reviewers or []))
+
+        if not oProject.annotatorsSeeAllLabels and not bIsOwnerOrReviewer:
+            aoResults = [r for r in aoResults if r.LabelEntity.creatorId == oCurrentUser.email]
+            if not aoResults:
+                raise HTTPException(status_code=403, detail="No labels accessible for export by this user.")
+
+        # ==========================================
+        # FIX 1: Use the new isValidated flag!
         # ==========================================
         if oExportData.labelFilter == "validated":
-            # A label is considered "validated" if it has at least 1 approval (reviewCount > 0)
-            # We use `(r.LabelEntity.reviewCount or 0)` to safely handle any None/NULL values
-            aoResults = [r for r in aoResults if (r.LabelEntity.reviewCount or 0) > 0]
-
-            # If filtering removed everything, throw an error so we don't output an empty ZIP
+            aoResults = [r for r in aoResults if r.LabelEntity.isValidated]
             if not aoResults:
                 raise HTTPException(status_code=404, detail="No validated labels found for this project.")
 
@@ -683,17 +690,13 @@ async def export_project(
         for oRow in aoResults:
             oLabel = oRow.LabelEntity
             sGeojson = oRow.geojson
-
-            # Parse Geometry
             oGeom = shape(json.loads(sGeojson))
 
-            # Parse Dates
             oImgDate = datetime.fromtimestamp(oRow.image_date / 1000.0) if oRow.image_date else datetime.now()
             sCreationTime = datetime.fromtimestamp(
                 oLabel.creationDate / 1000.0).isoformat() if oLabel.creationDate else ""
 
-            # Base properties required by Use Case
-            # NOTE: Shapefile column names are strictly limited to 10 characters!
+            # Base properties
             oProps = {
                 "geometry": oGeom,
                 "annotator": oLabel.creatorId or "System",
@@ -704,6 +707,19 @@ async def export_project(
                 "img_day": oImgDate.day,
                 "geom_type": oGeom.geom_type
             }
+
+            # ==========================================
+            # FIX 2: Correctly map the Review Metadata
+            # ==========================================
+            if oProject.reviewRequired:
+                oProps["rev_flag"] = oLabel.isValidated
+
+                # Your schema uses a JSON list of strings for reviewers, not a relationship!
+                if oLabel.reviewers and isinstance(oLabel.reviewers, list):
+                    # Truncate to avoid shapefile string limits if there are many reviewers
+                    oProps["rev_names"] = ",".join(oLabel.reviewers)[:254]
+                else:
+                    oProps["rev_names"] = ""
 
             # Unpack dynamic attributes (Template properties)
             if oLabel.attributes and isinstance(oLabel.attributes, dict):
@@ -716,7 +732,6 @@ async def export_project(
 
         # 4. Create GeoDataFrame and Split by Geometry Type
         gdf = gpd.GeoDataFrame(aoFeatures, geometry="geometry", crs="EPSG:4326")
-
         dictGDFs = {
             "Points": gdf[gdf['geom_type'] == 'Point'],
             "Lines": gdf[gdf['geom_type'] == 'LineString'],
@@ -727,32 +742,23 @@ async def export_project(
         oZipBuffer = io.BytesIO()
         with zipfile.ZipFile(oZipBuffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
 
+            # --- A. Write Shapefiles ---
             for sGeomType, sub_gdf in dictGDFs.items():
                 if sub_gdf.empty:
                     continue
 
-                # Drop the geom_type column as it's redundant now
                 sub_gdf = sub_gdf.drop(columns=['geom_type'])
-
-                # Write shapefile components (.shp, .shx, .dbf, .cpg, .prj) to temp memory
-                # Geopandas requires a folder path, so we use a trick with io.BytesIO
-                import tempfile
-                import os
 
                 with tempfile.TemporaryDirectory() as tmpdir:
                     sShpPath = os.path.join(tmpdir, f"{oProject.name.replace(' ', '_')}_{sGeomType}.shp")
                     sub_gdf.to_file(sShpPath, driver="ESRI Shapefile")
 
-                    # Read them back and write to our Zip archive
                     for filename in os.listdir(tmpdir):
                         sFilePath = os.path.join(tmpdir, filename)
                         zip_file.write(sFilePath, arcname=f"labels/{sGeomType}/{filename}")
 
             # ==========================================
-            # TODO: Include Raw Data (GeoTIFFs)
-            # if oExportData.includeRawData and oProject.selfHosted:
-            #     # Fetch files from S3 and write them to zip_file
-            #     pass
+            # TODO: Include Raw Data (GeoTIFFs) : S3
             # ==========================================
 
         # Reset buffer pointer to the beginning

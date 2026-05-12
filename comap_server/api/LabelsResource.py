@@ -7,6 +7,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
+from entities.DatasetImage import DatasetImageEntity
+from entities.DatasetProject import DatasetProjectEntity
 from entities.Label import LabelEntity
 from entities.User import User
 from utils.auth_utils import get_current_user
@@ -27,8 +29,28 @@ async def getByImage(
         oCurrentUser: User = Depends(get_current_user)
 ):
     try:
-        aoLabels = oDB.query(LabelEntity, func.ST_AsGeoJSON(LabelEntity.geometry).label("geojson")).filter(
-            LabelEntity.datasetImageId == sImageName).all()
+        # 1. Fetch the project to check visibility rules
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == project_id).first()
+        if not oProject:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        # 2. Check if the user is an Admin/Owner/Reviewer (they always bypass this restriction)
+        bIsOwnerOrReviewer = (oCurrentUser.email in (oProject.owners or [])) or (
+                    oCurrentUser.email in (oProject.reviewers or []))
+
+        # 3. Start building the base query
+        query = oDB.query(
+            LabelEntity,
+            func.ST_AsGeoJSON(LabelEntity.geometry).label("geojson")
+        ).filter(LabelEntity.datasetImageId == sImageName)
+
+        # 4. ENFORCE ACCESS CONTROL: If they are a standard annotator and the project is restricted
+        if not oProject.annotatorsSeeAllLabels and not bIsOwnerOrReviewer:
+            query = query.filter(LabelEntity.creatorId == oCurrentUser.email)
+
+        # 5. Execute query
+        aoLabels = query.all()
+
         oResult = []
         for oLabelRow, sGeojson in aoLabels:
             geometry_data = json.loads(sGeojson)
@@ -38,16 +60,15 @@ async def getByImage(
                 geometryType=geometry_data.get("type"),
                 coordinates=geometry_data.get("coordinates"),
                 attributes=oLabelRow.attributes if oLabelRow.attributes else {},
-                # --- NEW: Return the review data! ---
                 reviewCount=oLabelRow.reviewCount,
                 reviewers=oLabelRow.reviewers if oLabelRow.reviewers else [],
-                reviewNotes=oLabelRow.reviewNotes if oLabelRow.reviewNotes else []
+                reviewNotes=oLabelRow.reviewNotes if oLabelRow.reviewNotes else [],
+                # Make sure the new validation flag gets mapped to the client!
+                isValidated=oLabelRow.isValidated
             ))
         return oResult
     except Exception as oE:
         raise HTTPException(status_code=500, detail=str(oE))
-
-
 # --- 2. ADD LABEL ---
 @oRouter.post("/add")
 async def addLabel(
@@ -152,20 +173,33 @@ async def approveLabel(
         if not oLabel:
             raise HTTPException(status_code=404, detail="Label not found")
 
-        # Ensure reviewers is a list
+        # 1. Fetch the associated Project to get the minReviewCount
+        oImage = oDB.query(DatasetImageEntity).filter(DatasetImageEntity.id == oLabel.datasetImageId).first()
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == oImage.projectId).first()
+        min_required_reviews = oProject.minReviewCount if oProject and oProject.minReviewCount else 1
+
         current_reviewers = oLabel.reviewers if oLabel.reviewers else []
 
-        # Don't double-count if they somehow hit it twice
+        # 2. Add reviewer and check threshold
         if oCurrentUser.email not in current_reviewers:
             current_reviewers.append(oCurrentUser.email)
             oLabel.reviewers = current_reviewers
             oLabel.reviewCount = (oLabel.reviewCount or 0) + 1
+
+            # --- DYNAMIC VALIDATION CHECK ---
+            if oLabel.reviewCount >= min_required_reviews:
+                oLabel.isValidated = True
+
             oDB.commit()
 
-        return {"labelId": sLabelId, "status": "approved"}
+        return {
+            "labelId": sLabelId,
+            "status": "approved",
+            "isValidated": oLabel.isValidated,
+            "reviewCount": oLabel.reviewCount
+        }
     except Exception as oE:
         raise HTTPException(status_code=500, detail=str(oE))
-
 
 # --- NEW: ADD NOTE ---
 from sqlalchemy.orm.attributes import flag_modified  # <-- MUST BE IMPORTED
@@ -241,6 +275,8 @@ async def resolveLabelNote(
     except Exception as oE:
         oDB.rollback()
         raise HTTPException(status_code=500, detail=str(oE))
+
+
 @oRouter.get("/reject")
 async def rejectLabel(
         sLabelId: str = Query(...),
@@ -248,17 +284,19 @@ async def rejectLabel(
         oCurrentUser: User = Depends(get_current_user)
 ):
     try:
-        OLabel = oDB.query(LabelEntity).filter(LabelEntity.id == sLabelId).first()
-        if not OLabel:
+        oLabel = oDB.query(LabelEntity).filter(LabelEntity.id == sLabelId).first()
+        if not oLabel:
             raise HTTPException(status_code=404, detail="Label not found")
 
+        # If a label is explicitly rejected, it loses its validation status
+        oLabel.isValidated = False
         oDB.commit()
+
         return {"labelId": sLabelId, "status": "rejected"}
     except Exception as oE:
-        raise HTTPException(status_code=500, detail=f'Error rejecting OLabel: {str(oE)}')
-
-
+        raise HTTPException(status_code=500, detail=f'Error rejecting Label: {str(oE)}')
 # --- 6. BULK SYNC ---
+@oRouter.post("/sync")
 @oRouter.post("/sync")
 async def syncLabels(
         image_id: str = Query(...),
@@ -267,34 +305,77 @@ async def syncLabels(
         oCurrentUser: User = Depends(get_current_user)
 ):
     try:
-        oDB.query(LabelEntity).filter(LabelEntity.datasetImageId == image_id).delete(synchronize_session=False)
+        # 1. Check Project Visibility Rules
+        oImage = oDB.query(DatasetImageEntity).filter(DatasetImageEntity.id == image_id).first()
+        oProject = oDB.query(DatasetProjectEntity).filter(DatasetProjectEntity.id == oImage.projectId).first()
+        bIsOwnerOrReviewer = (oCurrentUser.email in (oProject.owners or [])) or (
+                    oCurrentUser.email in (oProject.reviewers or []))
 
+        # 2. Determine Scope
+        oExistingQuery = oDB.query(LabelEntity).filter(LabelEntity.datasetImageId == image_id)
+        if not oProject.annotatorsSeeAllLabels and not bIsOwnerOrReviewer:
+            oExistingQuery = oExistingQuery.filter(LabelEntity.creatorId == oCurrentUser.email)
+
+        # Map existing labels by ID for quick lookup
+        aoExistingLabels = {lbl.id: lbl for lbl in oExistingQuery.all()}
+
+        # 3. Identify labels from the frontend
+        asIncomingIds = [str(lbl.labelId) for lbl in aoLabels if lbl.labelId and len(str(lbl.labelId)) > 20]
+
+        # 4. DELETE logic
+        for sOldId, oOldLbl in aoExistingLabels.items():
+            if str(sOldId) not in asIncomingIds:
+                # --- NEW PADLOCK: Prevent annotators from deleting other people's labels ---
+                if not bIsOwnerOrReviewer and oOldLbl.creatorId != oCurrentUser.email:
+                    continue
+
+                oDB.delete(oOldLbl)
+
+        # 5. UPSERT logic
         for oLabelData in aoLabels:
             sGeojson = json.dumps({"type": oLabelData.geometryType, "coordinates": oLabelData.coordinates})
-            sNewId = oLabelData.labelId if oLabelData.labelId and len(str(oLabelData.labelId)) > 20 else str(
-                uuid.uuid4())
+            sIncomingId = str(oLabelData.labelId) if oLabelData.labelId else None
 
-            oNewLabel = LabelEntity(
-                id=sNewId,
-                datasetImageId=image_id,
-                geometry=func.ST_SetSRID(func.ST_GeomFromGeoJSON(sGeojson), 4326),
-                attributes=oLabelData.attributes,
-                isPolygon=(oLabelData.geometryType.lower() == "polygon"),
-                isLine=(oLabelData.geometryType.lower() == "linestring"),
-                isPoint=(oLabelData.geometryType.lower() == "point"),
-                creatorId=oCurrentUser.email,
+            if sIncomingId and sIncomingId in aoExistingLabels:
+                # --- UPDATE EXISTING LABEL ---
+                oExistingLbl = aoExistingLabels[sIncomingId]
 
-                # --- NEW: Preserve the review data during the wipe/re-insert! ---
-                reviewCount=oLabelData.reviewCount,
-                reviewers=oLabelData.reviewers,
-                reviewNotes=oLabelData.reviewNotes
-            )
-            oDB.add(oNewLabel)
+                # --- NEW PADLOCK: Prevent annotators from editing other people's labels ---
+                if not bIsOwnerOrReviewer and oExistingLbl.creatorId != oCurrentUser.email:
+                    continue
+
+                oExistingLbl.geometry = func.ST_SetSRID(func.ST_GeomFromGeoJSON(sGeojson), 4326)
+                oExistingLbl.attributes = oLabelData.attributes
+                oExistingLbl.isPolygon = (oLabelData.geometryType.lower() == "polygon")
+                oExistingLbl.isLine = (oLabelData.geometryType.lower() == "linestring")
+                oExistingLbl.isPoint = (oLabelData.geometryType.lower() == "point")
+
+                # CRITICAL: Do NOT overwrite creatorId here!
+                oExistingLbl.reviewCount = oLabelData.reviewCount
+                oExistingLbl.reviewers = oLabelData.reviewers
+                oExistingLbl.reviewNotes = oLabelData.reviewNotes
+                oExistingLbl.isValidated = oLabelData.isValidated if oProject.reviewRequired else True
+
+            elif sIncomingId and len(sIncomingId) > 20:
+                # --- INSERT NEW LABEL ---
+                oNewLabel = LabelEntity(
+                    id=sIncomingId,
+                    datasetImageId=image_id,
+                    geometry=func.ST_SetSRID(func.ST_GeomFromGeoJSON(sGeojson), 4326),
+                    attributes=oLabelData.attributes,
+                    isPolygon=(oLabelData.geometryType.lower() == "polygon"),
+                    isLine=(oLabelData.geometryType.lower() == "linestring"),
+                    isPoint=(oLabelData.geometryType.lower() == "point"),
+                    creatorId=oCurrentUser.email,
+                    reviewCount=oLabelData.reviewCount,
+                    reviewers=oLabelData.reviewers,
+                    reviewNotes=oLabelData.reviewNotes,
+                    isValidated=oLabelData.isValidated if oProject.reviewRequired else True
+                )
+                oDB.add(oNewLabel)
 
         oDB.commit()
-        return {"status": "success", "message": f"Synced {len(aoLabels)} labels."}
+        return {"status": "success", "message": "Smart sync completed."}
     except Exception as oE:
         oDB.rollback()
         raise HTTPException(status_code=500, detail=str(oE))
-
-
