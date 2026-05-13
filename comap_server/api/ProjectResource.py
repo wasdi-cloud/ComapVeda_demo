@@ -146,7 +146,8 @@ async def getByUser(
 
         oResult = []
         for oProject in aoAllProjects:
-
+            if not oProject.approved:
+                continue
             # Safely grab the lists (fallback to empty list if None in the DB)
             aoOwners = oProject.owners if oProject.owners else []
             aoReviewers = oProject.reviewers if oProject.reviewers else []
@@ -160,7 +161,7 @@ async def getByUser(
             bIsInvolved = bIsOwner or bIsReviewer or bIsAnnotator
 
             # --- 2. Is the project public and approved? ---
-            bIsPublicAndApproved = (oProject.isPublic == True and oProject.approved == True)
+            bIsPublic = oProject.isPublic == True
 
             # --- 3. THE FILTER ---
             # If they are NOT involved, and it is NOT a public/approved project... hide it!
