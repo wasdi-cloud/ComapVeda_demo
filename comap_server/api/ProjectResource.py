@@ -165,7 +165,7 @@ async def getByUser(
 
             # --- 3. THE FILTER ---
             # If they are NOT involved, and it is NOT a public/approved project... hide it!
-            if not bIsInvolved and not bIsPublicAndApproved:
+            if not bIsInvolved and not bIsPublic:
                 continue
 
             # --- 4. Determine their actual role ---
