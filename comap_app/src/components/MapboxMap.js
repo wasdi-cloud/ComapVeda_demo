@@ -139,7 +139,6 @@ const MapboxMap = ({
                        onDrawUpdate,
                        onDrawError,
                        sActiveGeoTIFF,
-                       // --- NEW: THE STYLE PAYLOAD PROP ---
                        oActiveStyle            = null,
                        bEnableGeocoder         = false,
                        bEnableDraw             = true,
@@ -155,6 +154,7 @@ const MapboxMap = ({
                        bPreventSelfIntersection = false,
                        bPreventPolygonIntersection = false,
                        sHoveredFootprint       = null,
+                       sPolygonEditMode        = 'vertices'
                    }) => {
 
     const [oSelectedMarker, setSelectedMarker] = useState(null);
@@ -175,6 +175,22 @@ const MapboxMap = ({
         aoFeaturesRef.current = aoFeatures;
     }, [aoFeatures]);
 
+    const sPolygonEditModeRef = useRef(sPolygonEditMode);
+    useEffect(() => {
+        sPolygonEditModeRef.current = sPolygonEditMode;
+
+        if (oDrawRef.current && sSelectedFeatureId) {
+            try {
+                const feature = oDrawRef.current.get(sSelectedFeatureId);
+                if (feature && feature.geometry.type !== 'Point' && sPolygonEditMode === 'vertices') {
+                    oDrawRef.current.changeMode('direct_select', { featureId: sSelectedFeatureId });
+                } else {
+                    oDrawRef.current.changeMode('simple_select', { featureIds: [sSelectedFeatureId] });
+                }
+            } catch (_) {}
+        }
+    }, [sSelectedFeatureId, sPolygonEditMode]);
+
     useEffect(() => {
         if (oDrawRef.current && sSelectedFeatureId) {
             oDrawRef.current.setFeatureProperty(sSelectedFeatureId, 'portColor', sCurrentDrawColor);
@@ -192,22 +208,88 @@ const MapboxMap = ({
         }
 
         if (bEnableDraw) {
+
+            // =========================================================================
+            // THE FIX: NEUTER MAPBOX'S DRAG FUNCTION
+            // MapboxDraw modes are extensible. We clone simple_select and overwrite dragMove.
+            // =========================================================================
+            const customSimpleSelect = Object.assign({}, MapboxDraw.modes.simple_select);
+            const originalDragMove = customSimpleSelect.dragMove;
+
+            customSimpleSelect.dragMove = function(state, ev) {
+                // If the user toggle says "Vertices", absolutely refuse to drag the polygon!
+                if (sPolygonEditModeRef.current === 'vertices') {
+                    return;
+                }
+                // Otherwise, proceed as normal
+                if (originalDragMove) {
+                    return originalDragMove.call(this, state, ev);
+                }
+            };
+
+            // 2. Fix Vertex Mode (THE MISSING PIECE)
+            const customDirectSelect = Object.assign({}, MapboxDraw.modes.direct_select);
+
+            // direct_select has a hidden function just for dragging the whole shape. We kill it here.
+            customDirectSelect.dragFeature = function(state, e, delta) {
+                // Do absolutely nothing!
+                return;
+            };
+
             const oDraw = new MapboxDraw({
                 displayControlsDefault: false,
                 controls: { polygon: bHasPolygons, line_string: bHasLines, trash: true },
                 defaultMode: 'simple_select',
                 userProperties: true,
-                styles: CUSTOM_DRAW_STYLES
+                styles: CUSTOM_DRAW_STYLES,
+                modes: Object.assign({}, MapboxDraw.modes, {
+                    simple_select: customSimpleSelect,
+                    direct_select: customDirectSelect // <-- Inject our neutered vertex mode!
+                })
             });
+            // =========================================================================
+
             oMap.addControl(oDraw, 'top-left');
             oDrawRef.current = oDraw;
 
             oMap.on('draw.create', (ev) => handleDrawUpdate(ev, oDraw));
             oMap.on('draw.update', (ev) => handleDrawUpdate(ev, oDraw));
             oMap.on('draw.delete', () => { setMeasurements(""); if (onDrawUpdate) onDrawUpdate(oDraw.getAll()); });
+
+            oMap.on('draw.modechange', (ev) => {
+                if (sPolygonEditModeRef.current === 'vertices' && ev.mode === 'simple_select') {
+                    const selectedIds = oDraw.getSelectedIds();
+                    if (selectedIds.length === 1) {
+                        setTimeout(() => {
+                            if (oDrawRef.current) {
+                                try { oDrawRef.current.changeMode('direct_select', { featureId: selectedIds[0] }); } catch (e) {}
+                            }
+                        }, 0);
+                    }
+                }
+            });
+
             oMap.on('draw.selectionchange', (ev) => {
-                if (ev.features.length > 0) { if (onFeatureSelect) onFeatureSelect(ev.features[0].id); }
-                else                         { if (onFeatureSelect) onFeatureSelect(null); }
+                if (ev.features.length > 0) {
+                    const featureId = ev.features[0].id;
+                    setTimeout(() => {
+                        if (oDrawRef.current) {
+                            try {
+                                const feature = oDrawRef.current.get(featureId);
+                                if (feature && feature.geometry.type !== 'Point' && sPolygonEditModeRef.current === 'vertices') {
+                                    oDrawRef.current.changeMode('direct_select', { featureId: featureId });
+                                } else {
+                                    oDrawRef.current.changeMode('simple_select', { featureIds: [featureId] });
+                                }
+                            } catch (e) {}
+                        }
+                    }, 0);
+
+                    if (onFeatureSelect) onFeatureSelect(featureId);
+                }
+                else {
+                    if (onFeatureSelect) onFeatureSelect(null);
+                }
             });
 
             oMap.on('mousemove', (ev) => {
@@ -227,7 +309,6 @@ const MapboxMap = ({
                 oMap.getCanvas().style.cursor = '';
             });
 
-            // INTERSECTION PREVENTION CODE (Unchanged)
             if ((bPreventSelfIntersection || bPreventPolygonIntersection) && bHasPolygons) {
                 setupIntersectionLayer(oMap);
                 let aoDrawnVertices = [];
@@ -345,7 +426,6 @@ const MapboxMap = ({
 
     useEffect(() => {
         const map = oMapRef.current;
-        // Now it won't fire into the void; it waits for bMapLoaded to be true!
         if (map && bMapLoaded && oZoomToBBox?.length === 4) {
             map.fitBounds(oZoomToBBox, { padding: 50, duration: 1500 });
         }
@@ -386,9 +466,6 @@ const MapboxMap = ({
         }
     }, [aoFeatures]);
 
-    // ═══════════════════════════════════════════════════════════════════
-    // DYNAMIC TITILER URL PARSER
-    // ═══════════════════════════════════════════════════════════════════
     useEffect(() => {
         const map = oMapRef.current;
         if (!map) return;
@@ -404,8 +481,6 @@ const MapboxMap = ({
                 let sParams = `encoded_path=${encodeURIComponent(sActiveGeoTIFF)}`;
 
                 if (oActiveStyle) {
-                    // --- 1. PARSE BANDS ---
-                    // Example: extracts '4' from "B04 - Red"
                     const getBandIdx = (sBandStr) => {
                         const match = sBandStr.match(/B(\d+)/);
                         return match ? parseInt(match[1], 10) : 1;
@@ -414,47 +489,35 @@ const MapboxMap = ({
                     if (oActiveStyle.renderType === 'multi') {
                         sParams += `&bidx=${getBandIdx(oActiveStyle.bands.red)}&bidx=${getBandIdx(oActiveStyle.bands.green)}&bidx=${getBandIdx(oActiveStyle.bands.blue)}`;
                     } else {
-                        // Single band grayscale
                         sParams += `&bidx=${getBandIdx(oActiveStyle.bands.gray)}`;
                     }
 
-                    // --- 2. PARSE HISTOGRAM ---
                     if (oActiveStyle.histogram === 'linear') {
-                        sParams += `&rescale=0,3000`; // Standard optical stretch
+                        sParams += `&rescale=0,3000`;
                     } else if (oActiveStyle.histogram === 'saturated') {
-                        // Simulate a 2% cut by pulling the bounds tighter
                         sParams += `&rescale=100,2500`;
                     }
 
-                    // --- 3. PARSE EFFECTS (rio-color) ---
                     const aoFormulas = [];
-
                     if (oActiveStyle.effects.saturation !== 0) {
                         const fSat = 1 + (oActiveStyle.effects.saturation / 100);
                         aoFormulas.push(`saturation ${fSat.toFixed(2)}`);
                     }
-
                     if (oActiveStyle.effects.contrast !== 0) {
-                        // Contrast > 0 creates an S-curve
                         const fContrast = 1 + (Math.abs(oActiveStyle.effects.contrast) / 10);
                         if (oActiveStyle.effects.contrast > 0) {
                             aoFormulas.push(`sigmoidal RGB ${fContrast.toFixed(2)} 0.5`);
                         }
                     }
-
                     if (oActiveStyle.effects.brightness !== 0) {
-                        // Gamma < 1 is brighter
                         const fGamma = 1 - (oActiveStyle.effects.brightness / 200);
                         aoFormulas.push(`gamma RGB ${fGamma.toFixed(2)}`);
                     }
 
-                    // Combine all rio-color operations into one string
                     if (aoFormulas.length > 0) {
                         sParams += `&color_formula=${encodeURIComponent(aoFormulas.join(', '))}`;
                     }
-
                 } else {
-                    // DEFAULT FALLBACK (Before the user applies any styles)
                     sParams += `&bidx=3&bidx=2&bidx=1&rescale=0,3000`;
                 }
 
@@ -483,11 +546,8 @@ const MapboxMap = ({
         };
         map.on('styledata', onStyleData);
         return () => { map.off('styledata', onStyleData); };
-    }, [sActiveGeoTIFF, sMapStyle, oActiveStyle]); // <-- Added oActiveStyle to dependencies!
+    }, [sActiveGeoTIFF, sMapStyle, oActiveStyle]);
 
-    // ═══════════════════════════════════════════════════════════════════
-    // HOVER FOOTPRINT RENDERER
-    // ═══════════════════════════════════════════════════════════════════
     useEffect(() => {
         const map = oMapRef.current;
         if (!map) return;

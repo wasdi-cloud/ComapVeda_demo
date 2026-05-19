@@ -45,6 +45,7 @@ const EditProject = () => {
     const [oImagePropertiesModal, setImagePropertiesModal] = useState(null);
     const [sDrawingColor, setDrawingColor] = useState("#3b82f6");
     const [aoMapZoomView, setMapZoomView] = useState(null);
+    const [sPolygonEditMode, setPolygonEditMode] = useState('vertices'); // <-- NEW STATE
     const [oEditingCell, setEditingCell] = useState({featureId: null, attrName: null});
     const [sEditValue, setEditValue] = useState("");
     const oSelectedImage = aoImages.find(img => img.id === iSelectedImageId);
@@ -748,6 +749,20 @@ const EditProject = () => {
                             </div>
 
                             <div style={{display: 'flex', alignItems: 'center', gap: '20px'}}>
+                                {/* --- NEW: EDIT MODE TOGGLE --- */}
+                                <div style={{display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px'}}>
+                                    <span style={{color: '#666', fontWeight: 'bold'}}>Edit Mode:</span>
+                                    <label style={{cursor: 'pointer', display: 'flex', alignItems: 'center'}}>
+                                        <input type="radio" name="editMode" checked={sPolygonEditMode === 'vertices'} onChange={() => setPolygonEditMode('vertices')} style={{marginRight: '4px'}}/>
+                                        🎯 Vertices
+                                    </label>
+                                    <label style={{cursor: 'pointer', display: 'flex', alignItems: 'center'}}>
+                                        <input type="radio" name="editMode" checked={sPolygonEditMode === 'move'} onChange={() => setPolygonEditMode('move')} style={{marginRight: '4px'}}/>
+                                        ✋ Move Shape
+                                    </label>
+                                </div>
+                                <div style={{height: '20px', borderLeft: '1px solid #ccc'}}></div>
+                                {/* ------------------------------ */}
                                 <div style={{display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px'}}>
                                     <span style={{color: '#666', fontWeight: 'bold'}}>Style By:</span>
                                     <label style={{cursor: 'pointer', display: 'flex', alignItems: 'center'}}><input type="radio" name="styleBy" checked={sStyleBy === 'label'} onChange={() => setStyleBy('label')} style={{marginRight: '4px'}}/> Label</label>
@@ -784,6 +799,7 @@ const EditProject = () => {
                             bHasPolygons={ oLabelTemplate?.geometryTypes?.some(t => t.toLowerCase().includes('polygon')) ?? true }
                             bHasLines={ oLabelTemplate?.geometryTypes?.some(t => t.toLowerCase().includes('line')) ?? true }
                             oZoomToBBox={aoMapZoomView}
+                            sPolygonEditMode={sPolygonEditMode}
                             sCurrentDrawColor={sDrawingColor}
                             sInitialMapStyle="mapbox://styles/mapbox/satellite-v9"
                             bPreventSelfIntersection={oLabelTemplate ? !oLabelTemplate.isSelfIntersectAllowed : false}
