@@ -52,7 +52,8 @@ const ColorInputGroup = ({value, onChange, disabled}) => {
     );
 };
 
-const NewLabelTemplate = ({ propMode = null, propTemplateId = null, onCloseModal = null })=> {
+// FIX: Added onSaveSuccess prop
+const NewLabelTemplate = ({ propMode = null, propTemplateId = null, onCloseModal = null, onSaveSuccess = null })=> {
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -61,9 +62,12 @@ const NewLabelTemplate = ({ propMode = null, propTemplateId = null, onCloseModal
     const sMode = propMode || location.state?.mode || 'create';
     const bIsViewMode = sMode === 'view';
 
+    // Check if this component is embedded (either inline or in a modal)
+    const bIsEmbedded = !!onCloseModal;
+
     // --- NOTIFICATION & MODAL STATE ---
     const [oNotification, setNotification] = useState({ show: false, message: '', type: 'info' });
-    const [bShowInfoModal, setBShowInfoModal] = useState(false); // <-- Controls the Info Pop-up
+    const [bShowInfoModal, setBShowInfoModal] = useState(false);
 
     const showNotif = (message, type = 'info') => {
         setNotification({ show: true, message, type });
@@ -72,11 +76,7 @@ const NewLabelTemplate = ({ propMode = null, propTemplateId = null, onCloseModal
     // --- 1. MAIN TEMPLATE STATE ---
     const [sName, setSName] = useState("");
     const [sDescription, setSDescription] = useState("");
-
-    // <-- ADDED MULTIPOLYGON -->
     const [oGeometries, setOGeometries] = useState({polygon: true, multipolygon: false, polyline: false, point: false});
-
-    // <-- ADDED INTERSECTION FLAGS -->
     const [bSelfIntersectAllowed, setBSelfIntersectAllowed] = useState(false);
     const [bPolygonsIntersectAllowed, setBPolygonsIntersectAllowed] = useState(false);
 
@@ -108,12 +108,11 @@ const NewLabelTemplate = ({ propMode = null, propTemplateId = null, onCloseModal
 
                     setOGeometries({
                         polygon: data.geometryTypes?.includes('polygon'),
-                        multipolygon: data.geometryTypes?.includes('multipolygon'), // <-- Load
+                        multipolygon: data.geometryTypes?.includes('multipolygon'),
                         polyline: data.geometryTypes?.includes('polyline'),
                         point: data.geometryTypes?.includes('point')
                     });
 
-                    // <-- Load intersection rules -->
                     setBSelfIntersectAllowed(data.isSelfIntersectAllowed || false);
                     setBPolygonsIntersectAllowed(data.isPolygonsIntersectAllowed || false);
 
@@ -202,7 +201,7 @@ const NewLabelTemplate = ({ propMode = null, propTemplateId = null, onCloseModal
     const handleSaveTemplate = async () => {
         const aoGeometryTypes = [];
         if (oGeometries.polygon) aoGeometryTypes.push("polygon");
-        if (oGeometries.multipolygon) aoGeometryTypes.push("multipolygon"); // <-- Save
+        if (oGeometries.multipolygon) aoGeometryTypes.push("multipolygon");
         if (oGeometries.polyline) aoGeometryTypes.push("polyline");
         if (oGeometries.point) aoGeometryTypes.push("point");
 
@@ -233,7 +232,6 @@ const NewLabelTemplate = ({ propMode = null, propTemplateId = null, onCloseModal
             isSingleColorStyle: sStyleType === 'single',
             featureColor: sStyleType === 'single' ? sSingleColor : null,
             colourAttributeName: sStyleType === 'category' ? sSelectedCategoryAttr : null,
-            // <-- Add Intersection Flags to Payload -->
             isSelfIntersectAllowed: bSelfIntersectAllowed,
             isPolygonsIntersectAllowed: bPolygonsIntersectAllowed,
             creationDate: Date.now() / 1000
@@ -248,9 +246,15 @@ const NewLabelTemplate = ({ propMode = null, propTemplateId = null, onCloseModal
                 showNotif("Template Saved Successfully!", "success");
             }
 
-            setTimeout(() => {
-                navigate('/label-templates');
-            }, 1500);
+            // FIX: If we passed an onSaveSuccess callback (like from the inline form), run it!
+            // Otherwise, do the standard navigation away.
+            if (onSaveSuccess) {
+                onSaveSuccess(sName);
+            } else {
+                setTimeout(() => {
+                    navigate('/label-templates');
+                }, 1500);
+            }
 
         } catch (error) {
             showNotif("Error: " + (error.message || "Unknown error occurred"), "error");
@@ -261,9 +265,10 @@ const NewLabelTemplate = ({ propMode = null, propTemplateId = null, onCloseModal
 
     return (
         <div style={{
-            padding: '30px',
-            background: '#f4f6f8',
-            minHeight: '100vh',
+            // FIX: If it is embedded inline, drop the 100vh height and backgrounds so it fits!
+            padding: bIsEmbedded ? '0' : '30px',
+            background: bIsEmbedded ? 'transparent' : '#f4f6f8',
+            minHeight: bIsEmbedded ? 'auto' : '100vh',
             display: 'flex',
             justifyContent: 'center',
             position: 'relative'
@@ -297,7 +302,6 @@ const NewLabelTemplate = ({ propMode = null, propTemplateId = null, onCloseModal
                             <p style={{fontSize: '13px', color: '#555', marginTop: '5px'}}>
                                 If turned OFF, a single shape cannot cross its own borders (preventing twisted "bow-tie" shapes).
                             </p>
-                            {/* --- REPLACED WITH IMG TAG --- */}
                             <div style={{ textAlign: 'center', background: '#f9f9f9', padding: '10px', borderRadius: '4px', border: '1px solid #eee' }}>
                                 <img
                                     src={oSelfIntersectGif}
@@ -312,7 +316,6 @@ const NewLabelTemplate = ({ propMode = null, propTemplateId = null, onCloseModal
                             <p style={{fontSize: '13px', color: '#555', marginTop: '5px'}}>
                                 If turned OFF, two separate shapes cannot overlap, and you cannot draw a new shape inside an existing one.
                             </p>
-                            {/* --- REPLACED WITH IMG TAG --- */}
                             <div style={{ textAlign: 'center', background: '#f9f9f9', padding: '10px', borderRadius: '4px', border: '1px solid #eee' }}>
                                 <img
                                     src={oCrossIntersectGif}
@@ -609,12 +612,8 @@ const NewLabelTemplate = ({ propMode = null, propTemplateId = null, onCloseModal
                         sVariant="outline"
                         type="button"
                         fnOnClick={() => {
-                            // If it's a modal, use the close function. Otherwise, go back in history.
-                            if (onCloseModal) {
-                                onCloseModal();
-                            } else {
-                                navigate(-1);
-                            }
+                            if (onCloseModal) onCloseModal();
+                            else navigate(-1);
                         }}
                     >
                         {bIsViewMode ? 'Close' : 'Cancel'}

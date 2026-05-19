@@ -4,7 +4,7 @@ import {useNavigate} from 'react-router-dom';
 // 1. COMPONENTS
 import MapboxMap from '../components/MapboxMap';
 import AppCard from '../components/app-card';
-import AppTextInput from '../components/app-text-input'; // <--- Your renamed component
+import AppTextInput from '../components/app-text-input';
 import AppTextArea from '../components/app-text-area';
 import AppCheckbox from '../components/app-checkbox';
 import AppButton from '../components/app-button';
@@ -21,11 +21,13 @@ const NewProjectRequest = () => {
     // --- UI STATES (NEW) ---
     const [bIsSubmitting, setIsSubmitting] = useState(false);
     const [sErrorMessage, setErrorMessage] = useState(null);
-    const [bShowSuccessModal, setShowSuccessModal] = useState(false); // Controls the popup
+    const [bShowSuccessModal, setShowSuccessModal] = useState(false);
     const [aoTemplates, setAoTemplates] = useState([]);
     const [bLoadingTemplates, setBLoadingTemplates] = useState(true);
+
+    // Modals & Inline toggles
     const [bShowTemplateModal, setBShowTemplateModal] = useState(false);
-    const [sTemplateModalMode, setSTemplateModalMode] = useState('view');
+    const [bShowInlineCreate, setBShowInlineCreate] = useState(false);
 
     // --- FORM STATE ---
     const [formData, setFormData] = useState({
@@ -34,32 +36,24 @@ const NewProjectRequest = () => {
         startDate: '', endDate: '',
         isPublic: false, isGlobal: true,
         annotatorScope: 'all', reviewRequired: false, minReviews: 1,
-
-        // FIX: Default to exact Python Enum key
         eoMission: 'S2',
-
-        // FIX: Use exact Python Enum keys for tasks
         tasks: {
             SEMANTING_SEGMENTATION: false,
             OBJECT_DETECTION: false,
             OTHER: false
         },
-
         ownerHosting: false, s3User: '', s3Password: '', s3Url: '',
         aoiGeometry: null,
-        labelTemplate: null, // We will send null for now to avoid FK errors
+        labelTemplate: null,
     });
 
     // --- HANDLERS ---
     const handleInputChange = (e) => {
         const {name, value, type, checked} = e.target;
-
         if (sErrorMessage) setErrorMessage(null);
 
         if (name.startsWith('task_')) {
-            // FIX: Replace the prefix instead of splitting by underscore
             const taskName = name.replace('task_', '');
-
             setFormData(prev => ({
                 ...prev,
                 tasks: {...prev.tasks, [taskName]: checked}
@@ -77,56 +71,53 @@ const NewProjectRequest = () => {
         setFormData(prev => ({...prev, aoiGeometry: drawData}));
     };
 
+    // --- EXTRACTED FETCH FUNCTION ---
+    // Pulled out of useEffect so we can call it after inline creation!
+    const fetchTemplates = async (sTemplateNameToSelect = null) => {
+        try {
+            setBLoadingTemplates(true);
+            const oData = await getLabelTemplates();
+            setAoTemplates(oData);
+
+            if (sTemplateNameToSelect) {
+                // THE TRICK: Find the template they just made and select its ID!
+                const oNewTemplate = oData.find(t => t.name === sTemplateNameToSelect);
+                if (oNewTemplate) {
+                    setFormData(prev => ({ ...prev, labelTemplate: oNewTemplate.templateId }));
+                }
+            } else if (oData && oData.length > 0 && !formData.labelTemplate) {
+                // Fallback: Just select the first one if loading for the first time
+                setFormData(prev => ({ ...prev, labelTemplate: oData[0].templateId }));
+            }
+        } catch (error) {
+            console.error("Failed to load templates:", error);
+        } finally {
+            setBLoadingTemplates(false);
+        }
+    };
 
     useEffect(() => {
-        const fetchTemplates = async () => {
-            try {
-                setBLoadingTemplates(true);
-
-                // FIX: getLabelTemplates() likely already returns the JSON array
-                const oData = await getLabelTemplates();
-
-                setAoTemplates(oData);
-
-                if (oData && oData.length > 0) {
-                    setFormData(prev => ({ ...prev, labelTemplate: oData[0].templateId }));
-                }
-            } catch (error) {
-                console.error("Failed to load templates:", error);
-            } finally {
-                setBLoadingTemplates(false);
-            }
-        };
-
         fetchTemplates();
     }, []);
 
-    // --- HELPER: Convert Date String (YYYY-MM-DD) to Epoch Milliseconds ---
+    // --- HELPER FUNCTIONS ---
     const toEpochMillis = (dateString) => {
         if (!dateString) return null;
         return new Date(dateString).getTime();
     };
 
-    // --- HELPER: Convert GeoJSON/Draw Data to WKT ---
     const toWKT = (featureCollection) => {
-        // 1. Check if we actually have drawn features
         if (!featureCollection || !featureCollection.features || featureCollection.features.length === 0) {
             return null;
         }
-
-        // 2. Extract the geometry from the FIRST feature drawn
         const geometry = featureCollection.features[0].geometry;
-
         if (!geometry || !geometry.coordinates) return null;
 
-        // 3. Convert Mapbox Polygon to WKT String
         if (geometry.type === 'Polygon') {
             const ring = geometry.coordinates[0];
             const coordString = ring.map(pt => `${pt[0]} ${pt[1]}`).join(", ");
             return `POLYGON((${coordString}))`;
         }
-
-        // If they drew a line/point by mistake, ignore or handle differently
         return null;
     };
 
@@ -135,7 +126,6 @@ const NewProjectRequest = () => {
         e.preventDefault();
         setErrorMessage(null);
 
-        // 1. VALIDATION (Client Side)
         if (!formData.name.trim()) return setErrorMessage("Project Name is required.");
         if (!formData.startDate) return setErrorMessage("Start Date is required.");
         if (formData.isOwnerHosting && (!formData.s3User || !formData.s3Password || !formData.s3Url)) {
@@ -147,56 +137,37 @@ const NewProjectRequest = () => {
         if (!formData.isGlobal && !formData.aoiGeometry) {
             return setErrorMessage("Please draw the Area of Interest (AOI).");
         }
+        if (!formData.labelTemplate) {
+            return setErrorMessage("Please select a Labelling Template.");
+        }
 
         try {
             setIsSubmitting(true);
-
-            // 2. DATA TRANSFORMATION (React State -> Python Model)
             const tasksList = Object.keys(formData.tasks).filter(key => formData.tasks[key]);
 
-            // Map the React state to the Python "ProjectCreate" Pydantic fields
             const oPayload = {
-                // --- Basic Info ---
                 name: formData.name,
                 description: formData.description || null,
                 link: formData.link || null,
                 isPublic: formData.isPublic,
-
-                // --- Dates (Convert to Epoch Millis) ---
-                creationDate: Date.now(), // Current time in millis
+                creationDate: Date.now(),
                 datasetStartDate: toEpochMillis(formData.startDate),
                 datasetEndDate: toEpochMillis(formData.endDate),
-
-                // --- Spatial ---
                 isGlobalAoI: formData.isGlobal,
-                // Only send bbox (WKT) if it is NOT global
                 bbox: formData.isGlobal ? null : toWKT(formData.aoiGeometry),
-
-                // --- Annotations & Review ---
-                // Python expects bool: "all" -> True, "own" -> False
                 hasAnnotatorGlobalView: formData.annotatorScope === 'all',
                 doesNeedReview: formData.reviewRequired,
                 reviewersNumber: formData.reviewRequired ? parseInt(formData.minReviews) : null,
-
-                // --- Data Config ---
                 mission: formData.eoMission,
-                tasks: tasksList, // Array of strings ["segmentation", "detection"]
-                // Assuming you handle the file upload separately and get a template name
-                labellingTemplate: formData.labelTemplate, // Hardcoded for now, or use a state variable
-
-                // --- Hosting ---
+                tasks: tasksList,
+                labellingTemplate: formData.labelTemplate,
                 isOwnerHosting: formData.ownerHosting,
                 hostingUsername: formData.ownerHosting ? formData.s3User : null,
                 hostingPassword: formData.ownerHosting ? formData.s3Password : null,
                 hostingUrl: formData.ownerHosting ? formData.s3Url : null,
             };
 
-            console.log("Sending Payload to Python:", oPayload); // Debugging
-
-            // 3. API CALL
-            // Pass 'oPayload' instead of 'formData'
             await createProject(oPayload);
-
             setShowSuccessModal(true);
         } catch (error) {
             console.error("Save failed:", error);
@@ -206,56 +177,33 @@ const NewProjectRequest = () => {
         }
     };
 
-    // --- NEW: POPUP ACTION ---
     const closePopupAndNavigate = () => {
         setShowSuccessModal(false);
-        navigate('/'); // Go back to home
+        navigate('/');
     };
 
     return (
-        <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            height: '100vh',
-            background: '#f4f6f8',
-            overflowY: 'auto',
-            position: 'relative'
-        }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f4f6f8', overflowY: 'auto', position: 'relative' }}>
 
-            {/* --- NEW: SUCCESS POPUP OVERLAY --- */}
             {bShowSuccessModal && (
-                <div style={{
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000,
-                    display: 'flex', justifyContent: 'center', alignItems: 'center'
-                }}>
-                    <div style={{
-                        background: 'white', padding: '30px', borderRadius: '8px',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.2)', textAlign: 'center', width: '300px'
-                    }}>
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    <div style={{ background: 'white', padding: '30px', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)', textAlign: 'center', width: '300px' }}>
                         <div style={{fontSize: '40px', marginBottom: '10px'}}>✅</div>
                         <h3 style={{margin: '0 0 10px 0', color: '#333'}}>Success!</h3>
                         <p style={{color: '#666', marginBottom: '20px'}}>Request was created successfully.</p>
-                        <AppButton sVariant="primary" fnOnClick={closePopupAndNavigate}>
-                            OK, Great
-                        </AppButton>
+                        <AppButton sVariant="primary" fnOnClick={closePopupAndNavigate}>OK, Great</AppButton>
                     </div>
                 </div>
             )}
 
-            {/* HEADER */}
             <div style={{padding: '20px', background: 'white', borderBottom: '1px solid #ddd', marginBottom: '20px'}}>
                 <h2 style={{margin: 0, color: '#333'}}>🆕 Create New Project Request</h2>
             </div>
 
             <div style={{padding: '0 30px 30px 30px', maxWidth: '1000px', margin: '0 auto', width: '100%'}}>
 
-                {/* --- NEW: ERROR BANNER --- */}
                 {sErrorMessage && (
-                    <div style={{
-                        padding: '15px', background: '#fdeded', color: '#5f2120',
-                        border: '1px solid #f5c6cb', borderRadius: '4px', marginBottom: '20px'
-                    }}>
+                    <div style={{ padding: '15px', background: '#fdeded', color: '#5f2120', border: '1px solid #f5c6cb', borderRadius: '4px', marginBottom: '20px' }}>
                         ⚠️ <strong>Error:</strong> {sErrorMessage}
                     </div>
                 )}
@@ -265,71 +213,21 @@ const NewProjectRequest = () => {
                     {/* --- 1. GENERAL INFO --- */}
                     <AppCard>
                         <h3 style={headerStyle}>1. General Information</h3>
-
                         <div style={gridStyle}>
-                            <AppTextInput
-                                sName="name"
-                                sValue={formData.name} // Ensure value is bound
-                                sPlaceholder="Project Name *"
-                                fnOnChange={handleInputChange}
-                                // We handled manual validation, but HTML required is good backup
-                                required
-                            />
-                            <AppTextInput
-                                sName="link"
-                                sValue={formData.link}
-                                type="url"
-                                sPlaceholder="External Link (Optional)"
-                                fnOnChange={handleInputChange}
-                            />
+                            <AppTextInput sName="name" sValue={formData.name} sPlaceholder="Project Name *" fnOnChange={handleInputChange} required />
+                            <AppTextInput sName="link" sValue={formData.link} type="url" sPlaceholder="External Link (Optional)" fnOnChange={handleInputChange} />
                         </div>
-
                         <div style={{marginTop: '15px'}}>
-                            <AppTextArea
-                                sName="description"
-                                sValue={formData.description}
-                                sPlaceholder="Project Description *"
-                                fnOnChange={handleInputChange}
-                            />
+                            <AppTextArea sName="description" sValue={formData.description} sPlaceholder="Project Description *" fnOnChange={handleInputChange} />
                         </div>
-
-                        {/* Dates */}
                         <div style={{...gridStyle, marginTop: '15px'}}>
-                            <AppDateInput
-                                sLabel="Creation Date"
-                                sName="creationDate"
-                                sValue={formData.creationDate}
-                                fnOnChange={handleInputChange}
-                                bRequired={true}
-                            />
-                            <AppDateInput
-                                sLabel="Start Date"
-                                sName="startDate"
-                                sValue={formData.startDate}
-                                fnOnChange={handleInputChange}
-                            />
-                            <AppDateInput
-                                sLabel="End Date"
-                                sName="endDate"
-                                sValue={formData.endDate}
-                                fnOnChange={handleInputChange}
-                            />
+                            <AppDateInput sLabel="Creation Date" sName="creationDate" sValue={formData.creationDate} fnOnChange={handleInputChange} bRequired={true} />
+                            <AppDateInput sLabel="Start Date" sName="startDate" sValue={formData.startDate} fnOnChange={handleInputChange} />
+                            <AppDateInput sLabel="End Date" sName="endDate" sValue={formData.endDate} fnOnChange={handleInputChange} />
                         </div>
-
-                        {/* Toggles */}
                         <div style={{display: 'flex', gap: '30px', marginTop: '20px'}}>
-                            <AppCheckbox
-                                sName="isPublic"
-                                sLabel="Make Project Public"
-                                bChecked={formData.isPublic}
-                                fnOnChange={handleInputChange}
-                            />
-                            <AppCheckbox
-                                sName="isGlobal"
-                                sLabel="Project Area is Global"
-                                bChecked={formData.isGlobal}
-                                fnOnChange={handleInputChange}
-                            />
+                            <AppCheckbox sName="isPublic" sLabel="Make Project Public" bChecked={formData.isPublic} fnOnChange={handleInputChange} />
+                            <AppCheckbox sName="isGlobal" sLabel="Project Area is Global" bChecked={formData.isGlobal} fnOnChange={handleInputChange} />
                         </div>
                     </AppCard>
 
@@ -337,18 +235,13 @@ const NewProjectRequest = () => {
                     {!formData.isGlobal && (
                         <AppCard>
                             <h3 style={headerStyle}>2. Area of Interest (AOI)</h3>
-                            <div style={{
-                                height: '400px', borderRadius: '4px', overflow: 'hidden', border: '1px solid #ccc'
-                            }}>
+                            <div style={{ height: '400px', borderRadius: '4px', overflow: 'hidden', border: '1px solid #ccc' }}>
                                 <MapboxMap
                                     aoMarkers={[]}
                                     oInitialView={{latitude: 20, longitude: 0, zoom: 1.5}}
                                     onDrawUpdate={handleAoiDraw}
                                     bEnableDraw={true}
                                     bEnableGeocoder={true}
-
-                                    // --- THE FIX IS HERE ---
-                                    // Feed the drawn features back into the map so it doesn't delete them
                                     aoFeatures={formData.aoiGeometry ? formData.aoiGeometry.features : []}
                                 />
                             </div>
@@ -357,47 +250,20 @@ const NewProjectRequest = () => {
 
                     {/* --- 3. LABELLING PROTOCOL --- */}
                     <AppCard oStyle={{background: '#f0f7ff', border: '1px solid #cce5ff'}}>
-                        <h3 style={{...headerStyle, color: '#0056b3', borderBottomColor: '#cce5ff'}}>3. Labelling
-                            Protocol</h3>
-
+                        <h3 style={{...headerStyle, color: '#0056b3', borderBottomColor: '#cce5ff'}}>3. Labelling Protocol</h3>
                         <div style={{marginBottom: '15px'}}>
                             <label style={subLabelStyle}>Annotator Visibility:</label>
                             <div style={{display: 'flex', gap: '20px', marginTop: '5px'}}>
-                                <AppRadioButton
-                                    sName="annotatorScope"
-                                    sValue="all"
-                                    sLabel="Can see all labels"
-                                    bChecked={formData.annotatorScope === 'all'}
-                                    fnOnChange={handleInputChange}
-                                />
-                                <AppRadioButton
-                                    sName="annotatorScope"
-                                    sValue="own"
-                                    sLabel="Only their own labels"
-                                    bChecked={formData.annotatorScope === 'own'}
-                                    fnOnChange={handleInputChange}
-                                />
+                                <AppRadioButton sName="annotatorScope" sValue="all" sLabel="Can see all labels" bChecked={formData.annotatorScope === 'all'} fnOnChange={handleInputChange} />
+                                <AppRadioButton sName="annotatorScope" sValue="own" sLabel="Only their own labels" bChecked={formData.annotatorScope === 'own'} fnOnChange={handleInputChange} />
                             </div>
                         </div>
-
                         <div style={{display: 'flex', alignItems: 'center', gap: '20px'}}>
-                            <AppCheckbox
-                                sName="reviewRequired"
-                                sLabel="Review Required"
-                                bChecked={formData.reviewRequired}
-                                fnOnChange={handleInputChange}
-                            />
-
+                            <AppCheckbox sName="reviewRequired" sLabel="Review Required" bChecked={formData.reviewRequired} fnOnChange={handleInputChange} />
                             {formData.reviewRequired && (
                                 <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
                                     <span style={{fontSize: '14px'}}>Min Reviews:</span>
-                                    <AppTextInput
-                                        sName="minReviews"
-                                        type="number"
-                                        sValue={formData.minReviews}
-                                        fnOnChange={handleInputChange}
-                                        oStyle={{width: '60px'}}
-                                    />
+                                    <AppTextInput sName="minReviews" type="number" sValue={formData.minReviews} fnOnChange={handleInputChange} oStyle={{width: '60px'}} />
                                 </div>
                             )}
                         </div>
@@ -406,37 +272,21 @@ const NewProjectRequest = () => {
                     {/* --- 4. DATA CONFIG --- */}
                     <AppCard>
                         <h3 style={headerStyle}>4. Data Configuration</h3>
-
                         <div style={{marginBottom: '15px'}}>
                             <label style={subLabelStyle}>EO Mission</label>
-                            {/* FIX: Use exact Backend Enums */}
-                            <AppDropdown
-                                sValue={formData.eoMission}
-                                fnOnChange={(e) => setFormData({ ...formData, eoMission: e.target.value })}
-                                aoOptions={["S2", "CUSTOM"]}
-                                oStyle={{width: '100%', marginTop: '5px'}}
-                            />
+                            <AppDropdown sValue={formData.eoMission} fnOnChange={(e) => setFormData({ ...formData, eoMission: e.target.value })} aoOptions={["S2", "CUSTOM"]} oStyle={{width: '100%', marginTop: '5px'}} />
                         </div>
-
                         <div style={{marginBottom: '15px'}}>
                             <label style={subLabelStyle}>Tasks</label>
                             <div style={{display: 'flex', gap: '20px', flexWrap: 'wrap', marginTop: '8px'}}>
-                                {/* FIX: Map over the actual state keys so they match the backend */}
                                 {Object.keys(formData.tasks).map(taskKey => (
-                                    <AppCheckbox
-                                        key={taskKey}
-                                        sName={`task_${taskKey}`}
-                                        sLabel={taskKey.replace('_', ' ')} // Makes it look nice: "OBJECT DETECTION"
-                                        bChecked={formData.tasks[taskKey]}
-                                        fnOnChange={handleInputChange}
-                                    />
+                                    <AppCheckbox key={taskKey} sName={`task_${taskKey}`} sLabel={taskKey.replace('_', ' ')} bChecked={formData.tasks[taskKey]} fnOnChange={handleInputChange} />
                                 ))}
                             </div>
                         </div>
 
                         <div style={{ marginBottom: '15px' }}>
                             <label style={subLabelStyle}>Labelling Template</label>
-
                             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '5px' }}>
                                 {bLoadingTemplates ? (
                                     <div style={{ fontSize: '13px', color: '#666' }}>⏳ Loading templates...</div>
@@ -449,67 +299,51 @@ const NewProjectRequest = () => {
                                     >
                                         <option value="" disabled>-- Select a Template --</option>
                                         {aoTemplates.map(template => (
-                                            <option key={template.templateId} value={template.templateId}>
-                                                {template.name}
-                                            </option>
+                                            <option key={template.templateId} value={template.templateId}>{template.name}</option>
                                         ))}
                                     </select>
                                 )}
 
-                                {/* VIEW BUTTON - Opens Modal */}
                                 {formData.labelTemplate && (
-                                    <AppButton
-                                        sVariant="outline"
-                                        type="button" // Prevent form submission
-                                        oStyle={{ padding: '8px 12px' }}
-                                        fnOnClick={() => setBShowTemplateModal(true)}
-                                    >
-                                        View
-                                    </AppButton>
+                                    <AppButton sVariant="outline" type="button" oStyle={{ padding: '8px 12px' }} fnOnClick={() => setBShowTemplateModal(true)}>View</AppButton>
                                 )}
 
-                                {/* CREATE BUTTON - Navigates Away */}
-                                <AppButton
-                                    sVariant="primary"
-                                    type="button" // Prevent form submission
-                                    oStyle={{ padding: '8px 12px' }}
-                                    fnOnClick={() => navigate('/create-label-template')} // Ensure this matches your route
-                                >
-                                    ➕ New
+                                {/* FIX: Toggle the inline block instead of navigating away! */}
+                                <AppButton sVariant={bShowInlineCreate ? "outline" : "primary"} type="button" oStyle={{ padding: '8px 12px' }} fnOnClick={() => setBShowInlineCreate(!bShowInlineCreate)}>
+                                    {bShowInlineCreate ? "✖ Cancel New" : "➕ New"}
                                 </AppButton>
                             </div>
                         </div>
+
+                        {/* --- NEW: INLINE TEMPLATE CREATION BLOCK --- */}
+                        {bShowInlineCreate && (
+                            <div style={{ marginTop: '20px', padding: '20px', background: '#f8f9fa', border: '2px dashed #007bff', borderRadius: '8px' }}>
+                                <NewLabelTemplate
+                                    propMode="create"
+                                    onCloseModal={() => setBShowInlineCreate(false)}
+                                    onSaveSuccess={(sNewTemplateName) => {
+                                        setBShowInlineCreate(false);
+                                        fetchTemplates(sNewTemplateName); // <-- Pass it here!
+                                    }}
+                                />
+                            </div>
+                        )}
                     </AppCard>
 
                     {/* --- 5. STORAGE --- */}
                     <AppCard>
                         <h3 style={headerStyle}>5. Storage & Hosting</h3>
-
                         <div style={{marginBottom: '15px'}}>
-                            <AppCheckbox
-                                sName="ownerHosting"
-                                sLabel="Owner Provided Hosting (S3)"
-                                bChecked={formData.ownerHosting}
-                                fnOnChange={handleInputChange}
-                            />
+                            <AppCheckbox sName="ownerHosting" sLabel="Owner Provided Hosting (S3)" bChecked={formData.ownerHosting} fnOnChange={handleInputChange} />
                         </div>
-
                         {formData.ownerHosting && (
-                            <div style={{
-                                padding: '15px',
-                                background: '#f9f9f9',
-                                borderRadius: '4px',
-                                border: '1px solid #eee'
-                            }}>
+                            <div style={{ padding: '15px', background: '#f9f9f9', borderRadius: '4px', border: '1px solid #eee' }}>
                                 <div style={gridStyle}>
-                                    <AppTextInput sName="s3User" sPlaceholder="S3 User / Key"
-                                                  fnOnChange={handleInputChange}/>
-                                    <AppTextInput sName="s3Password" type="password" sPlaceholder="S3 Secret"
-                                                  fnOnChange={handleInputChange}/>
+                                    <AppTextInput sName="s3User" sPlaceholder="S3 User / Key" fnOnChange={handleInputChange}/>
+                                    <AppTextInput sName="s3Password" type="password" sPlaceholder="S3 Secret" fnOnChange={handleInputChange}/>
                                 </div>
                                 <div style={{marginTop: '15px'}}>
-                                    <AppTextInput sName="s3Url" sPlaceholder="S3 Bucket URL"
-                                                  fnOnChange={handleInputChange}/>
+                                    <AppTextInput sName="s3Url" sPlaceholder="S3 Bucket URL" fnOnChange={handleInputChange}/>
                                 </div>
                             </div>
                         )}
@@ -517,62 +351,28 @@ const NewProjectRequest = () => {
 
                     {/* --- ACTIONS --- */}
                     <div style={{display: 'flex', justifyContent: 'flex-end', gap: '15px', paddingBottom: '30px'}}>
-                        <AppButton
-                            sVariant="outline"
-                            fnOnClick={() => navigate('/')}
-                            disabled={bIsSubmitting}
-                        >
-                            Cancel
-                        </AppButton>
-                        <AppButton
-                            type="submit"
-                            sVariant="success"
-                            disabled={bIsSubmitting} // Disable while sending
-                        >
+                        <AppButton sVariant="outline" fnOnClick={() => navigate('/')} disabled={bIsSubmitting}>Cancel</AppButton>
+                        <AppButton type="submit" sVariant="success" disabled={bIsSubmitting}>
                             {bIsSubmitting ? 'Creating...' : 'Create Project'}
                         </AppButton>
                     </div>
 
                 </form>
             </div>
+
+            {/* VIEW TEMPLATE MODAL (Unchanged) */}
             {bShowTemplateModal && (
-                <div style={{
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 2000,
-                    display: 'flex', justifyContent: 'center', alignItems: 'center',
-                    padding: '20px'
-                }}>
-                    <div style={{
-                        background: 'white',
-                        borderRadius: '8px',
-                        width: '100%',
-                        maxWidth: '1000px',
-                        maxHeight: '90vh',
-                        overflowY: 'auto',
-                        boxShadow: '0 10px 30px rgba(0,0,0,0.3)'
-                    }}>
-                        {/* Feed it props to force View Mode */}
-                        <NewLabelTemplate
-                            propMode="view"
-                            propTemplateId={formData.labelTemplate}
-                            onCloseModal={() => setBShowTemplateModal(false)}
-                        />
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
+                    <div style={{ background: 'white', borderRadius: '8px', width: '100%', maxWidth: '1000px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 30px rgba(0,0,0,0.3)' }}>
+                        <NewLabelTemplate propMode="view" propTemplateId={formData.labelTemplate} onCloseModal={() => setBShowTemplateModal(false)} />
                     </div>
                 </div>
             )}
         </div>
-
     );
 };
 
-// Local Styles
-const headerStyle = {
-    margin: '0 0 15px 0',
-    fontSize: '18px',
-    color: '#444',
-    borderBottom: '1px solid #eee',
-    paddingBottom: '10px'
-};
+const headerStyle = { margin: '0 0 15px 0', fontSize: '18px', color: '#444', borderBottom: '1px solid #eee', paddingBottom: '10px' };
 const subLabelStyle = {fontWeight: 'bold', fontSize: '13px', color: '#555'};
 const gridStyle = {display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px'};
 
