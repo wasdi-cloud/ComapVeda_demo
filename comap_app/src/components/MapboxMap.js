@@ -213,10 +213,10 @@ const MapboxMap = ({
             // THE FIX: NEUTER MAPBOX'S DRAG FUNCTION
             // MapboxDraw modes are extensible. We clone simple_select and overwrite dragMove.
             // =========================================================================
-            const customSimpleSelect = Object.assign({}, MapboxDraw.modes.simple_select);
-            const originalDragMove = customSimpleSelect.dragMove;
+            const oCustomSimpleSelect = Object.assign({}, MapboxDraw.modes.simple_select);
+            const originalDragMove = oCustomSimpleSelect.dragMove;
 
-            customSimpleSelect.dragMove = function(state, ev) {
+            oCustomSimpleSelect.dragMove = function(state, ev) {
                 // If the user toggle says "Vertices", absolutely refuse to drag the polygon!
                 if (sPolygonEditModeRef.current === 'vertices') {
                     return;
@@ -228,10 +228,10 @@ const MapboxMap = ({
             };
 
             // 2. Fix Vertex Mode (THE MISSING PIECE)
-            const customDirectSelect = Object.assign({}, MapboxDraw.modes.direct_select);
+            const oCustomDirectSelect = Object.assign({}, MapboxDraw.modes.direct_select);
 
             // direct_select has a hidden function just for dragging the whole shape. We kill it here.
-            customDirectSelect.dragFeature = function(state, e, delta) {
+            oCustomDirectSelect.dragFeature = function(state, e, delta) {
                 // Do absolutely nothing!
                 return;
             };
@@ -243,8 +243,8 @@ const MapboxMap = ({
                 userProperties: true,
                 styles: CUSTOM_DRAW_STYLES,
                 modes: Object.assign({}, MapboxDraw.modes, {
-                    simple_select: customSimpleSelect,
-                    direct_select: customDirectSelect // <-- Inject our neutered vertex mode!
+                    simple_select: oCustomSimpleSelect,
+                    direct_select: oCustomDirectSelect // <-- Inject our neutered vertex mode!
                 })
             });
             // =========================================================================
