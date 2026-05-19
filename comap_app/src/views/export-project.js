@@ -102,112 +102,126 @@ const ExportProject = () => {
                         <h2 style={{margin: 0, color: '#333'}}>📦 Export Data</h2>
                         <p style={{margin: '5px 0 0 0', color: '#666'}}>Project: <strong>{sProjectTitle}</strong></p>
                     </div>
-                    <AppButton sVariant="outline" fnOnClick={goBackToProject}>
+                    <AppButton sVariant="outline" fnOnClick={goBackToProject} disabled={bIsGenerating}>
                         Cancel
                     </AppButton>
                 </div>
 
-                {/* --- CARD 1: EXPORT CONFIGURATION --- */}
-                <AppCard>
-                    <h3 style={headerStyle}>1. Configuration</h3>
+                {/* --- CONDITIONAL RENDER: FORM OR LOADING MESSAGE --- */}
+                {bIsGenerating ? (
+                    <AppCard oStyle={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '50px 20px', textAlign: 'center' }}>
 
-                    {/* A. RAW DATA OPTION (Only if hosted) */}
-                    {bRawDataHosted ? (
-                        <div style={{paddingBottom: '20px', marginBottom: '20px', borderBottom: '1px solid #eee'}}>
-                            <label style={subLabelStyle}>Raw Imagery</label>
-                            <div style={{marginTop: '10px'}}>
-                                {/* --- FIX: DISABLED CHECKBOX --- */}
-                                <AppCheckbox
-                                    disabled={true}
-                                    sLabel="Include Raw Satellite Images (GeoTIFF) [Coming Soon]"
-                                    bChecked={false} // Force false so it doesn't accidentally trigger
-                                    fnOnChange={(e) => setBIncludeRawData(e.target.checked)}
-                                />
-                                <p style={{fontSize: '11px', color: '#d9534f', marginLeft: '24px', marginTop: '5px', fontStyle: 'italic'}}>
-                                    Note: S3 raw data export is currently under construction. Only labels will be downloaded at this time.
-                                </p>
-                            </div>
+                        <div style={{ fontSize: '40px', marginBottom: '15px' }}>⏳</div>
+                        <h3 style={{ color: '#0050b3', margin: '0 0 10px 0' }}>Packaging Your Data...</h3>
+
+                        <div style={{ background: '#e6f7ff', border: '1px solid #91d5ff', borderRadius: '6px', padding: '15px', width: '100%', maxWidth: '400px' }}>
+                            <p style={{ color: '#0050b3', fontSize: '14px', margin: 0, fontWeight: 'bold' }}>
+                                Please do not close or leave this page.
+                            </p>
+                            <p style={{ color: '#666', fontSize: '13px', margin: '8px 0 0 0', lineHeight: '1.5' }}>
+                                We are compiling your Shapefiles {bIncludeRawData ? "and Raw Imagery " : ""}into a secure ZIP archive. This may take a few moments depending on the project size.
+                            </p>
                         </div>
-                    ) : (
-                        <div style={{
-                            paddingBottom: '20px',
-                            marginBottom: '20px',
-                            borderBottom: '1px solid #eee',
-                            color: '#999',
-                            fontSize: '13px'
-                        }}>
-                            <em>Raw data is not hosted on this platform. Only labels are available.</em>
-                        </div>
-                    )}
 
-                    {/* B. REVIEW / VALIDATION LOGIC */}
-                    <div>
-                        <label style={subLabelStyle}>Label Validation</label>
-                        {bReviewMode ? (
-                            <div style={{display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px'}}>
-                                <AppRadioButton
-                                    sName="filter" sValue="validated"
-                                    sLabel="Export only Validated Labels (Recommended)"
-                                    bChecked={sLabelFilter === 'validated'}
-                                    fnOnChange={() => setSLabelFilter('validated')}
-                                />
-                                <AppRadioButton
-                                    sName="filter" sValue="all"
-                                    sLabel="Export All Labels (Including Unreviewed)"
-                                    bChecked={sLabelFilter === 'all'}
-                                    fnOnChange={() => setSLabelFilter('all')}
-                                />
-                            </div>
-                        ) : (
-                            <div style={{marginTop: '10px', fontSize: '13px', color: '#666'}}>
-                                This project does not require review. All accessible labels will be exported.
-                            </div>
-                        )}
-                    </div>
-                </AppCard>
+                    </AppCard>
+                ) : (
+                    <>
+                        {/* --- CARD 1: EXPORT CONFIGURATION --- */}
+                        <AppCard>
+                            <h3 style={headerStyle}>1. Configuration</h3>
 
-                {/* --- CARD 2: SUMMARY PREVIEW --- */}
-                <AppCard oStyle={{background: '#f9f9f9', border: '1px solid #e0e0e0'}}>
-                    <h3 style={headerStyle}>2. Export Summary</h3>
-
-                    <div style={{fontSize: '13px', color: '#555', lineHeight: '1.6'}}>
-                        <p style={{margin: 0}}>The system will generate <strong>Shapefiles (.shp)</strong> containing:
-                        </p>
-                        <ul style={{marginTop: '5px', paddingLeft: '20px'}}>
-                            <li>Geometry Data (Polygons/Lines/Points)</li>
-                            <li>Feature Attributes (Class, Area, etc.)</li>
-                            <li>Metadata: Annotator Name, Timestamp</li>
-                            <li>Source Info: Satellite Image Name, Date (Y/M/D)</li>
-                            {bReviewMode && (
-                                <li style={{color: '#007bff'}}>Review Status: Validated Flag, Reviewer Name,
-                                    Timestamp</li>
+                            {/* A. RAW DATA OPTION */}
+                            {bRawDataHosted ? (
+                                <div style={{paddingBottom: '20px', marginBottom: '20px', borderBottom: '1px solid #eee'}}>
+                                    <label style={subLabelStyle}>Raw Imagery</label>
+                                    <div style={{marginTop: '10px'}}>
+                                        <AppCheckbox
+                                            sLabel="Include Raw Satellite Images (GeoTIFF)"
+                                            bChecked={bIncludeRawData}
+                                            fnOnChange={(e) => setBIncludeRawData(e.target.checked)}
+                                        />
+                                        <p style={{fontSize: '11px', color: '#888', marginLeft: '24px', marginTop: '5px'}}>
+                                            Warning: This allows downloading large files. Make sure you have a stable connection.
+                                        </p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div style={{
+                                    paddingBottom: '20px',
+                                    marginBottom: '20px',
+                                    borderBottom: '1px solid #eee',
+                                    color: '#999',
+                                    fontSize: '13px'
+                                }}>
+                                    <em>Raw data is not hosted on this platform. Only labels are available.</em>
+                                </div>
                             )}
-                        </ul>
-                    </div>
-                </AppCard>
 
-                {/* --- FOOTER ACTION --- */}
-                <AppButton
-                    sVariant="success"
-                    oStyle={{
-                        width: '100%',
-                        padding: '15px',
-                        fontSize: '16px',
-                        display: 'flex',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        gap: '10px'
-                    }}
-                    fnOnClick={handleDownload}
-                    disabled={bIsGenerating}
-                >
-                    {bIsGenerating ? (
-                        <>⚙️ Generating Package...</>
-                    ) : (
-                        <>⬇️ Download Export Package</>
-                    )}
-                </AppButton>
+                            {/* B. REVIEW / VALIDATION LOGIC */}
+                            <div>
+                                <label style={subLabelStyle}>Label Validation</label>
+                                {bReviewMode ? (
+                                    <div style={{display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px'}}>
+                                        <AppRadioButton
+                                            sName="filter" sValue="validated"
+                                            sLabel="Export only Validated Labels (Recommended)"
+                                            bChecked={sLabelFilter === 'validated'}
+                                            fnOnChange={() => setSLabelFilter('validated')}
+                                        />
+                                        <AppRadioButton
+                                            sName="filter" sValue="all"
+                                            sLabel="Export All Labels (Including Unreviewed)"
+                                            bChecked={sLabelFilter === 'all'}
+                                            fnOnChange={() => setSLabelFilter('all')}
+                                        />
+                                    </div>
+                                ) : (
+                                    <div style={{marginTop: '10px', fontSize: '13px', color: '#666'}}>
+                                        This project does not require review. All accessible labels will be exported.
+                                    </div>
+                                )}
+                            </div>
+                        </AppCard>
 
+                        {/* --- CARD 2: SUMMARY PREVIEW --- */}
+                        <AppCard oStyle={{background: '#f9f9f9', border: '1px solid #e0e0e0'}}>
+                            <h3 style={headerStyle}>2. Export Summary</h3>
+
+                            <div style={{fontSize: '13px', color: '#555', lineHeight: '1.6'}}>
+                                <p style={{margin: 0}}>The system will generate <strong>Shapefiles (.shp)</strong> containing:
+                                </p>
+                                <ul style={{marginTop: '5px', paddingLeft: '20px'}}>
+                                    <li>Geometry Data (Polygons/Lines/Points)</li>
+                                    <li>Feature Attributes (Class, Area, etc.)</li>
+                                    <li>Metadata: Annotator Name, Timestamp</li>
+                                    <li>Source Info: Satellite Image Name, Date (Y/M/D)</li>
+                                    {bReviewMode && (
+                                        <li style={{color: '#007bff'}}>Review Status: Validated Flag, Reviewer Name,
+                                            Timestamp</li>
+                                    )}
+                                </ul>
+                            </div>
+                        </AppCard>
+
+                        {/* --- FOOTER ACTION --- */}
+                        <AppButton
+                            sVariant="success"
+                            oStyle={{
+                                width: '100%',
+                                padding: '15px',
+                                fontSize: '16px',
+                                display: 'flex',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                gap: '10px'
+                            }}
+                            fnOnClick={handleDownload}
+                            disabled={bIsGenerating}
+                        >
+                            ⬇️ Download Export Package
+                        </AppButton>
+                    </>
+                )}
             </div>
         </div>
     );

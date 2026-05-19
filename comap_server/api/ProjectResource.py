@@ -9,7 +9,6 @@ from datetime import datetime
 import geopandas as gpd
 from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import StreamingResponse
-from opentelemetry.trace import format_span_id
 from shapely.geometry import shape
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -403,7 +402,7 @@ async def approve(
         sTitle = f"Project : {oProject.name} Approved"
         sMessage = f"Hello,\n\nYour request to create the project '{oProject.name}' has been successfully approved.\n\nThank you!"
         for sOwnerEmail in oProject.owners:
-            #since we save email of owners, it's straight forward
+            # since we save email of owners, it's straight forward
             MailUtils.sendEmailMailJet("sysadmin@wasdi.cloud", sOwnerEmail, sTitle, sMessage, False)
 
         return {"status": "success", "message": f"Project {project_id} approved"}
@@ -671,7 +670,7 @@ async def export_project(
         # IMPLEMENTED: Access Control Filtering
         # ==========================================
         bIsOwnerOrReviewer = (oCurrentUser.email in (oProject.owners or [])) or (
-                    oCurrentUser.email in (oProject.reviewers or []))
+                oCurrentUser.email in (oProject.reviewers or []))
 
         if not oProject.annotatorsSeeAllLabels and not bIsOwnerOrReviewer:
             aoResults = [r for r in aoResults if r.LabelEntity.creatorId == oCurrentUser.email]
@@ -759,8 +758,22 @@ async def export_project(
                         zip_file.write(sFilePath, arcname=f"labels/{sGeomType}/{filename}")
 
             # ==========================================
-            # TODO: Include Raw Data (GeoTIFFs) : S3
+            # IMPLEMENTED: Include Raw Data (GeoTIFFs)
             # ==========================================
+            # SHIFTED LEFT: This now runs exactly ONCE after the Shapefiles are done!
+            if hasattr(oExportData, 'includeRawData') and oExportData.includeRawData:
+                # Query ALL images associated with this project
+                aoProjectImages = oDB.query(DatasetImageEntity).filter(
+                    DatasetImageEntity.projectId == oExportData.projectId
+                ).all()
+
+                for oImg in aoProjectImages:
+                    # Check if the link exists in the DB and the file actually exists on the hard drive
+                    if oImg.link and os.path.exists(oImg.link):
+                        # Pack it into the zip file under a "raw_images" folder
+                        zip_file.write(oImg.link, arcname=f"raw_images/{oImg.fileName}")
+                    else:
+                        logging.warning(f"Export Warning: Raw image not found on disk at {oImg.link}")
 
         # Reset buffer pointer to the beginning
         oZipBuffer.seek(0)
