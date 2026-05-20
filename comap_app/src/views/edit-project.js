@@ -397,8 +397,9 @@ const EditProject = () => {
         });
     };
 
-    const handleDeleteFeature = async (id) => {
-        if (window.confirm("Delete this label?")) {
+    const handleDeleteFeature = async (id, bSkipConfirm = false) => {
+        // If the map already asked them, skip the second popup!
+        if (bSkipConfirm || window.confirm("Delete this label?")) {
             // 1. Remove from local state immediately for a snappy UI
             const updatedFeatures = aoFeatures.filter(f => f.id !== id);
             setAoFeatures(updatedFeatures);
@@ -804,6 +805,8 @@ const EditProject = () => {
                             sInitialMapStyle="mapbox://styles/mapbox/satellite-v9"
                             bPreventSelfIntersection={oLabelTemplate ? !oLabelTemplate.isSelfIntersectAllowed : false}
                             bPreventPolygonIntersection={oLabelTemplate ? !oLabelTemplate.isPolygonsIntersectAllowed : false}
+                            onFeatureDelete={(id) => handleDeleteFeature(id, true)}
+                            onDrawError={(msg) => showNotif(msg, "warning")}
                         />
                     </div>
 

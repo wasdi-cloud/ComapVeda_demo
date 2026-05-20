@@ -138,6 +138,7 @@ const MapboxMap = ({
                        oInitialView,
                        onDrawUpdate,
                        onDrawError,
+                       onFeatureDelete,
                        sActiveGeoTIFF,
                        oActiveStyle            = null,
                        bEnableGeocoder         = false,
@@ -169,6 +170,13 @@ const MapboxMap = ({
     const bIsIntersectingRef = useRef(false);
     const sInvalidReasonRef  = useRef("");
     const [bMapLoaded, setMapLoaded]           = useState(false);
+
+    // --- NEW: REFS FOR CALLBACKS TO AVOID STALE CLOSURES ---
+    const onDrawErrorRef = useRef(onDrawError);
+    useEffect(() => { onDrawErrorRef.current = onDrawError; }, [onDrawError]);
+
+    const onFeatureDeleteRef = useRef(onFeatureDelete);
+    useEffect(() => { onFeatureDeleteRef.current = onFeatureDelete; }, [onFeatureDelete]);
 
     const aoFeaturesRef = useRef(aoFeatures);
     useEffect(() => {
@@ -210,8 +218,7 @@ const MapboxMap = ({
         if (bEnableDraw) {
 
             // =========================================================================
-            // THE FIX: NEUTER MAPBOX'S DRAG FUNCTION
-            // MapboxDraw modes are extensible. We clone simple_select and overwrite dragMove.
+            // THE FIX: NEUTER MAPBOX'S DRAG & INTERCEPT DELETE
             // =========================================================================
             const oCustomSimpleSelect = Object.assign({}, MapboxDraw.modes.simple_select);
             const originalDragMove = oCustomSimpleSelect.dragMove;
@@ -227,12 +234,10 @@ const MapboxMap = ({
                 }
             };
 
-            // 2. Fix Vertex Mode (THE MISSING PIECE)
             const oCustomDirectSelect = Object.assign({}, MapboxDraw.modes.direct_select);
 
-            // direct_select has a hidden function just for dragging the whole shape. We kill it here.
+            // Kill the drag shape function in vertex mode
             oCustomDirectSelect.dragFeature = function(state, e, delta) {
-                // Do absolutely nothing!
                 return;
             };
 
@@ -244,7 +249,7 @@ const MapboxMap = ({
                 styles: CUSTOM_DRAW_STYLES,
                 modes: Object.assign({}, MapboxDraw.modes, {
                     simple_select: oCustomSimpleSelect,
-                    direct_select: oCustomDirectSelect // <-- Inject our neutered vertex mode!
+                    direct_select: oCustomDirectSelect
                 })
             });
             // =========================================================================
@@ -252,9 +257,43 @@ const MapboxMap = ({
             oMap.addControl(oDraw, 'top-left');
             oDrawRef.current = oDraw;
 
+            // --- THE NEW FOOLPROOF KEYBOARD LISTENER ---
+            // We catch the Delete key at the raw browser level before Mapbox can ignore it!
+            oMap.getContainer().addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' || e.key === 'Delete') {
+                    if (oDrawRef.current && oDrawRef.current.getMode() === 'direct_select') {
+                        // Check if they actually have a vertex selected
+                        const selectedPoints = oDrawRef.current.getSelectedPoints();
+                        if (!selectedPoints || selectedPoints.features.length === 0) {
+                            // No vertex selected? Show the warning and stop the keypress!
+                            if (onDrawErrorRef.current) {
+                                onDrawErrorRef.current("To delete the entire shape, please switch to '✋ Move Shape' mode.");
+                            }
+                            e.preventDefault();
+                            e.stopPropagation();
+                        }
+                    }
+                }
+            }, true); // The 'true' makes sure we intercept this BEFORE Mapbox gets it
+            // -------------------------------------------
+
             oMap.on('draw.create', (ev) => handleDrawUpdate(ev, oDraw));
             oMap.on('draw.update', (ev) => handleDrawUpdate(ev, oDraw));
-            oMap.on('draw.delete', () => { setMeasurements(""); if (onDrawUpdate) onDrawUpdate(oDraw.getAll()); });
+
+            // Delete confirmation using Live Ref!
+            oMap.on('draw.delete', (ev) => {
+                if (window.confirm("Delete this label?")) {
+                    setMeasurements("");
+                    if (onFeatureDeleteRef.current && ev.features.length > 0) {
+                        ev.features.forEach(f => onFeatureDeleteRef.current(f.id));
+                    } else if (onDrawUpdate) {
+                        onDrawUpdate(oDraw.getAll());
+                    }
+                } else {
+                    oDraw.add({ type: 'FeatureCollection', features: ev.features });
+                    oDraw.changeMode('simple_select', { featureIds: ev.features.map(f => f.id) });
+                }
+            });
 
             oMap.on('draw.modechange', (ev) => {
                 if (sPolygonEditModeRef.current === 'vertices' && ev.mode === 'simple_select') {
@@ -404,8 +443,8 @@ const MapboxMap = ({
                     if (bIsIntersectingRef.current) {
                         ev.stopPropagation();
                         ev.preventDefault();
-                        if (onDrawError && ev.type === 'mousedown') {
-                            onDrawError(sInvalidReasonRef.current);
+                        if (onDrawErrorRef.current && ev.type === 'mousedown') {
+                            onDrawErrorRef.current(sInvalidReasonRef.current);
                         }
                         return;
                     }
