@@ -48,6 +48,8 @@ async def get_current_user(
     if not user.confirmed:
         raise HTTPException(status_code=403, detail="User not confirmed")
     
+    #HERE: check if lastActivity is too old (add in config the value in minutes). If too old, delete the session and ask the user to log in again. Otherwise, update lastActivity to now.
+
     # Update last activity
     session.update_activity()
     oDatabase.commit()
